@@ -1,0 +1,136 @@
+import { uiText } from './uiLocale';
+import LocalizedFileInput from './LocalizedFileInput';
+import { useEffect, useRef, useState } from 'react';
+import { activeGems, damageComposition, gemInfo, mainGem, type PobCombat, type PobGem, type PobSkillGroup } from './pobCombat';
+import { equipmentComposition, supplementPobCombat } from './characterAnalysis';
+import { METRICS, type LoadoutSlot, type LoadoutState } from './loadout';
+import { sourceIsCurrent } from './loadoutIntegration';
+import { readOriginalLocalPob } from './pobRepair';
+import { localizeEquipmentName } from './genericEquipment';
+import Icon from './WorkbenchIcon';
+import './characterAnalysis.css';
+import { activeSecondWeapons } from './weaponSets';
+import SkillAffixGuidePanel, { type SkillInspection } from './SkillAffixGuidePanel';
+import type { SkillAffixSearch } from './skillAffixGuide';
+import type { PatchData } from '../../packages/engine/src/types';
+import type { GearTrade } from '../lib/gearTrade';
+import SkillGemButton from './SkillGemButton';
+
+const format = (value: number) => value.toLocaleString('zh-CN', { maximumFractionDigits: 2 });
+const tagLabels: Record<string, string> = { attack: '攻击', spell: '法术', projectile: '投射物', melee: '近战', lightning: '闪电', fire: '火焰', cold: '冰冷', physical: '物理', chaos: '混沌', minion: '召唤物', area: '范围' };
+function GemBadge({ gem, inactive = false, onInspect }: { gem: PobGem; inactive?: boolean; onInspect: () => void }) {
+  const info = gemInfo(gem);
+  return <SkillGemButton name={info.name} label={uiText(info.label)} support={info.support} inactive={inactive} detail={`Lv.${gem.level}${gem.quality ? ` · ${gem.quality}%` : ''}`}
+    ariaLabel={`查看${info.label}${info.support ? '辅助机制' : '增伤词缀'}`} onClick={onInspect} />;
+}
+function Group({ group, secondWeapons, onInspect }: { group: PobSkillGroup; secondWeapons: boolean; onInspect: (gem: PobGem) => void }) {
+  const enabled = activeGems(group, secondWeapons);
+  return <div className="ca-group"><span className="lo-footnote">#{uiText(group.index)} · {uiText(group.source === 'item' ? '装备赋予' : group.source === 'tree' ? '天赋赋予' : '宝石配置')}{uiText(group.fullDps ? ' · 纳入全技能汇总' : '')}</span>
+    <div className="ca-gems">{group.gems.map((gem, index) => <GemBadge key={index} gem={gem} inactive={!enabled.includes(gem)} onInspect={() => onInspect(gem)} />)}</div>
+  </div>;
+}
+function Damage({ combat, current }: { combat: PobCombat; current: boolean }) {
+  const gem = mainGem(combat), damage = damageComposition(combat);
+  const parts = [{ label: '命中 DPS', value: damage.hit, className: 'hit' }, { label: '持续伤害 DPS（含异常）', value: damage.dot, className: 'dot' }];
+  const knownTotal = (damage.hit ?? 0) + (damage.dot ?? 0);
+  return <section aria-label={uiText("技能伤害构成")}>
+    <h4>{uiText(gem ? gemInfo(gem).label : '主技能')}{uiText(" · 保存时伤害")}{uiText(!current ? '（快照待更新）' : '')}</h4>
+    <div className="ca-stat-grid"><div><span>{uiText("主技能综合 DPS")}</span><strong>{uiText(damage.combined === undefined ? '未保存' : format(damage.combined))}</strong></div>
+      <div><span>{uiText("平均命中伤害")}</span><strong>{uiText(combat.stats.AverageDamage === undefined ? '未保存' : format(combat.stats.AverageDamage))}</strong></div>
+      <div><span>{uiText("命中率 / 暴击率")}</span><strong>{uiText(combat.stats.HitChance === undefined ? '—' : `${format(combat.stats.HitChance)}%`)} / {uiText(combat.stats.CritChance === undefined ? '—' : `${format(combat.stats.CritChance)}%`)}</strong></div></div>
+    <div className="ca-damage-parts">{parts.map((part) => <div key={part.label}><span>{uiText(part.label)}</span><b>{uiText(part.value === undefined ? '未保存' : format(part.value))}</b>
+      <div className="ca-bar-track"><span className={part.className} style={{ width: `${knownTotal > 0 ? (part.value ?? 0) / knownTotal * 100 : 0}%` }} /></div></div>)}</div>
+    <p className="lo-footnote">{uiText([['点燃', damage.ignite], ['流血', damage.bleed], ['中毒', damage.poison]].flatMap(([label, value]) => typeof value === 'number' && value > 0 ? [`${label} ${format(value)}`] : []).join(' · ') || '没有单独保存的异常伤害数值')}{uiText("。异常已包含在持续伤害内，不重复相加。")}</p>
+    {combat.stats.Speed !== undefined && <p className="lo-footnote">{uiText("使用频率：")}{uiText(format(combat.stats.Speed))}{uiText("/秒")}{uiText(combat.stats.CritMultiplier !== undefined ? ` · 暴击伤害倍率：${format(combat.stats.CritMultiplier)} 倍` : '')}</p>}
+    <p className="lo-footnote">{uiText("全技能汇总：")}{uiText(damage.full === undefined ? '未保存' : damage.full > 0 ? format(damage.full) : '未计入全技能汇总（保存值为 0，不表示角色伤害为零）')}{uiText("。命中与持续伤害按各自保存值展示；综合值还可能包含扑杀、分身等效果。")}</p>
+    {!!combat.fullSkills.length && <details><summary>{uiText("纳入汇总的技能")}</summary>{combat.fullSkills.map((row, index) => <p key={index}>{uiText(localizeEquipmentName(row.name))}：{uiText(format(row.dps))}</p>)}</details>}
+    <p className="lo-footnote">{uiText("此文件未提供可核对的主技能物理／火焰／冰冷／闪电／混沌拆分，暂不显示元素占比。技能标签只代表类型，不代表伤害比例。")}</p>
+    <p className="lo-footnote">{uiText("PoB2 保存时的计算快照，受天赋、技能和配置影响；工坊换装不会重算技能伤害。请在 PoB2 更新角色、核对配置并保存后补读。")}</p>
+  </section>;
+}
+
+export default function CharacterAnalysisPanel({ state, onSave, onSelectSlot, recommendationData, recommendationTrade, onSkillSearch, inspection: requestedInspection, onInspectionChange }: {
+  state: LoadoutState; onSave: (state: LoadoutState) => boolean; onSelectSlot: (slot: LoadoutSlot) => void;
+  recommendationData?: PatchData; recommendationTrade?: GearTrade | null; onSkillSearch?: (request: SkillAffixSearch) => void;
+  inspection?: SkillInspection; onInspectionChange?: (inspection: SkillInspection | undefined) => void;
+}) {
+  const [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState('');
+  const [metricKey, setMetricKey] = useState('energyShield'), [viewSet, setViewSet] = useState('');
+  const [localInspection, setLocalInspection] = useState<SkillInspection>();
+  const inspection = onInspectionChange ? requestedInspection : localInspection;
+  const mainSelection = state.goals.mainSkill;
+  const effectiveInspection = inspection && mainSelection?.source === 'pob' && inspection.selection.source === 'pob'
+    && mainSelection.setId === inspection.selection.setId && mainSelection.group === inspection.selection.group
+    && mainSelection.id === inspection.selection.id && mainSelection.name === inspection.selection.name ? { ...inspection, selection: mainSelection } : inspection;
+  const setInspection = onInspectionChange ?? setLocalInspection;
+  const guideRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDetailsElement>(null);
+  useEffect(() => { if (inspection) { if (panelRef.current) panelRef.current.open = true; guideRef.current?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' }); } }, [inspection]);
+  const latest = useRef(state);
+  useEffect(() => { latest.current = state; }, [state]);
+  const source = state.source, combat = source?.combat, gem = combat && mainGem(combat);
+  const current = !!combat?.matchesEquipment && sourceIsCurrent(state);
+  const selectedSet = combat?.sets.find((set) => set.id === viewSet) ?? combat?.sets.find((set) => set.id === combat.activeSet);
+  const mainGroup = selectedSet?.id === combat?.activeSet ? selectedSet?.groups.find((group) => group.index === combat?.mainGroup) : undefined;
+  const rows = equipmentComposition(state), metrics = METRICS.filter((metric) => rows.some((row) => row.values[metric.key] !== undefined && row.values[metric.key] !== 0));
+  const metric = metrics.find((entry) => entry.key === metricKey) ?? metrics[0];
+  const contributions = metric ? rows.filter((row) => row.values[metric.key] !== undefined && row.values[metric.key] !== 0) : [];
+  const maximum = metric ? Math.max(1, ...contributions.map((row) => Math.abs(row.values[metric.key]!))) : 1;
+  function inspect(group: PobSkillGroup, clicked: PobGem) {
+    const info = gemInfo(clicked), skill = info.support ? group.gems.filter((entry) => !gemInfo(entry).support)[group.mainActive - 1] : clicked;
+    if (!skill || !selectedSet) return;
+    const existing = state.goals.mainSkill;
+    setInspection({ selection: { source: 'pob', setId: selectedSet.id, group: group.index, id: skill.id || skill.skillId, name: skill.name,
+      ...(existing?.source === 'pob' && existing.setId === selectedSet.id && existing.group === group.index && existing.id === (skill.id || skill.skillId) && existing.name === skill.name ? { links: existing.links } : {}) },
+      ...(info.support ? { focusSupport: { name: info.name, label: info.label } } : {}) });
+  }
+  async function read(xml?: string) {
+    if (!source || busy) return;
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const input = xml ?? await readOriginalLocalPob(source, AbortSignal.timeout(15000));
+      if (latest.current !== state) throw new Error('装备方案已变化，请重新补读。');
+      const next = supplementPobCombat(state, input);
+      if (onSave(next)) setNotice('已补读技能、辅助宝石和保存时伤害；当前装备与配装目标保持不变。');
+    } catch (reason) { setError(reason instanceof Error ? reason.message : '读取失败，请选择原 XML 文件。'); }
+    finally { setBusy(false); }
+  }
+  return <details ref={panelRef} className="lo-summary ca-panel"><summary><Icon name="chart" size={17} />{uiText("PoB 原始快照与装备构成")}</summary>
+    <p className="lo-footnote">{uiText("这里只核对导入文件。实际输出与联动请在上方技能组定义；保存时主技能的伤害不会套用到其他技能。")}</p>
+    {source ? <div className="lo-actions"><button type="button" className="wb-button" disabled={busy || !source.fileName} onClick={() => { void read(); }}>{uiText(busy ? '正在补读…' : '补读原 PoB2 的技能与伤害')}</button>
+      <LocalizedFileInput label={uiText("选择原 XML")} accept=".xml" disabled={busy} aria-label={uiText("补读技能与伤害 XML")} onChange={(event) => {
+        const file = event.target.files?.[0]; event.target.value = ''; if (!file) return;
+        if (file.size > 3_000_000) { setError('文件超过 3 MB。'); return; }
+        void file.text().then((xml) => read(xml)).catch(() => setError('无法读取 XML 文件。'));
+      }} /></div> : <p className="lo-footnote">{uiText("先从上方整套导入 PoB2，即可读取主技能、辅助宝石和保存时伤害。")}</p>}
+    {error && <p className="lo-alert" role="alert">{uiText(error)}</p>}{notice && <p role="status" className="lo-notice">{uiText(notice)}</p>}
+    {effectiveInspection && <div ref={guideRef}><SkillAffixGuidePanel key={JSON.stringify(effectiveInspection)} state={state} inspection={effectiveInspection} data={recommendationData} trade={recommendationTrade} onSave={onSave} onSearch={onSkillSearch} onClose={() => setInspection(undefined)} /></div>}
+    {combat ? <>
+      <p className="lo-footnote">{uiText(current ? '装备与 PoB2 保存快照对应' : '装备或武器组与伤害快照不同，请更新 PoB2；以下保留原方案参考')}{uiText(" · 技能与伤害取自最近读取的 XML。")}</p>
+      {mainGroup && <section aria-label={uiText("主技能与辅助宝石")}><h4>{uiText("PoB 保存时主技能 · ")}{uiText(gem ? gemInfo(gem).label : `第 ${combat.mainGroup} 组`)}</h4>
+        {gem && <p className="lo-footnote">{uiText(gemInfo(gem).tags.map((tag) => tagLabels[tag] ?? tag).join(' · '))}</p>}
+        <p className="lo-footnote">{uiText("点击技能或辅助，查看增伤词缀、可出现部位并进入装备检索。")}</p><Group group={mainGroup} secondWeapons={activeSecondWeapons(state)} onInspect={(gem) => inspect(mainGroup, gem)} /></section>}
+      <Damage combat={combat} current={current} />
+      <details><summary>{uiText("全部技能配置 · ")}{uiText(selectedSet?.groups.length ?? 0)}{uiText(" 组")}</summary>
+        {combat.sets.length > 1 && <select aria-label={uiText("查看技能组方案")} value={selectedSet?.id} onChange={(event) => setViewSet(event.target.value)}>{combat.sets.map((set, index) => <option key={set.id} value={set.id}>{uiText("技能方案 ")}{uiText(index + 1)}{uiText(set.id === combat.activeSet ? '（保存时启用）' : '')}</option>)}</select>}
+        <p className="lo-footnote">{uiText("灰色为未启用或另一套武器专属。查看其他技能组不会重新计算伤害；上方伤害始终对应保存时主技能。")}</p>
+        {selectedSet?.groups.map((group) => <Group key={group.index} group={group} secondWeapons={activeSecondWeapons(state)} onInspect={(gem) => inspect(group, gem)} />)}
+      </details>
+    </> : source && <p className="lo-footnote">{uiText("这条旧记录尚未包含技能资料，请点击补读；无需重新输入装备。")}</p>}
+    <section aria-label={uiText("装备构成")}><h4>{uiText("装备构成 · ")}{uiText(rows.length)}{uiText(" 件")}</h4>
+      <p className="lo-footnote">{uiText("传奇 ")}{uiText(rows.filter((row) => row.rarity === 'unique').length)}{uiText(" 件 · 稀有 ")}{uiText(rows.filter((row) => row.rarity === 'rare').length)}{uiText(" 件 · 药剂／护符 ")}{uiText(rows.filter((row) => row.consumable).length)}{uiText(" 件（不计入常驻合计）")}</p>
+      {metric && <><label>{uiText("按属性查看来源")}<select aria-label={uiText("装备贡献属性")} value={metric.key} onChange={(event) => setMetricKey(event.target.value)}>{metrics.map((entry) => <option key={entry.key} value={entry.key}>{uiText(entry.label)}</option>)}</select></label>
+        <div className="ca-contributions">{contributions.map((row) => <button type="button" key={row.slot} onClick={() => onSelectSlot(row.slot)} title={uiText(`${row.name} · 点击查看装备`)}>
+          <span>{uiText(row.label)}</span><div className="ca-bar-track"><span style={{ width: `${Math.abs(row.values[metric.key]!) / maximum * 100}%` }} /></div><b>{uiText(format(row.values[metric.key]!))}{uiText(metric.unit)}</b>
+        </button>)}</div></>}
+      <p className="lo-footnote">{uiText("仅展示可读取的装备贡献。全域百分比单独列出；武器 DPS 分件展示，不能作为各装备对角色 DPS 的贡献比例。")}</p>
+      <details><summary>{uiText("影响伤害的装备词缀 · ")}{uiText(rows.reduce((total, row) => total + row.offense.length, 0))}{uiText(" 项")}</summary>
+        <p className="lo-footnote">{uiText("按词缀原生英文归类，显示中文说明；列出伤害来源与机制，不把不同乘区和条件效果直接相加。")}</p>
+        {rows.filter((row) => row.offense.length).map((row) => <div className="ca-group" key={row.slot}><button type="button" className="wb-text-button" onClick={() => onSelectSlot(row.slot)}>{uiText(row.label)} · {uiText(row.name)} →</button>
+          {row.offense.map((affix, index) => <p className="lo-footnote" key={index}><b>{uiText(affix.family)}</b> · {uiText(affix.label)}</p>)}</div>)}
+      </details>
+      <details><summary>{uiText("逐件装备与机制")}</summary>{rows.map((row) => <div className="ca-group" key={row.slot}><button type="button" className="wb-text-button" onClick={() => onSelectSlot(row.slot)}>{uiText(row.label)} · {uiText(row.name)} →</button>
+        {!!row.effects.length && <p className="lo-footnote">{uiText(row.effects.join('；'))}</p>}{row.uncounted > 0 && <small className="lo-footnote">{uiText(row.uncounted)}{uiText(" 项效果尚不能直接加总，详情中核对。")}</small>}</div>)}</details>
+    </section>
+  </details>;
+}

@@ -1,0 +1,11 @@
+PoE2 Build Atlas provenance
+
+Maintained independently by shihongyue2022.
+This repository starts a new commit history from the maintained application snapshot below.
+Source snapshot before migration: 4f9b162d12e703f55f226ade56ed0085f37d34b8
+
+Original crafting-engine source: https://github.com/Dboire9/POE2_HTC
+Original base revision: 0aacc069022f084e2d4c92306eb4ae4a87096d2e
+Original contributor: Dboire
+License: GNU AGPL-3.0; see LICENSE.
+Original documentation is retained in README.upstream.md.

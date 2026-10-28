@@ -1,0 +1,438 @@
+import { describe, it, expect } from 'vitest';
+import { readFileSync, readdirSync, mkdtempSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+// Two things that broke a deploy and a CI run respectively, neither of which any existing test could
+// have caught: both are about files that ship without being executed by the suite.
+
+describe('vercel.json', () => {
+  const raw = readFileSync('vercel.json', 'utf8');
+  const config = JSON.parse(raw) as {
+    headers?: { source?: string; headers?: { key?: string; value?: string }[] }[];
+    rewrites?: { source?: string; destination?: string }[];
+  };
+
+  // JSON HAS NO COMMENTS. A `"//"` key was added to explain each rule, and Vercel's schema rejects
+  // unknown properties outright: "headers[0] should NOT have additional property //" — the build
+  // failed, so the cache headers never shipped at all. The rationale lives in docs/engineering-notes.md.
+  it('carries no invented comment keys', () => {
+    expect(raw).not.toMatch(/"\/\/"\s*:/);
+  });
+
+  // Minimal restatement of the schema Vercel actually enforces. It only needs to cover what this file
+  // uses; the point is that an unknown property fails HERE rather than in a production deploy.
+  it('uses only the properties the schema allows', () => {
+    for (const rule of config.headers ?? []) {
+      expect(Object.keys(rule).sort()).toEqual(['headers', 'source']);
+      expect(typeof rule.source).toBe('string');
+      for (const h of rule.headers ?? []) {
+        expect(Object.keys(h).sort()).toEqual(['key', 'value']);
+      }
+    }
+    for (const rule of config.rewrites ?? []) {
+      expect(Object.keys(rule).sort()).toEqual(['destination', 'source']);
+    }
+  });
+
+  /**
+   * "Rate the app" is guarded by Vercel's BotID, whose challenge the page fetches from paths on THIS
+   * site that Vercel proxies to its own API. The paths are fixed by the `botid` package, not chosen
+   * here: if an update moved them, every rating would be refused as a bot with nothing else failing.
+   * So they are read from the installed client rather than trusted.
+   */
+  it('proxies exactly the paths the installed BotID client asks for', () => {
+    const client = readFileSync('node_modules/botid/dist/client/core/index.mjs', 'utf8');
+    const to = (destination: string) => (config.rewrites ?? []).find((r) => r.destination === destination)?.source ?? '';
+    const script = to('https://api.vercel.com/bot-protection/v1/challenge');
+    const proxy = to('https://api.vercel.com/bot-protection/v1/proxy/:path*');
+    expect(script).not.toBe('');
+    expect(client).toContain(`"${script}"`);
+    expect(proxy).toMatch(/\/:path\*$/);
+    expect(client).toContain(`"${proxy.replace(/\/:path\*$/, '')}"`);
+  });
+
+  // The whole reason this file exists: hashed assets cached forever, the unhashed entry point never.
+  // Getting these backwards would either re-download the whole patch payload every visit or pin users
+  // to a stale build.
+  it('caches hashed assets immutably and revalidates index.html', () => {
+    const bySource = new Map((config.headers ?? []).map((r) => [r.source, r.headers ?? []]));
+    const valueOf = (source: string) =>
+      bySource.get(source)?.find((h) => h.key === 'Cache-Control')?.value ?? '';
+    expect(valueOf('/static/(.*)')).toMatch(/immutable/);
+    expect(valueOf('/static/(.*)')).toMatch(/max-age=31536000/);
+    expect(valueOf('/')).toMatch(/max-age=0/);
+    expect(valueOf('/')).toMatch(/must-revalidate/);
+  });
+
+  /**
+   * The CSP has to be a REAL RESPONSE HEADER, and these tests exist because it used to be a
+   * `<meta http-equiv>` in index.html, where three things were wrong with it at once:
+   *
+   *   1. `frame-ancestors` is IGNORED in a meta CSP. The site was iframeable the whole time.
+   *   2. A meta tag is part of the document, so it applied in dev too — which is why it had to allow
+   *      `http://localhost:*` and `ws://localhost:*` for Vite's HMR, and those shipped to production.
+   *   3. It still allowed `https://api.poe2htc.com`, a backend retired in the Java migration.
+   *
+   * Nothing would have failed if any of that regressed, which is what makes it worth pinning.
+   */
+  describe('security headers', () => {
+    const all = (config.headers ?? []).find((r) => r.source === '/(.*)')?.headers ?? [];
+    const header = (key: string) => all.find((h) => h.key === key)?.value ?? '';
+    const csp = header('Content-Security-Policy');
+
+    it('serves a CSP on every route', () => {
+      expect(csp).toMatch(/default-src 'self'/);
+    });
+
+    // The one directive a meta tag could never deliver, and the reason the move was worth making.
+    it('refuses to be framed', () => {
+      expect(csp).toMatch(/frame-ancestors 'none'/);
+    });
+
+    // The solve worker is same-origin (`new Worker(new URL('engine.worker-….js', import.meta.url))`),
+    // never a blob. If this tightened to nothing, every craft in the app would stop computing.
+    it('still allows the solve worker', () => {
+      expect(csp).toMatch(/worker-src 'self'/);
+    });
+
+    // Sentry is off until VITE_SENTRY_DSN is set at BUILD time (see src/lib/sentry.ts). When it is
+    // turned on, the browser posts events to <org>.ingest.sentry.io — a CSP that forgot this would
+    // silently swallow every error report, which is the exact failure error tracking exists to
+    // prevent. `connect-src` stays otherwise closed: nothing else in the app calls out.
+    it('leaves room for Sentry to report, and nothing else', () => {
+      expect(csp).toMatch(/connect-src 'self' https:\/\/\*\.sentry\.io/);
+    });
+
+    it('carries no dev-only or retired-backend allowances', () => {
+      expect(csp).not.toMatch(/localhost/);
+      expect(csp).not.toMatch(/api\.poe2htc\.com/);   // that backend was retired with the Java engine
+    });
+
+    it('sets the two cheap headers that have no downside here', () => {
+      expect(header('X-Content-Type-Options')).toBe('nosniff');
+      expect(header('Referrer-Policy')).toBe('strict-origin-when-cross-origin');
+    });
+
+    // A meta CSP would take precedence over the header for the directives it does support, quietly
+    // reinstating the weaker policy. There must be exactly one CSP and it must be the header.
+    it('is not shadowed by a meta tag in index.html', () => {
+      expect(readFileSync('index.html', 'utf8')).not.toMatch(/http-equiv=["']Content-Security-Policy/i);
+    });
+  });
+});
+
+/**
+ * A crawler that fetches this page without running the script must still find out what it is.
+ *
+ * The body was an empty `<div id="root">`, so the served document had zero visible text, and Google
+ * Search Console reported a SOFT 404 on 2026-09-06 — a URL answering 200 while looking empty. The
+ * fallback markup inside `#root` is the fix, and it is the kind of thing a later refactor deletes
+ * without noticing, because nothing a human looks at changes when it goes.
+ */
+describe('index.html says what the page is without JavaScript', () => {
+  const html = readFileSync('index.html', 'utf8');
+  /**
+   * Visible text only, the way a crawler reads it: the page PARSED, scripts and styles dropped, every
+   * text node kept (comments are not text nodes). Parsed rather than stripped with patterns, because
+   * tag-matching patterns have gaps real HTML walks through — `</script >`, a `>` inside an attribute —
+   * which is what CodeQL flagged them for. A parser has no such gaps.
+   */
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  for (const el of doc.querySelectorAll('script, style')) el.remove();
+  const walker = doc.createTreeWalker(doc.documentElement, NodeFilter.SHOW_TEXT);
+  const texts: string[] = [];
+  for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) texts.push(node.textContent ?? '');
+  const visibleText = texts.join(' ').replace(/\s+/g, ' ').trim();
+
+  it('serves real text in the body, not an empty root div', () => {
+    expect(visibleText.length).toBeGreaterThan(40);
+  });
+
+  it('names the product and what it does', () => {
+    expect(visibleText).toContain('PoE2 制作工坊');
+    expect(visibleText).toContain('本地制作引擎');
+    expect(visibleText).toContain('词缀数据');
+  });
+
+  // The fallback has to live inside the container React renders into, because that is what makes it
+  // disappear for real users — `createRoot().render()` replaces the container's contents.
+  it('puts the fallback inside #root, so React replaces it on mount', () => {
+    const root = /<div id="root">([\s\S]*?)<\/div>\s*<script/.exec(html);
+    expect(root, 'could not find #root followed by the module script').not.toBeNull();
+    expect(root![1]).toMatch(/<h1/);
+  });
+
+  // Everything here is also claimed in the meta description, and the two drifting apart is how a page
+  // ends up describing itself two different ways to the same crawler.
+  it('tells visitors the app needs JavaScript', () => {
+    expect(html).toMatch(/<noscript>/);
+  });
+});
+
+describe('no throwaway probes in the suite', () => {
+  // A measurement harness written to time the solver got committed by accident. It wrote to an
+  // absolute /tmp path from this machine, so it passed locally and failed CI with ENOENT. Probes are
+  // fine — leaving them in the suite is not, and they are recognisable by their `__` prefix.
+  const dirs = ['packages/optimizer/src', 'packages/engine/src', 'src/lib', 'src/features/engine'];
+
+  it('has no __-prefixed test files', () => {
+    const strays = dirs.flatMap((d) =>
+      readdirSync(d).filter((f) => f.startsWith('__') && f.includes('.test.')).map((f) => `${d}/${f}`));
+    expect(strays).toEqual([]);
+  });
+});
+
+/**
+ * The PR step of a refresh bot — the price bot's, and the streamer bot's, which copies it — RUN under
+ * bash with `git` and `gh` stubbed, against vitest output captured with `CI=true` (see the price bot's
+ * note below for the 2026-09-11 failure this exists for).
+ */
+function describePrStep(wf: string): void {
+  describe.skipIf(process.platform === 'win32')('the PR step, executed against coloured vitest output', () => {
+    const lines = wf.replace(/\r\n/g, '\n').split('\n');
+    const runAt = lines.findIndex((l, i) => i > lines.findIndex((m) => m.trim() === 'id: pr') && /^\s+run: \|$/.test(l));
+    const indent = lines[runAt]!.search(/\S/);
+    const end = lines.findIndex((l, i) => i > runAt && l.trim() !== '' && l.search(/\S/) <= indent);
+    const script = lines.slice(runAt + 1, end).map((l) => l.slice(indent + 2)).join('\n');
+
+    const E = '\x1b[';
+    const PASSED = [
+      `${E}1m${E}30m${E}46m RUN ${E}49m${E}39m${E}22m ${E}36mv4.1.11 ${E}39m${E}90m/home/runner/work/POE2_HTC/POE2_HTC${E}39m`,
+      '',
+      `${E}2m Test Files ${E}22m ${E}1m${E}32m93 passed${E}39m${E}22m${E}90m (93)${E}39m`,
+      `${E}2m      Tests ${E}22m ${E}1m${E}32m1817 passed${E}39m${E}22m${E}90m (1818)${E}39m`,
+    ].join('\n');
+    const FAILED = [
+      `${E}31m   ${E}31m\u00d7${E}31m prices a Wand${E}39m${E}32m 60${E}2mms${E}22m${E}39m`,
+      `${E}2m Test Files ${E}22m ${E}1m${E}31m1 failed${E}39m${E}22m${E}90m (93)${E}39m`,
+      `${E}2m      Tests ${E}22m ${E}1m${E}31m1 failed${E}39m${E}22m${E}2m | ${E}22m${E}1m${E}32m1816 passed${E}39m${E}22m${E}90m (1818)${E}39m`,
+    ].join('\n');
+
+    function runStep(guardLog: string, env: Record<string, string>) {
+      const dir = mkdtempSync(join(tmpdir(), 'pr-step-'));
+      const bin = join(dir, 'bin');
+      mkdirSync(bin);
+      writeFileSync(join(bin, 'git'), '#!/bin/sh\n[ "$1" = "${GIT_FAILS:-}" ] && exit 1\nexit 0\n', { mode: 0o755 });
+      writeFileSync(join(bin, 'gh'), [
+        '#!/bin/sh',
+        `echo "$*" >> '${dir}/gh.calls'`,
+        `case "$1 $2" in "pr list") [ -f '${dir}/created' ] && echo 21 ;; "pr create") touch '${dir}/created' ;; esac`,
+        'exit 0',
+      ].join('\n'), { mode: 0o755 });
+      writeFileSync(join(dir, 'refresh.log'), 'DEPTH-VERDICT: clean\n');
+      writeFileSync(join(dir, 'guard.log'), guardLog);
+      const r = spawnSync('bash', ['-c', script.split('/tmp/').join(`${dir}/`)], {
+        encoding: 'utf8',
+        env: { PATH: `${bin}:${process.env.PATH}`, GITHUB_OUTPUT: join(dir, 'out'), BASE: 'main', WHY: '', ...env },
+      });
+      const read = (f: string) => (existsSync(join(dir, f)) ? readFileSync(join(dir, f), 'utf8') : '');
+      return { status: r.status, stderr: r.stderr, gh: read('gh.calls'), body: read('pr-body.md') };
+    }
+
+    it('opens and merges a clean refresh, quoting the suite summary', () => {
+      const r = runStep(PASSED, { VERDICT: 'clean', TESTS: 'true' });
+      expect(r.stderr).toBe('');
+      expect(r.status).toBe(0);
+      expect(r.gh).toMatch(/^pr create /m);
+      expect(r.gh).toMatch(/^pr merge 21 /m);
+      expect(r.body).toContain('      Tests  1817 passed (1818)');
+    });
+
+    it('opens a held PR that names the failing test, and does not merge it', () => {
+      const r = runStep(FAILED, { VERDICT: 'review', TESTS: 'false', WHY: 'TESTS FAILED' });
+      expect(r.status).toBe(0);
+      expect(r.gh).toMatch(/^pr create /m);
+      expect(r.gh).not.toMatch(/^pr merge /m);
+      expect(r.body).toContain('   \u00d7 prices a Wand 60ms');
+    });
+
+    it('still opens the PR when the test log has no summary at all', () => {
+      const r = runStep('', { VERDICT: 'clean', TESTS: 'true' });
+      expect(r.status).toBe(0);
+      expect(r.gh).toMatch(/^pr create /m);
+      expect(r.body).toContain('(no summary line in the test log)');
+    });
+
+    it('says which line failed, rather than exiting without a word', () => {
+      const r = runStep(PASSED, { VERDICT: 'clean', TESTS: 'true', GIT_FAILS: 'commit' });
+      expect(r.status).not.toBe(0);
+      expect(r.stderr).toMatch(/^::error::The PR step failed at line \d+: git commit /m);
+      expect(r.gh).toBe('');
+    });
+  });
+}
+
+/**
+ * The price bot merges to `main` on its own, daily, at 06:00 UTC with nobody watching — so its
+ * safeguards are the ones least likely to be noticed when they stop working, and nothing else in the
+ * suite executes that file. Same reasoning as `vercel.json` above, and the same limitation: these are
+ * assertions about TEXT, not about what GitHub will do with it. They pin decisions, not behaviour.
+ *
+ * Three ways it went quiet before 2026-09-08, each fixed and each pinned here.
+ */
+describe('the price refresh bot cannot merge quietly', () => {
+  const wf = readFileSync('.github/workflows/refresh-prices.yml', 'utf8').replace(/\r\n/g, '\n');
+
+  /**
+   * It ran `priceResolution` and `costConsistency` only. Those are the sheet's own contract and they
+   * pass on data that is wrong in ways they were never asked about — the league rollover that
+   * collapsed 272 Alloy prices to one median went through them green, while `src/lib/alloys.test.ts`
+   * (which reads the live sheet on purpose) would have caught it and was not in the list.
+   */
+  it('guards a refresh with the whole test suite, not a curated list', () => {
+    expect(wf).toMatch(/if npm test 2>&1 \| tee/);
+    expect(wf).not.toMatch(/npx vitest run packages\/optimizer\/src\/priceResolution/);
+  });
+
+  /**
+   * The guard is `continue-on-error` so that a failure still OPENS the PR — the artifact you need to
+   * see what the bad data was. That makes the job green by default, so the failure has to be re-raised
+   * afterwards or a red suite would report success.
+   */
+  it('re-raises a failing suite, since continue-on-error swallows it', () => {
+    expect(wf).toMatch(/continue-on-error: true/);
+    expect(wf).toMatch(/steps\.guard\.outputs\.passed != 'true'/);
+  });
+
+  /**
+   * A refused merge used to log `::warning::` and exit 0. The PR it leaves behind carries the ORDINARY
+   * title, so it looks exactly like the ones that merged themselves — an automation quietly not
+   * working, which is the case that most needs the email.
+   */
+  it('fails the job when a clean merge is refused', () => {
+    const refused = wf.slice(wf.indexOf('if gh pr merge'));
+    expect(refused).toMatch(/::error::/);
+    expect(refused).toMatch(/exit 1/);
+    expect(refused).not.toMatch(/::warning::Depth check was clean/);
+  });
+
+  /** Both questions gate the merge: is the data backed by a market, and does the app work on it? */
+  it('merges only when the depth verdict AND the tests are clean', () => {
+    expect(wf).toMatch(/\[ "\$DEPTH" = clean \] && \[ "\$TESTS" = true \]/);
+  });
+
+  /**
+   * Everything above reads the workflow as TEXT, and on 2026-09-11 the text passed all of it while the
+   * PR step died on its first real run: vitest colours its output whenever `CI` is set — always, on a
+   * runner — so `grep '^\s+Tests'` matched nothing, `pipefail` made that fatal, and the step exited 1
+   * between the branch push and `gh pr create` with nothing in the log to say why. No PR, no prices.
+   *
+   * So this RUNS the step's own script, lifted out of the YAML, under bash, with `git` and `gh`
+   * stubbed on PATH, against vitest output captured from a run with `CI=true` (escape codes and all).
+   * A local run will not show those colours: vitest switches them off when it detects an AI agent.
+   */
+  describePrStep(wf);
+});
+
+/**
+ * The league-age hold, which is in the refresh SCRIPT rather than the workflow.
+ *
+ * The check used to be `prev.league !== league` — an EVENT, which fires on the changeover day and
+ * then never again, because merging that day's PR makes `prev.league` the new league. Days 2-7 of a
+ * league auto-merged unread, and that is the week the whole economy spends repricing.
+ */
+describe('early-league prices are held for a read', () => {
+  const script = readFileSync('tools/refresh/prices.mjs', 'utf8');
+
+  it('holds on the league AGE, not only on the changeover day', () => {
+    expect(script).toMatch(/leagueHoldDays/);
+    expect(script).toMatch(/leagueAgeDays < DEPTH\.leagueHoldDays/);
+  });
+
+  /** poe.ninja's /leagues serves `id` and `name` and no start date, so the sheet has to record when
+   *  it first saw the league. Without the field there is no age and the hold cannot work. */
+  it('records when the league was first seen, and the sheet carries it', () => {
+    expect(script).toMatch(/leagueSince/);
+    const sheet = JSON.parse(readFileSync('data/patches/0.5.0/prices.json', 'utf8')) as {
+      league?: string; leagueSince?: string;
+    };
+    expect(sheet.leagueSince).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(sheet.league).toBeTruthy();
+  });
+});
+
+/**
+ * The weekly streamer-gear bot (2026-09-24): the price bot's pattern, so the same promises — least
+ * permission, the whole suite, a held PR that says why, a refused merge that fails the job — plus its
+ * own: a run where only the sheet's date moved opens nothing, and a streamer gone missing holds the PR.
+ */
+describe('the streamer refresh bot cannot merge quietly either', () => {
+  const wf = readFileSync('.github/workflows/refresh-streamers.yml', 'utf8').replace(/\r\n/g, '\n');
+
+  it('runs weekly, with only the permissions its one job needs', () => {
+    expect(wf).toMatch(/cron: '30 6 \* \* 1'/);
+    expect(wf.indexOf('permissions:')).toBeGreaterThan(wf.indexOf('jobs:'));
+    expect(wf).toMatch(/permissions:\n\s+contents: write\n\s+pull-requests: write\n/);
+  });
+
+  it('guards with the whole suite, re-raises a failure, and merges only when the fetch AND the tests are clean', () => {
+    expect(wf).toMatch(/if npm test 2>&1 \| tee/);
+    expect(wf).toMatch(/continue-on-error: true/);
+    expect(wf).toMatch(/steps\.guard\.outputs\.passed != 'true'/);
+    expect(wf).toMatch(/\[ "\$FETCHED" = clean \] && \[ "\$TESTS" = true \]/);
+    const refused = wf.slice(wf.indexOf('if gh pr merge'));
+    expect(refused).toMatch(/::error::/);
+    expect(refused).toMatch(/exit 1/);
+  });
+
+  /** In the fetch itself: an empty read never becomes a sheet, and a missing streamer is named. */
+  it('never writes a sheet with nobody on it, and says who went missing', () => {
+    const fetch = readFileSync('tools/streamers/fetch.mjs', 'utf8');
+    expect(fetch).toMatch(/if \(out\.length === 0\) throw/);
+    expect(fetch.indexOf('if (out.length === 0) throw')).toBeLessThan(fetch.indexOf('writeFileSync(file'));
+    expect(fetch).toMatch(/STREAMERS-VERDICT: clean/);
+    expect(fetch).toMatch(/STREAMERS-VERDICT: review/);
+  });
+
+  /** The diff step, RUN: `git diff` stubbed to print what a refresh would leave behind. */
+  describe.skipIf(process.platform === 'win32')('the diff step, executed', () => {
+    const lines = wf.split('\n');
+    const runAt = lines.findIndex((l, i) => i > lines.findIndex((m) => m.trim() === 'id: diff') && /^\s+run: \|$/.test(l));
+    const indent = lines[runAt]!.search(/\S/);
+    const end = lines.findIndex((l, i) => i > runAt && l.trim() !== '' && l.search(/\S/) <= indent);
+    const script = lines.slice(runAt + 1, end).map((l) => l.slice(indent + 2)).join('\n');
+
+    function runDiff(diff: string, log: string) {
+      const dir = mkdtempSync(join(tmpdir(), 'diff-step-'));
+      const bin = join(dir, 'bin');
+      mkdirSync(bin);
+      writeFileSync(join(dir, 'diff.txt'), diff);
+      writeFileSync(join(bin, 'git'), [
+        '#!/bin/sh',
+        `echo "$*" >> '${dir}/git.calls'`,
+        `[ "$1" = diff ] && cat '${dir}/diff.txt'`,
+        'exit 0',
+      ].join('\n'), { mode: 0o755 });
+      writeFileSync(join(dir, 'refresh.log'), log);
+      const r = spawnSync('bash', ['-c', script.split('/tmp/').join(`${dir}/`)], {
+        encoding: 'utf8', env: { PATH: `${bin}:${process.env.PATH}`, GITHUB_OUTPUT: join(dir, 'out') },
+      });
+      const read = (f: string) => (existsSync(join(dir, f)) ? readFileSync(join(dir, f), 'utf8') : '');
+      return { status: r.status, out: read('out'), git: read('git.calls') };
+    }
+    const header = '--- a/data/streamers/0.5.0.json\n+++ b/data/streamers/0.5.0.json\n@@ -3 +3 @@\n';
+
+    it('opens nothing when only the date moved, and puts the file back', () => {
+      const r = runDiff(`${header}-  "updated": "2026-09-17",\n+  "updated": "2026-09-24",\n`, 'STREAMERS-VERDICT: clean\n');
+      expect(r.status).toBe(0);
+      expect(r.out).toMatch(/^changed=false$/m);
+      expect(r.git).toMatch(/^checkout -- data\/streamers$/m);
+    });
+
+    it('opens a PR when gear moved, clean only when every streamer came back', () => {
+      const gear = `${header}-          "modId": "Wands/A",\n+          "modId": "Wands/B",\n`;
+      const clean = runDiff(gear, 'STREAMERS-VERDICT: clean\n');
+      expect(clean.out).toMatch(/^changed=true$/m);
+      expect(clean.out).toMatch(/^verdict=clean$/m);
+      const missing = runDiff(gear, 'STREAMERS-VERDICT: review — 1 of 5 streamers could not be read this time: x\n');
+      expect(missing.out).toMatch(/^verdict=review$/m);
+      expect(missing.out).toContain('1 of 5 streamers could not be read');
+      // No verdict at all is a script that changed or died: a human reads it.
+      expect(runDiff(gear, '').out).toMatch(/^verdict=review$/m);
+    });
+  });
+
+  describePrStep(wf);
+});

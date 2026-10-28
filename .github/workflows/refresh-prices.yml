@@ -1,0 +1,323 @@
+name: Refresh prices
+
+# The optimizer RANKS plans by cost, so a stale *relative* price changes which route it recommends,
+# not just the total printed on it. `npm run update-prices` has always existed and always depended on
+# someone remembering; this runs it daily and opens a pull request with the result.
+#
+# It opens a pull request either way, because that is the audit trail — but it MERGES the PR itself
+# when the data looks trustworthy, so the normal week needs nobody. TWO independent questions decide
+# that, and either one holds the PR:
+#
+#   depth   `prices.mjs` ends its run with a machine-readable `DEPTH-VERDICT:` line — is every price
+#           this sheet uses backed by a real market, and is the league old enough to have one?
+#   tests   does the app still work on the new numbers? The WHOLE suite, run here.
+#
+#   both clean  -> merge automatically. Vercel redeploys; nothing for a human to do.
+#   either not  -> leave the PR open, titled REVIEW NEEDED, and say which in the body.
+#
+# Three ways this used to go quiet, all fixed 2026-09-08 after a league rollover shipped collapsed
+# Alloy prices through a green guard:
+#   - the guard ran two shape tests, so data that was wrong in any other way passed;
+#   - the league check fired on the changeover DAY only, so days 2-7 auto-merged unread;
+#   - a refused merge logged a warning, leaving an ordinary-looking PR unmerged and the job green.
+#
+# The verdict is about MARKET DEPTH, measured in units traded per day, because the optimizer ranks
+# plans BY cost: a price with no market behind it does not merely misreport a total, it changes which
+# route the app recommends, and the shape tests pass because the shape is fine. Currency and bones are
+# deep (transmute 2,548/day, preserved rib 347) so one of them going thin-and-moving is genuinely
+# abnormal and holds the PR. Essences are not a market at all (median 2/day) and are handled at the
+# SOURCE instead — the script ignores a quote under 1 unit/day and infers that price from the same
+# essence's other levels — so they hold the PR only if essentially all of them move at once, which
+# means a league rollover rather than one listing.
+
+on:
+  schedule:
+    # Daily, 06:00 UTC. A scheduled run always uses the default branch, which is what the PR targets.
+    #
+    # Daily rather than weekly, and it costs poe.ninja almost nothing: one run is FOUR requests
+    # (/leagues, then the Currency, Abyss and Essences overviews), from one runner, with a descriptive
+    # User-Agent. Their stated ask — quoted in prices.mjs's header — is that clients not call the
+    # endpoints from end-user machines; the committed-snapshot design already honours that, and a
+    # thousand players still generate zero requests. This moves 4 requests, not 4,000.
+    #
+    # It is also self-throttling in two ways that make daily cheap to LIVE with, which was the real
+    # question. If no price moved the job stops at the diff check and opens nothing, so quiet weeks
+    # stay silent. And because it force-pushes one fixed branch, daily updates a single PR rather than
+    # stacking seven — with the diff always measured against the default branch, so what a reviewer
+    # reads is "everything since the last merge" rather than "since yesterday".
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+    inputs:
+      league:
+        description: 'poe.ninja league id (blank = the current temporary league)'
+        required: false
+        type: string
+
+jobs:
+  refresh:
+    # Keep upstream's scheduled maintenance opt-in for this independent project.
+    if: github.repository == 'Dboire9/POE2_HTC' || github.event_name == 'workflow_dispatch'
+    name: Fetch poe.ninja and open a PR
+    runs-on: ubuntu-latest
+
+    # Declared rather than inherited, same reasoning as ci.yml. This job needs to push one branch and
+    # open one PR; it gets exactly that.
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # `tee` so the console output is BOTH visible in the Actions log and captured for the PR body.
+      # `pipefail` because the pipe would otherwise mask a non-zero exit from the script — the exact
+      # trap that let a failing check look green during the 2026-09 optimizer work.
+      # LEAGUE arrives through `env`, never interpolated into the script body. A `${{ }}` expansion is
+      # substituted as raw text BEFORE bash sees it, so a dispatch input containing a quote and a
+      # semicolon would run as a command; through env it is only ever data.
+      - name: Fetch prices from poe.ninja
+        id: fetch
+        shell: bash
+        env:
+          LEAGUE: ${{ inputs.league }}
+        run: |
+          set -euo pipefail
+          league_arg=()
+          if [ -n "${LEAGUE:-}" ]; then league_arg=(--league "$LEAGUE"); fi
+          node tools/refresh/prices.mjs "${league_arg[@]}" 2>&1 | tee /tmp/refresh.log
+
+      - name: Did anything change, and does the data look trustworthy?
+        id: diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- data/patches; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No price moved. Nothing to open a PR for."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            git diff --stat -- data/patches
+          fi
+          # Default to REVIEW if the line is absent for any reason. A missing verdict means the script
+          # changed shape or died mid-run; the safe reading of "I don't know" is "a human looks", never
+          # "merge it".
+          if grep -q '^DEPTH-VERDICT: clean' /tmp/refresh.log; then
+            echo "verdict=clean" >> "$GITHUB_OUTPUT"
+          else
+            echo "verdict=review" >> "$GITHUB_OUTPUT"
+            { echo "why<<EOF"; grep '^DEPTH-VERDICT:' /tmp/refresh.log || echo "DEPTH-VERDICT: absent from the log"; echo "EOF"; } >> "$GITHUB_OUTPUT"
+          fi
+
+      # The guard runs HERE, not on the pull request. A PR opened with the built-in GITHUB_TOKEN does
+      # not trigger workflows — GitHub suppresses that to prevent recursion — so relying on "CI will
+      # catch it on the PR" would have shipped a PR nothing had checked. Running the tests in this job
+      # instead means a bad feed is caught before anything merges, and needs no PAT.
+      #
+      # THE WHOLE SUITE, not the two shape tests it used to run. Those two are the sheet's own
+      # contract and they pass on data that is wrong in ways they were never asked about: on the
+      # 2026-09-05 league rollover the Alloy prices collapsed to a single median — the `700ff5d` bug
+      # returning, 272 mods repriced from their own market to one unrelated number — and the guard was
+      # green. `src/lib/alloys.test.ts` catches exactly that, reads the LIVE sheet on purpose, and was
+      # not in the list. Curating a list of price-sensitive tests would only push the problem to the
+      # next test nobody adds to it.
+      #
+      # `continue-on-error` because a failure must still OPEN the pull request. The old arrangement
+      # failed the job before the PR existed, which is loud but throws away the artifact you need to
+      # see WHAT the bad data was; now the PR is opened, held, and says so, and the job fails at the
+      # end. Both signals, not one.
+      - name: Guard the new sheet against the whole test suite
+        id: guard
+        if: steps.diff.outputs.changed == 'true'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -uo pipefail
+          if npm test 2>&1 | tee /tmp/guard.log; then
+            echo "passed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "passed=false" >> "$GITHUB_OUTPUT"
+            echo "::error::The test suite failed against the refreshed sheet. Held for review."
+          fi
+
+      # The depth verdict and the test result are two different questions — "is this data backed by a
+      # market" and "does the app still work on it" — and either one is enough to hold the PR.
+      - name: Combine the depth verdict with the test result
+        id: verdict
+        if: steps.diff.outputs.changed == 'true'
+        shell: bash
+        env:
+          DEPTH: ${{ steps.diff.outputs.verdict }}
+          WHY: ${{ steps.diff.outputs.why }}
+          TESTS: ${{ steps.guard.outputs.passed }}
+        run: |
+          set -euo pipefail
+          if [ "$DEPTH" = clean ] && [ "$TESTS" = true ]; then
+            echo "verdict=clean" >> "$GITHUB_OUTPUT"
+          else
+            echo "verdict=review" >> "$GITHUB_OUTPUT"
+          fi
+          {
+            echo "why<<VERDICT_EOF"
+            [ "$DEPTH" = clean ] || echo "${WHY:-DEPTH-VERDICT: review}"
+            [ "$TESTS" = true ] || echo "TESTS FAILED against the refreshed sheet — see the job log."
+            echo "VERDICT_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Open or update the pull request, and merge it if the data is clean
+        id: pr
+        if: steps.diff.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ github.ref_name }}
+          VERDICT: ${{ steps.verdict.outputs.verdict }}
+          WHY: ${{ steps.verdict.outputs.why }}
+          TESTS: ${{ steps.guard.outputs.passed }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # `set -e` ends the step WITHOUT A WORD: on 2026-09-11 a grep that matched nothing killed this
+          # step between the branch push and `gh pr create`, and the log said only "exit code 1". The
+          # trap names the line that failed. To stderr, because the PR body block below redirects stdout.
+          trap 'echo "::error::The PR step failed at line $LINENO: $BASH_COMMAND" >&2' ERR
+          branch=chore/refresh-prices
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -C "$branch"
+          git add data/patches
+          git commit -m "Refresh prices from poe.ninja"
+
+          # Force-push a FIXED branch so a weekly re-run updates the one open PR instead of piling up
+          # a new one every Monday. Nothing but this job ever writes here, so there is no work to lose.
+          git push --force origin "$branch"
+
+          # The omenQuotes staleness warning is the one part of the refresh a bot cannot do: poe.ninja
+          # serves no omen endpoint (`type=Omens` returns byte-identical output to an invalid type), so
+          # those quotes are hand-transcribed. Lift it to the top of the body where it will be read.
+          if [ "$VERDICT" = clean ]; then
+            title="Refresh prices from poe.ninja"
+          else
+            title="REVIEW NEEDED — refresh prices from poe.ninja"
+          fi
+
+          {
+            echo "Automated daily refresh of \`data/patches/0.5.0/prices.json\` from poe.ninja."
+            echo
+            if [ "$VERDICT" = clean ]; then
+              echo "> [!NOTE]"
+              echo "> Market-depth check passed, so this **merges itself**. Every currency and bone price"
+              echo "> the sheet uses is backed by a real market, and no feed-wide event was detected."
+            else
+              echo "> [!CAUTION]"
+              echo "> **Held for review — not merged.**"
+              echo "$WHY" | sed 's/^/> /'
+              echo ">"
+              echo "> A currency or bone price enters EVERY plan, and the optimizer ranks plans BY cost,"
+              echo "> so a quote with no market behind it changes which route is recommended rather than"
+              echo "> only what it says the route costs. Check the depth table below before merging."
+            fi
+            echo
+            if grep -q 'WARNING omenQuotes' /tmp/refresh.log; then
+              echo "> [!WARNING]"
+              grep 'WARNING omenQuotes' /tmp/refresh.log | sed 's/^ */> /'
+              echo ">"
+              echo "> Omen prices are hand-transcribed — poe.ninja serves no omen endpoint. Re-transcribe"
+              echo "> them before merging, or the omen half of every cost is as old as the warning says."
+              echo
+            fi
+            if grep -q 'WARNING' /tmp/refresh.log; then
+              echo "Other warnings from this run:"
+              echo '```'
+              grep 'WARNING' /tmp/refresh.log | grep -v 'omenQuotes' || true
+              echo '```'
+              echo
+            fi
+            echo "The whole test suite ran against the new sheet in the refresh job — a PR opened by"
+            echo "\`GITHUB_TOKEN\` does not trigger CI, so that check has to run there rather than here."
+            echo
+            # Vitest COLOURS its output whenever `CI` is set, which on a runner it always is, so every
+            # line of the log starts with an escape code and `^\s+Tests` matches nothing — the
+            # 2026-09-11 failure. Strip them before reading. And never let the summary stop the PR:
+            # this is decoration on the body, so a missing line prints a note instead of exiting.
+            # `grep -m` rather than `| head`, because head closing the pipe early SIGPIPEs grep and
+            # `pipefail` turns that into a failure too.
+            sed 's/\x1b\[[0-9;]*m//g' /tmp/guard.log > /tmp/guard.txt
+            if [ "$TESTS" = true ]; then
+              echo '```'
+              grep -E '^\s+(Test Files|Tests) ' /tmp/guard.txt | tail -2 || echo "(no summary line in the test log)"
+              echo '```'
+            else
+              echo "<details open><summary>Failing tests</summary>"
+              echo
+              echo '```'
+              grep -m 40 -E '^\s+×|^\s+(Test Files|Tests) ' /tmp/guard.txt || echo "(no failing-test lines in the log — see the job log)"
+              echo '```'
+              echo
+              echo "</details>"
+            fi
+            echo
+            echo "On the week a new league starts the script correctly follows poe.ninja to the new"
+            echo "league and every price legitimately moves 5-50x. That trips the feed-wide check, so it"
+            echo "arrives held for review rather than merged."
+            echo
+            echo "<details><summary>Full refresh output</summary>"
+            echo
+            echo '```'
+            cat /tmp/refresh.log
+            echo '```'
+            echo
+            echo "</details>"
+          } > /tmp/pr-body.md
+
+          # `gh pr list --state open`, NOT `gh pr view "$branch"`. `pr view` prefers an open PR but
+          # FALLS BACK to a merged or closed one, so the week after the first refresh was merged it
+          # would succeed, take the edit path, quietly retitle the merged PR, and never open a new
+          # one — the automation stopping after exactly one use, silently. Asking for open PRs only
+          # means a merged or closed predecessor correctly reads as "none", and a new PR is opened.
+          open_pr=$(gh pr list --head "$branch" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$open_pr" ]; then
+            gh pr edit "$open_pr" --title "$title" --body-file /tmp/pr-body.md
+            pr="$open_pr"
+          else
+            gh pr create --base "$BASE" --head "$branch" --title "$title" --body-file /tmp/pr-body.md
+            pr=$(gh pr list --head "$branch" --state open --json number --jq '.[0].number')
+          fi
+
+          if [ "$VERDICT" != clean ]; then
+            echo "::warning::Held for review, not merged. $WHY"
+            echo "held=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # A REFUSED MERGE FAILS THE JOB, and that is the change: the PR it leaves behind carries the
+          # ordinary title, so it looks exactly like the ones that merged themselves, sitting unmerged
+          # in a list nobody re-reads. A held PR announces itself (REVIEW NEEDED) and is a decision
+          # somebody made; this is the automation quietly not working, which is the case that needs
+          # the email. It used to exit 0 on the reasoning that branch protection requiring a review is
+          # the owner's call — but the job cannot tell that apart from a merge conflict or a revoked
+          # permission, and "the price sheet silently stopped updating" is the outcome either way.
+          if gh pr merge "$pr" --squash --delete-branch; then
+            echo "Merged #$pr. Vercel will redeploy from $BASE."
+          else
+            echo "::error::Depth and tests were clean but the merge was REFUSED. PR #$pr is open and ready to merge by hand."
+            exit 1
+          fi
+
+      # `continue-on-error` above keeps the job green by design, so the failure has to be re-raised
+      # here — after the PR exists. Without this step a red suite would open a held PR and report
+      # success, which is the exact shape of silence this whole change is about.
+      - name: Fail the job if the suite failed
+        if: steps.diff.outputs.changed == 'true' && steps.guard.outputs.passed != 'true'
+        run: |
+          echo "The test suite failed against the refreshed prices. The PR is open and held for review."
+          exit 1

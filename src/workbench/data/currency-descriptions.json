@@ -1,0 +1,730 @@
+{
+  "checkedAt": "2026-10-24",
+  "source": "PoE2DB game item popups",
+  "items": {
+    "Orb of Transmutation": {
+      "tw": {
+        "name": "蛻變石",
+        "properties": [
+          "可堆疊通貨"
+        ],
+        "effects": [
+          "將一件普通物品升級成帶有 1 條詞綴的魔法物品"
+        ],
+        "instructions": [
+          "右鍵點擊此物品，再左鍵點擊一件普通物品來使用。\n按住 Shift 點擊以分開堆疊"
+        ],
+        "source": "https://poe2db.tw/tw/Orb_of_Transmutation"
+      },
+      "en": {
+        "name": "Orb of Transmutation",
+        "properties": [
+          "Stackable Currency"
+        ],
+        "effects": [
+          "Upgrades a Normal item to a Magic item with 1 modifier"
+        ],
+        "instructions": [
+          "Right click this item then left click a normal item to apply it.\nShift click to unstack."
+        ],
+        "source": "https://poe2db.tw/us/Orb_of_Transmutation"
+      }
+    },
+    "Orb of Augmentation": {
+      "tw": {
+        "name": "增幅石",
+        "properties": [
+          "可堆疊通貨"
+        ],
+        "effects": [
+          "強化魔法物品，加入一個新的隨機詞綴"
+        ],
+        "instructions": [
+          "右鍵點擊此物品，再左鍵點擊一件魔法物品使用。魔法裝備最多可以擁有兩個屬性。\n按住 Shift 點擊以分開堆疊"
+        ],
+        "source": "https://poe2db.tw/tw/Orb_of_Augmentation"
+      },
+      "en": {
+        "name": "Orb of Augmentation",
+        "properties": [
+          "Stackable Currency"
+        ],
+        "effects": [
+          "Augments a Magic item with a new random modifier"
+        ],
+        "instructions": [
+          "Right click this item then left click a magic item to apply it. Magic items can have up to two random modifiers.\nShift click to unstack."
+        ],
+        "source": "https://poe2db.tw/us/Orb_of_Augmentation"
+      }
+    },
+    "Regal Orb": {
+      "tw": {
+        "name": "富豪石",
+        "properties": [
+          "可堆疊通貨"
+        ],
+        "effects": [
+          "將一件魔法物品升級成稀有物品，並新增 1 條詞綴"
+        ],
+        "instructions": [
+          "右鍵點擊此物品，再左鍵點擊一件魔法物品使用。此物品上原有的屬性會保留並額外再增加一個屬性。\n按住 Shift 點擊以分開堆疊"
+        ],
+        "source": "https://poe2db.tw/tw/Regal_Orb"
+      },
+      "en": {
+        "name": "Regal Orb",
+        "properties": [
+          "Stackable Currency"
+        ],
+        "effects": [
+          "Upgrades a Magic item to a Rare item, adding 1 modifier"
+        ],
+        "instructions": [
+          "Right click this item then left click a magic item to apply it. Current modifiers are retained and a new one is added.\nShift click to unstack."
+        ],
+        "source": "https://poe2db.tw/us/Regal_Orb"
+      }
+    },
+    "Exalted Orb": {
+      "tw": {
+        "name": "崇高石",
+        "properties": [
+          "可堆疊通貨"
+        ],
+        "effects": [
+          "為一件稀有物品新增一項隨機詞綴"
+        ],
+        "instructions": [
+          "右鍵點擊此物品，再左鍵點擊一件稀有物品來使用。稀有物品最多可以擁有六個屬性。\n按住 Shift 點擊以分開堆疊"
+        ],
+        "source": "https://poe2db.tw/tw/Exalted_Orb"
+      },
+      "en": {
+        "name": "Exalted Orb",
+        "properties": [
+          "Stackable Currency"
+        ],
+        "effects": [
+          "Augments a Rare item with a new random modifier"
+        ],
+        "instructions": [
+          "Right click this item then left click a rare item to apply it. Rare items can have up to six random modifiers.\nShift click to unstack."
+        ],
+        "source": "https://poe2db.tw/us/Exalted_Orb"
+      }
+    },
+    "Orb of Annulment": {
+      "tw": {
+        "name": "無效石",
+        "properties": [
+          "可堆疊通貨"
+        ],
+        "effects": [
+          "從物品中隨機移除一個屬性"
+        ],
+        "instructions": [
+          "右鍵點擊此物品，再左鍵點擊一件魔法或稀有物品來使用。\n按住 Shift 點擊以分開堆疊"
+        ],
+        "source": "https://poe2db.tw/tw/Orb_of_Annulment"
+      },
+      "en": {
+        "name": "Orb of Annulment",
+        "properties": [
+          "Stackable Currency"
+        ],
+        "effects": [
+          "Removes a random modifier from an item"
+        ],
+        "instructions": [
+          "Right click this item then left click on a magic or rare item to apply it.\nShift click to unstack."
+        ],
+        "source": "https://poe2db.tw/us/Orb_of_Annulment"
+      }
+    },
+    "Chaos Orb": {
+      "tw": {
+        "name": "混沌石",
+        "properties": [
+          "可堆疊通貨"
+        ],
+        "effects": [
+          "移除一條隨機詞綴，並為一件稀有物品新增一項隨機詞綴"
+        ],
+        "instructions": [
+          "右鍵點擊此物品，再左鍵點擊一件稀有物品來使用。\n按住 Shift 點擊以分開堆疊"
+        ],
+        "source": "https://poe2db.tw/tw/Chaos_Orb"
+      },
+      "en": {
+        "name": "Chaos Orb",
+        "properties": [
+          "Stackable Currency"
+        ],
+        "effects": [
+          "Removes a random modifier and augments a Rare item with a new random modifier"
+        ],
+        "instructions": [
+          "Right click this item then left click a rare item to apply it.\nShift click to unstack."
+        ],
+        "source": "https://poe2db.tw/us/Chaos_Orb"
+      }
+    },
+    "Orb of Alchemy": {
+      "tw": {
+        "name": "點金石",
+        "properties": [
+          "可堆疊通貨"
+        ],
+        "effects": [
+          "將一件普通或魔法物品升級成帶有 4 條隨機詞綴的稀有物品"
+        ],
+        "instructions": [
+          "右鍵點擊此物品，再左鍵點擊一件普通或魔法物品來使用。當前詞綴將不會保留。\n按住 Shift 點擊以分開堆疊"
+        ],
+        "source": "https://poe2db.tw/tw/Orb_of_Alchemy"
+      },
+      "en": {
+        "name": "Orb of Alchemy",
+        "properties": [
+          "Stackable Currency"
+        ],
+        "effects": [
+          "Upgrades a Normal or Magic item to a Rare item with 4 random modifiers"
+        ],
+        "instructions": [
+          "Right click this item then left click a normal or magic item to apply it. Current modifiers are not retained.\nShift click to unstack."
+        ],
+        "source": "https://poe2db.tw/us/Orb_of_Alchemy"
+      }
+    },
+    "Greater Orb of Transmutation": {
+      "tw": {
+        "name": "高階蛻變石",
+        "properties": [
+          "可堆疊通貨",
+          "最小詞綴等級: 44"
+        ],
+        "effects": [
+          "將一件普通物品升級成帶有 1 條詞綴的魔法物品"
+        ],
+        "instructions": [
+          "右鍵點擊此物品，再左鍵點擊一件普通物品來使用。\n按住 Shift 點擊以分開堆疊"
+        ],
+        "source": "https://poe2db.tw/tw/Greater_Orb_of_Transmutation"
+      },
+      "en": {
+        "name": "Greater Orb of Transmutation",
+        "properties": [
+          "Stackable Currency",
+          "Minimum Modifier Level: 44"
+        ],
+        "effects": [
+          "Upgrades a Normal item to a Magic item with 1 modifier"
+        ],
+        "instructions": [
+          "Right click this item then left click a normal item to apply it.\nShift click to unstack."
+        ],
+        "source": "https://poe2db.tw/us/Greater_Orb_of_Transmutation"
+      }
+    },
+    "Perfect Orb of Transmutation": {
+      "tw": {
+        "name": "完美蛻變石",
+        "properties": [
+          "可堆疊通貨",
+          "最小詞綴等級: 70"
+        ],
+        "effects": [
+          "將一件普通物品升級成帶有 1 條詞綴的魔法物品"
+        ],
+        "instructions": [
+          "右鍵點擊此物品，再左鍵點擊一件普通物品來使用。\n按住 Shift 點擊以分開堆疊"
+        ],
+        "source": "https://poe2db.tw/tw/Perfect_Orb_of_Transmutation"
+      },
+      "en": {
+        "name": "Perfect Orb of Transmutation",
+        "properties": [
+          "Stackable Currency",
+          "Minimum Modifier Level: 70"
+        ],
+        "effects": [
+          "Upgrades a Normal item to a Magic item with 1 modifier"
+        ],
+        "instructions": [
+          "Right click this item then left click a normal item to apply it.\nShift click to unstack."
+        ],
+        "source": "https://poe2db.tw/us/Perfect_Orb_of_Transmutation"
+      }
+    },
+    "Greater Orb of Augmentation": {
+      "tw": {
+        "name": "高階增幅石",
+        "properties": [
+          "可堆疊通貨",
+          "最小詞綴等級: 44"
+        ],
+        "effects": [
+          "強化魔法物品，加入一個新的隨機詞綴"
+        ],
+        "instructions": [
+          "右鍵點擊此物品，再左鍵點擊一件魔法物品使用。魔法裝備最多可以擁有兩個屬性。\n按住 Shift 點擊以分開堆疊"
+        ],
+        "source": "https://poe2db.tw/tw/Greater_Orb_of_Augmentation"
+      },
+      "en": {
+        "name": "Greater Orb of Augmentation",
+        "properties": [
+          "Stackable Currency",
+          "Minimum Modifier Level: 44"
+        ],
+        "effects": [
+          "Augments a Magic item with a new random modifier"
+        ],
+        "instructions": [
+          "Right click this item then left click a magic item to apply it. Magic items can have up to two random modifiers.\nShift click to unstack."
+        ],
+        "source": "https://poe2db.tw/us/Greater_Orb_of_Augmentation"
+      }
+    },
+    "Perfect Orb of Augmentation": {
+      "tw": {
+        "name": "完美增幅石",
+        "properties": [
+          "可堆疊通貨",
+          "最小詞綴等級: 70"
+        ],
+        "effects": [
+          "強化魔法物品，加入一個新的隨機詞綴"
+        ],
+        "instructions": [
+          "右鍵點擊此物品，再左鍵點擊一件魔法物品使用。魔法裝備最多可以擁有兩個屬性。\n按住 Shift 點擊以分開堆疊"
+        ],
+        "source": "https://poe2db.tw/tw/Perfect_Orb_of_Augmentation"
+      },
+      "en": {
+        "name": "Perfect Orb of Augmentation",
+        "properties": [
+          "Stackable Currency",
+          "Minimum Modifier Level: 70"
+        ],
+        "effects": [
+          "Augments a Magic item with a new random modifier"
+        ],
+        "instructions": [
+          "Right click this item then left click a magic item to apply it. Magic items can have up to two random modifiers.\nShift click to unstack."
+        ],
+        "source": "https://poe2db.tw/us/Perfect_Orb_of_Augmentation"
+      }
+    },
+    "Greater Regal Orb": {
+      "tw": {
+        "name": "高階富豪石",
+        "properties": [
+          "可堆疊通貨",
+          "最小詞綴等級: 35"
+        ],
+        "effects": [
+          "將一件魔法物品升級成稀有物品，並新增 1 條詞綴"
+        ],
+        "instructions": [
+          "右鍵點擊此物品，再左鍵點擊一件魔法物品使用。此物品上原有的屬性會保留並額外再增加一個屬性。\n按住 Shift 點擊以分開堆疊"
+        ],
+        "source": "https://poe2db.tw/tw/Greater_Regal_Orb"
+      },
+      "en": {
+        "name": "Greater Regal Orb",
+        "properties": [
+          "Stackable Currency",
+          "Minimum Modifier Level: 35"
+        ],
+        "effects": [
+          "Upgrades a Magic item to a Rare item, adding 1 modifier"
+        ],
+        "instructions": [
+          "Right click this item then left click a magic item to apply it. Current modifiers are retained and a new one is added.\nShift click to unstack."
+        ],
+        "source": "https://poe2db.tw/us/Greater_Regal_Orb"
+      }
+    },
+    "Perfect Regal Orb": {
+      "tw": {
+        "name": "完美富豪石",
+        "properties": [
+          "可堆疊通貨",
+          "最小詞綴等級: 50"
+        ],
+        "effects": [
+          "將一件魔法物品升級成稀有物品，並新增 1 條詞綴"
+        ],
+        "instructions": [
+          "右鍵點擊此物品，再左鍵點擊一件魔法物品使用。此物品上原有的屬性會保留並額外再增加一個屬性。\n按住 Shift 點擊以分開堆疊"
+        ],
+        "source": "https://poe2db.tw/tw/Perfect_Regal_Orb"
+      },
+      "en": {
+        "name": "Perfect Regal Orb",
+        "properties": [
+          "Stackable Currency",
+          "Minimum Modifier Level: 50"
+        ],
+        "effects": [
+          "Upgrades a Magic item to a Rare item, adding 1 modifier"
+        ],
+        "instructions": [
+          "Right click this item then left click a magic item to apply it. Current modifiers are retained and a new one is added.\nShift click to unstack."
+        ],
+        "source": "https://poe2db.tw/us/Perfect_Regal_Orb"
+      }
+    },
+    "Greater Exalted Orb": {
+      "tw": {
+        "name": "高階崇高石",
+        "properties": [
+          "可堆疊通貨",
+          "最小詞綴等級: 35"
+        ],
+        "effects": [
+          "為一件稀有物品新增一項隨機詞綴"
+        ],
+        "instructions": [
+          "右鍵點擊此物品，再左鍵點擊一件稀有物品來使用。稀有物品最多可以擁有六個屬性。\n按住 Shift 點擊以分開堆疊"
+        ],
+        "source": "https://poe2db.tw/tw/Greater_Exalted_Orb"
+      },
+      "en": {
+        "name": "Greater Exalted Orb",
+        "properties": [
+          "Stackable Currency",
+          "Minimum Modifier Level: 35"
+        ],
+        "effects": [
+          "Augments a Rare item with a new random modifier"
+        ],
+        "instructions": [
+          "Right click this item then left click a rare item to apply it. Rare items can have up to six random modifiers.\nShift click to unstack."
+        ],
+        "source": "https://poe2db.tw/us/Greater_Exalted_Orb"
+      }
+    },
+    "Perfect Exalted Orb": {
+      "tw": {
+        "name": "完美崇高石",
+        "properties": [
+          "可堆疊通貨",
+          "最小詞綴等級: 50"
+        ],
+        "effects": [
+          "為一件稀有物品新增一項隨機詞綴"
+        ],
+        "instructions": [
+          "右鍵點擊此物品，再左鍵點擊一件稀有物品來使用。稀有物品最多可以擁有六個屬性。\n按住 Shift 點擊以分開堆疊"
+        ],
+        "source": "https://poe2db.tw/tw/Perfect_Exalted_Orb"
+      },
+      "en": {
+        "name": "Perfect Exalted Orb",
+        "properties": [
+          "Stackable Currency",
+          "Minimum Modifier Level: 50"
+        ],
+        "effects": [
+          "Augments a Rare item with a new random modifier"
+        ],
+        "instructions": [
+          "Right click this item then left click a rare item to apply it. Rare items can have up to six random modifiers.\nShift click to unstack."
+        ],
+        "source": "https://poe2db.tw/us/Perfect_Exalted_Orb"
+      }
+    },
+    "Greater Chaos Orb": {
+      "tw": {
+        "name": "高階混沌石",
+        "properties": [
+          "可堆疊通貨",
+          "最小詞綴等級: 35"
+        ],
+        "effects": [
+          "移除一條隨機詞綴，並為一件稀有物品新增一項隨機詞綴"
+        ],
+        "instructions": [
+          "右鍵點擊此物品，再左鍵點擊一件稀有物品來使用。\n按住 Shift 點擊以分開堆疊"
+        ],
+        "source": "https://poe2db.tw/tw/Greater_Chaos_Orb"
+      },
+      "en": {
+        "name": "Greater Chaos Orb",
+        "properties": [
+          "Stackable Currency",
+          "Minimum Modifier Level: 35"
+        ],
+        "effects": [
+          "Removes a random modifier and augments a Rare item with a new random modifier"
+        ],
+        "instructions": [
+          "Right click this item then left click a rare item to apply it.\nShift click to unstack."
+        ],
+        "source": "https://poe2db.tw/us/Greater_Chaos_Orb"
+      }
+    },
+    "Perfect Chaos Orb": {
+      "tw": {
+        "name": "完美混沌石",
+        "properties": [
+          "可堆疊通貨",
+          "最小詞綴等級: 50"
+        ],
+        "effects": [
+          "移除一條隨機詞綴，並為一件稀有物品新增一項隨機詞綴"
+        ],
+        "instructions": [
+          "右鍵點擊此物品，再左鍵點擊一件稀有物品來使用。\n按住 Shift 點擊以分開堆疊"
+        ],
+        "source": "https://poe2db.tw/tw/Perfect_Chaos_Orb"
+      },
+      "en": {
+        "name": "Perfect Chaos Orb",
+        "properties": [
+          "Stackable Currency",
+          "Minimum Modifier Level: 50"
+        ],
+        "effects": [
+          "Removes a random modifier and augments a Rare item with a new random modifier"
+        ],
+        "instructions": [
+          "Right click this item then left click a rare item to apply it.\nShift click to unstack."
+        ],
+        "source": "https://poe2db.tw/us/Perfect_Chaos_Orb"
+      }
+    },
+    "Divine Orb": {
+      "tw": {
+        "name": "神聖石",
+        "properties": [
+          "可堆疊通貨"
+        ],
+        "effects": [
+          "重置一件物品上詞綴的數值"
+        ],
+        "instructions": [
+          "右鍵點擊此物品，再左鍵點擊一件物品來使用。\n按住 Shift 點擊以分開堆疊"
+        ],
+        "source": "https://poe2db.tw/tw/Divine_Orb"
+      },
+      "en": {
+        "name": "Divine Orb",
+        "properties": [
+          "Stackable Currency"
+        ],
+        "effects": [
+          "Randomises the numeric values of modifiers on an item"
+        ],
+        "instructions": [
+          "Right click this item then left click an item to apply it.\nShift click to unstack."
+        ],
+        "source": "https://poe2db.tw/us/Divine_Orb"
+      }
+    },
+    "Fracturing Orb": {
+      "tw": {
+        "name": "破裂石",
+        "properties": [
+          "可堆疊通貨"
+        ],
+        "effects": [
+          "破裂至少有四個詞綴稀有物品上的一條隨機詞綴，並將它鎖定位置。"
+        ],
+        "instructions": [
+          "右鍵點擊此物品，再左鍵點擊稀有物品來使用。不能使用在破裂之物。\n按住 Shift 點擊以分開堆疊"
+        ],
+        "source": "https://poe2db.tw/tw/Fracturing_Orb"
+      },
+      "en": {
+        "name": "Fracturing Orb",
+        "properties": [
+          "Stackable Currency"
+        ],
+        "effects": [
+          "Fracture a random modifier on a rare item with at least 4 modifiers, locking it in place."
+        ],
+        "instructions": [
+          "Right click this item then left click a rare item to apply it. Cannot be used on Fractured items.\nShift click to unstack."
+        ],
+        "source": "https://poe2db.tw/us/Fracturing_Orb"
+      }
+    },
+    "Essence of the Breach": {
+      "tw": {
+        "name": "裂痕精髓",
+        "properties": [
+          "可堆疊通貨"
+        ],
+        "effects": [
+          "移除一條隨機詞綴，且必定為一件稀有物品新增一條詞綴",
+          "飾品: +20%最大品質"
+        ],
+        "instructions": [
+          "右鍵點擊此物品，再左鍵點擊一件稀有物品來使用。\n按住 Shift 點擊以分開堆疊"
+        ],
+        "source": "https://poe2db.tw/tw/Essence_of_the_Breach"
+      },
+      "en": {
+        "name": "Essence of the Breach",
+        "properties": [
+          "Stackable Currency"
+        ],
+        "effects": [
+          "Removes a random modifier and augments a Rare item with a new guaranteed modifier",
+          "Jewellery: +20% to Maximum Quality"
+        ],
+        "instructions": [
+          "Right click this item then left click a Rare item to apply it.\nShift click to unstack."
+        ],
+        "source": "https://poe2db.tw/us/Essence_of_the_Breach"
+      }
+    },
+    "Xoph's Catalyst": {
+      "tw": {
+        "name": "索伏的催化劑",
+        "properties": [
+          "可堆疊通貨"
+        ],
+        "effects": [
+          "附加品質以增強戒指或項鍊上的火焰詞綴\n取代其他品質類型"
+        ],
+        "instructions": [
+          "右鍵點擊此物品，再左鍵點擊一個戒指或項鍊來使用。\n按住 Shift 點擊以分開堆疊"
+        ],
+        "source": "https://poe2db.tw/tw/Xophs_Catalyst"
+      },
+      "en": {
+        "name": "Xoph's Catalyst",
+        "properties": [
+          "Stackable Currency"
+        ],
+        "effects": [
+          "Adds quality that enhances Fire modifiers on a ring or amulet\nReplaces other quality types"
+        ],
+        "instructions": [
+          "Right click this item then left click a ring or amulet to apply it.\nShift click to unstack."
+        ],
+        "source": "https://poe2db.tw/us/Xophs_Catalyst"
+      }
+    },
+    "Omen of Whittling": {
+      "tw": {
+        "name": "削切之兆",
+        "properties": [
+          "預兆"
+        ],
+        "effects": [
+          "此物品在你的背包裡啟動時，你的下一個\n混沌石會移除最低等級的詞綴"
+        ],
+        "instructions": [
+          "在你的背包內右鍵點擊此物品以將其啟動。此物品會在觸發時被消耗。\n按住 Shift 點擊以分開堆疊"
+        ],
+        "source": "https://poe2db.tw/tw/Omen_of_Whittling"
+      },
+      "en": {
+        "name": "Omen of Whittling",
+        "properties": [
+          "Omen"
+        ],
+        "effects": [
+          "While this item is active in your inventory your next\nChaos Orb will remove the lowest level modifier"
+        ],
+        "instructions": [
+          "Right click this item in your inventory to set it to be active. This item is consumed when triggered.\nShift click to unstack."
+        ],
+        "source": "https://poe2db.tw/us/Omen_of_Whittling"
+      }
+    },
+    "Omen of Sinistral Necromancy": {
+      "tw": {
+        "name": "左旋死靈術之兆",
+        "properties": [
+          "預兆"
+        ],
+        "effects": [
+          "此物品在你的背包中生效時，你的下一次\n褻瀆只會賦予前綴"
+        ],
+        "instructions": [
+          "在你的背包內右鍵點擊此物品以將其啟動。此物品會在觸發時被消耗。\n按住 Shift 點擊以分開堆疊"
+        ],
+        "source": "https://poe2db.tw/tw/Omen_of_Sinistral_Necromancy"
+      },
+      "en": {
+        "name": "Omen of Sinistral Necromancy",
+        "properties": [
+          "Omen"
+        ],
+        "effects": [
+          "While this item is active in your inventory your next\nDesecration attempt will add only prefix modifiers"
+        ],
+        "instructions": [
+          "Right click this item in your inventory to set it to be active. This item is consumed when triggered.\nShift click to unstack."
+        ],
+        "source": "https://poe2db.tw/us/Omen_of_Sinistral_Necromancy"
+      }
+    },
+    "Ancient Collarbone": {
+      "tw": {
+        "name": "古老的鎖骨",
+        "properties": [
+          "可堆疊通貨",
+          "最小詞綴等級: 40"
+        ],
+        "effects": [
+          "褻瀆一件稀有項鍊、戒指或腰帶"
+        ],
+        "instructions": [
+          "右鍵點擊此物品，再左鍵點擊一件稀有物品來使用。\n按住 Shift 點擊以分開堆疊"
+        ],
+        "source": "https://poe2db.tw/tw/Ancient_Collarbone"
+      },
+      "en": {
+        "name": "Ancient Collarbone",
+        "properties": [
+          "Stackable Currency",
+          "Minimum Modifier Level: 40"
+        ],
+        "effects": [
+          "Desecrates a Rare Amulet, Ring or Belt"
+        ],
+        "instructions": [
+          "Right click this item then left click a Rare item to apply it.\nShift click to unstack."
+        ],
+        "source": "https://poe2db.tw/us/Ancient_Collarbone"
+      }
+    },
+    "Preserved Collarbone": {
+      "tw": {
+        "name": "保存良好的鎖骨",
+        "properties": [
+          "可堆疊通貨"
+        ],
+        "effects": [
+          "褻瀆一件稀有項鍊、戒指或腰帶"
+        ],
+        "instructions": [
+          "右鍵點擊此物品，再左鍵點擊一件稀有物品來使用。\n按住 Shift 點擊以分開堆疊"
+        ],
+        "source": "https://poe2db.tw/tw/Preserved_Collarbone"
+      },
+      "en": {
+        "name": "Preserved Collarbone",
+        "properties": [
+          "Stackable Currency"
+        ],
+        "effects": [
+          "Desecrates a Rare Amulet, Ring or Belt"
+        ],
+        "instructions": [
+          "Right click this item then left click a Rare item to apply it.\nShift click to unstack."
+        ],
+        "source": "https://poe2db.tw/us/Preserved_Collarbone"
+      }
+    }
+  }
+}

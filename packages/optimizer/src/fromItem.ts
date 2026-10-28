@@ -1,0 +1,409 @@
+// From-existing-item planner (Option 2). Transform an item you ALREADY hold into a target. The key
+// difference from the from-white optimizer is the COST MODEL: `planExpectedCost` restarts to the
+// STARTING item on a miss — you keep the good mods you began with (or reproduce that start), rather than
+// binning it back to a blank base — so the plan never "throws away" the part you already have. It reaches
+// EXACTLY the target: every current mod not in the target is junk to remove, every target mod not present
+// must be added. Removal is a random Annulment (or the remove-half of a Chaos); adds are Exalts (into an
+// open slot), the add-half of a Chaos, a Desecration (a desecrated mod, via its boss omen), or a Perfect
+// Essence (which removes one random mod as it adds — a junk mod, or a THROWAWAY rolled right before it
+// for exactly that). A MAGIC start is handled by opening with a Regal
+// Orb, which converts to Rare while adding one mod — without that, the commonest starting point in the
+// game (a magic base you are part-way through) had no planner at all. Everything runs at base orb
+// strength; tier targets are honoured and per-exalt /
+// per-perfect-essence side omens are explored.
+
+import type { AffixType, ItemBase, ItemState, PatchData } from '../../engine/src/types.ts';
+import type { PlanStep } from '../../engine/src/plan.ts';
+import { evaluatePlanFrom } from '../../engine/src/plan.ts';
+import { resolveMod } from '../../engine/src/pool.ts';
+import { bossOmenAllowed, desecrationOmenForMod, isEssenceMod } from '../../engine/src/probability.ts';
+import { limitsOf } from '../../engine/src/item.ts';
+import type { Prices } from './cost.ts';
+import { planExpectedCost, pricesForBase } from './cost.ts';
+import { combinations, permutations } from './combinatorics.ts';
+import type { Spare } from './slots.ts';
+import { NO_SPARE, expandSlots, itemLegalCombinations } from './slots.ts';
+import type { OptimizeParetoOptions, ParetoPlan, ParetoResult, TierTarget } from './optimize.ts';
+import { mergeParetoRuns, paretoFrontier } from './optimize.ts';
+import { searchSkeletons } from './leverDp.ts';
+import { withGreaterExaltations } from './doubleExalt.ts';
+
+/**
+ * Target validation for the from-item planner: 1–6 mods, ≤3/side. A target mod is one the planner can
+ * realise: a rollable (normal-pool) mod, a perfect-essence mod (added by a Perfect Essence, which removes
+ * one random mod), or a desecrated mod — either KEPT (already on the item) or CRAFTED by a Desecration
+ * with the boss omen matching its tag (so it must carry a boss tag).
+ */
+function validateFromItemTarget(
+  data: PatchData, base: ItemBase, targetIds: readonly string[], present: ReadonlySet<string>,
+): void {
+  if (targetIds.length === 0) throw new Error('no target mods');
+  if (targetIds.length > 6) throw new Error(`target has ${targetIds.length} mods (max 6)`);
+  let pre = 0;
+  let suf = 0;
+  let desecratedCount = 0;
+  let essenceCount = 0;
+  const norm = base.pools.normal;
+  const ess = base.pools.essence;
+  const des = base.pools.desecrated;
+  for (const id of targetIds) {
+    const mod = resolveMod(data, id);
+    const rollable = mod.source === 'normal' && (norm.prefixes.includes(id) || norm.suffixes.includes(id));
+    const perfect = mod.source === 'perfect_essence' && (ess.prefixes.includes(id) || ess.suffixes.includes(id));
+    // A desecrated target is craftable (Desecration + its boss omen, P = 1/N over that boss's slot pool)
+    // when it's in the base's desecrated pool and carries a boss tag; it's also legal simply KEPT if
+    // already present. A desecrated mod with no boss tag can't be targeted (nothing selects it).
+    const inDes = des.prefixes.includes(id) || des.suffixes.includes(id);
+    const desecrated = mod.source === 'desecrated' && (present.has(id) || (inDes && desecrationOmenForMod(mod) !== undefined));
+    if (!rollable && !perfect && !desecrated) {
+      // An essence-only mod is the common trip-up: a regular essence needs a MAGIC item, but the from-item
+      // planner starts from a Rare (which is exactly what a fractured base is), so it can never apply one.
+      const why = mod.source === 'essence'
+        ? 'a regular essence needs a Magic item, so an essence-only mod can’t go on an item you already hold '
+          + '(a fractured base is a Rare) — craft it from a white base instead, or drop the fractured mod'
+        : mod.source === 'desecrated'
+        ? 'this desecrated mod has no boss omen that targets it'
+        : 'the from-item planner supports rollable mods, perfect essences, and desecrated mods';
+      throw new Error(`mod ${id} can’t be put on ${base.id} (${why})`);
+    }
+    if (mod.source === 'desecrated') desecratedCount++;
+    if (isEssenceMod(mod)) essenceCount++;
+    if (mod.type === 'prefix') pre++;
+    else suf++;
+  }
+  const limits = limitsOf(base);
+  if (pre > limits.prefixes) throw new Error(`target has ${pre} prefixes (max ${limits.prefixes})`);
+  if (suf > limits.suffixes) throw new Error(`target has ${suf} suffixes (max ${limits.suffixes})`);
+  // The Desecration mechanic places a single carved mod — an item can hold at most one desecrated mod.
+  if (desecratedCount > 1) throw new Error('an item can hold at most one desecrated mod');
+  // …and at most ONE CRAFTED modifier — Essence, Perfect Essence and Alloy counted together (see
+  // `isEssenceMod`) — unless a socketed Astrid's Creativity raised `limits.crafted`. This planner used
+  // to build one `perfect-essence` step per perfect target, so a two-crafted target produced a plan for
+  // an item the game could not hold.
+  if (essenceCount > limits.crafted) {
+    throw new Error(limits.crafted === 1
+      ? 'an item can hold at most one crafted modifier (Essence, Perfect Essence or Alloy) — pick one, '
+        + 'or socket Astrid’s Creativity for a second'
+      : `an item can hold at most ${limits.crafted} crafted modifiers (Essence, Perfect Essence or Alloy)`);
+  }
+}
+
+/**
+ * Base transform ops (Chaos/Annul/Exalt) for rollable junk↔missing, NOT yet order-permuted: for each
+ * count `c` of Chaos swaps (0…min), pick which junk/missing pair up (and their bijection), Annul the
+ * leftover junk, Exalt the leftover missing.
+ */
+function baseTransforms(
+  junk: readonly string[], missing: readonly string[], tierOf: Map<string, number>,
+): PlanStep[][] {
+  const out: PlanStep[][] = [];
+  const maxC = Math.min(junk.length, missing.length);
+  for (let c = 0; c <= maxC; c++) {
+    for (const jc of combinations(junk, c)) {
+      const restJunk = junk.filter((x) => !jc.includes(x));
+      for (const mc of combinations(missing, c)) {
+        const restMissing = missing.filter((x) => !mc.includes(x));
+        for (const mPerm of permutations(mc)) { // bijection: jc[i] ↔ mPerm[i]
+          const ops: PlanStep[] = [];
+          for (let i = 0; i < c; i++) {
+            ops.push({ currency: 'chaos', remove: jc[i]!, add: mPerm[i]!, minTierIndex: tierOf.get(mPerm[i]!) ?? 0 });
+          }
+          for (const j of restJunk) ops.push({ currency: 'annul', remove: j });
+          for (const y of restMissing) ops.push({ currency: 'exalt', add: y, minTierIndex: tierOf.get(y) ?? 0 });
+          out.push(ops);
+        }
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Build the transform op-sequences from junk + missing (split into rollable, perfect-essence, and
+ * desecrated mods), enumerating every ORDER. A PERFECT-ESSENCE target can only be added by a Perfect
+ * Essence, which removes one uniformly-random mod as it adds — so each perfect target is paired with a
+ * victim for it to eat: a distinct junk mod, or a THROWAWAY rolled for it (see `victimChoices`); its
+ * step scores the odds the random removal hits that victim. A DESECRATED
+ * target is added by a Desecration with the boss omen matching its tag (P = 1/N over that boss's slot
+ * pool); it needs an open slot but removes nothing, so it's a standalone add like an exalt. The remaining
+ * junk + rollable-missing go through the ordinary Chaos/Annul/Exalt transforms. Illegal orders (e.g. an
+ * add onto a full side) score 0 and drop.
+ */
+function transformSequences(
+  data: PatchData, junk: readonly string[], missingRollable: readonly string[], missingPerfect: readonly string[],
+  missingDesecrated: readonly string[], tierOf: Map<string, number>,
+  /** False on armour, where a Desecration can't be boss-targeted at all — see `bossOmenAllowed`. */
+  bossOk: boolean,
+): PlanStep[][] {
+  const out: PlanStep[][] = [];
+  // Each desecrated target is a Desecration constrained to its boss — except on armour, where the
+  // boss omens don't apply and the draw spans the base's whole desecrated pool instead.
+  const desecrateOps: PlanStep[] = missingDesecrated.map((add): PlanStep => {
+    const omen = bossOk ? desecrationOmenForMod(resolveMod(data, add)) : undefined;
+    return omen ? { currency: 'desecrate', add, boss: omen } : { currency: 'desecrate', add };
+  });
+  // Each perfect target consumes one victim, eaten by its essence. A throwaway and the essence that
+  // eats it travel as ONE unit through the orderings, because a throwaway lives exactly one step
+  // (`Throwaway`, types.ts); every other op is a unit of one, so with no perfect target this permutes
+  // exactly the list it always did.
+  for (const victims of victimChoices(junk, missingPerfect.length)) {
+    const perfectUnits: PlanStep[][] = missingPerfect.map((add, i): PlanStep[] => {
+      const victim = victims[i]!;
+      if (typeof victim === 'string') return [{ currency: 'perfect-essence', add, remove: victim }];
+      const throwaway = { id: `throwaway:${i}`, side: victim.side };
+      return [
+        { currency: 'throwaway', orb: 'exalt', throwaway },
+        { currency: 'perfect-essence', add, remove: throwaway.id },
+      ];
+    });
+    const restJunk = junk.filter((j) => !victims.includes(j));
+    for (const baseOps of baseTransforms(restJunk, missingRollable, tierOf)) {
+      const units = [...perfectUnits, ...desecrateOps.map((op) => [op]), ...baseOps.map((op) => [op])];
+      for (const order of permutations(units)) out.push(order.flat());
+    }
+  }
+  return out;
+}
+
+/** What a Perfect Essence eats: a junk mod already on the item, or a throwaway rolled onto a side. */
+type Victim = string | { readonly side: AffixType };
+
+/**
+ * Every way to give `n` Perfect Essences something to eat, in order.
+ *
+ * A junk mod feeds at most one of them — it is gone once eaten — while a throwaway can be rolled for
+ * any number, one per essence, on either side (the side decides the removal odds, so both are offered
+ * and the search picks). Junk choices come first at every position, so the junk-only assignments this
+ * planner always made lead the list.
+ *
+ * The throwaway is what lets a craft with MORE essences than junk be planned at all: it used to throw
+ * here, and a player whose Magic Sceptre held only the mods they wanted could get no route for its two
+ * Alloys.
+ */
+function victimChoices(junk: readonly string[], n: number): Victim[][] {
+  if (n === 0) return [[]];
+  const out: Victim[][] = [];
+  for (const head of [...junk, ...(['prefix', 'suffix'] as const).map((side) => ({ side }))]) {
+    const rest = typeof head === 'string' ? junk.filter((j) => j !== head) : junk;
+    for (const tail of victimChoices(rest, n - 1)) out.push([head, ...tail]);
+  }
+  return out;
+}
+
+/**
+ * Mods on `start` that `targetIds` does not want and a currency could remove, kept side by side.
+ *
+ * Fractured ("carved") mods are locked — never removed, so never junk. They stay on the item (kept
+ * whether or not they're in the target) and keep occupying their slot + family for the engine's math.
+ * A mod a FREE SLOT lets you leave behind ends up in exactly that position, which is why `keepSets`
+ * and the planner both read this one definition rather than each deciding what junk is.
+ */
+function removableJunk(start: ItemState, targetIds: readonly string[]): { prefixes: string[]; suffixes: string[] } {
+  const wanted = new Set(targetIds);
+  const loose = (placed: ItemState['prefixes']): string[] =>
+    placed.filter((m) => !wanted.has(m.modId) && !m.fractured).map((m) => m.modId);
+  return { prefixes: loose(start.prefixes), suffixes: loose(start.suffixes) };
+}
+
+/**
+ * Which junk a free slot lets a plan leave on the item — one set per way of choosing.
+ *
+ * Always includes the EMPTY set, and at `NO_SPARE` that is the only one, so a craft without free slots
+ * runs exactly the single search it always did and returns exactly the frontier it always did.
+ *
+ * Every subset up to the allowance, rather than "keep as many as you can", because keeping is not
+ * strictly better: a junk mod is also a Chaos-swap partner (`baseTransforms` pairs junk with missing),
+ * so leaving it can cost more than annulling it — which way round depends on the price sheet. Both are
+ * run and dominance decides, which is the same answer this planner gives every other either/or. The
+ * count is bounded by the item rather than by a cap: at most 2^3 per side, and in practice two or four,
+ * since a free slot can only exist where the side had room to spare.
+ *
+ * Every set is runnable. Keeping junk used to strand a Perfect Essence that needed it to eat, so such
+ * sets were filtered out; a throwaway rolled for the essence (`victimChoices`) now feeds it instead.
+ */
+function keepSets(start: ItemState, targetIds: readonly string[], spare: Spare): ReadonlySet<string>[] {
+  if (spare.prefixes === 0 && spare.suffixes === 0) return [new Set()];
+  const junk = removableJunk(start, targetIds);
+  const upTo = (ids: readonly string[], n: number): string[][] => {
+    const out: string[][] = [];
+    for (let k = 0; k <= Math.min(n, ids.length); k++) out.push(...combinations(ids, k));
+    return out;
+  };
+  const sets: ReadonlySet<string>[] = [];
+  for (const p of upTo(junk.prefixes, spare.prefixes)) {
+    for (const s of upTo(junk.suffixes, spare.suffixes)) sets.push(new Set([...p, ...s]));
+  }
+  return sets;
+}
+
+/**
+ * Compute the (expected cost ↔ success probability) Pareto frontier for transforming `start` (an item
+ * you already hold) into `targets`. See the file header for the model. Throws if `start` isn't Rare
+ * or the target shape is illegal. When the item already IS the target, returns a single empty plan.
+ */
+export function optimizeFromItem(
+  data: PatchData, rawPrices: Prices, start: ItemState, targets: readonly TierTarget[], opts: OptimizeParetoOptions = {},
+): ParetoResult {
+  // One concrete craft per slot combination, frontiers merged — see optimizePareto for why a route
+  // must commit to a member. From an item this also does something the from-white case cannot: a
+  // combination naming the alternative you ALREADY hold is scored against that item and is usually
+  // close to free, so the merged frontier surfaces "keep what you have" without being told to.
+  const combos = itemLegalCombinations(expandSlots(targets),
+    (id) => resolveMod(data, id).source === 'desecrated');
+  /*
+   * …and a second thing a fixed sequence has to commit to, once the target has a free slot: whether to
+   * annul a junk mod the player said they don't care about, or leave it where it is.
+   *
+   * Which junk is even eligible depends on the slot combination — a mod is junk only relative to what
+   * that combination asks for — so the keep-sets are built per combination and the two dimensions are
+   * crossed rather than nested. `mergeParetoRuns` then runs each and re-filters the union, exactly as
+   * it does for slots alone; at `NO_SPARE` every combination yields the single empty keep-set and this
+   * reduces to the list it built before.
+   */
+  const spare = opts.spare ?? NO_SPARE;
+  const runs = combos.flatMap((t) =>
+    keepSets(start, t.map((x) => x.modId), spare).map((keep) => ({ targets: t, keep })));
+  const one = (
+    r: { targets: readonly TierTarget[]; keep: ReadonlySet<string> },
+    onProgress?: (d: number, n: number) => void,
+  ): ParetoResult =>
+    fromItemForOneCraft(data, rawPrices, start, r.targets, { ...opts, ...(onProgress ? { onProgress } : {}) }, r.keep);
+  if (runs.length > 1) return mergeParetoRuns(runs, one, opts.onProgress);
+  return one(runs[0] ?? { targets, keep: new Set() });
+}
+
+function fromItemForOneCraft(
+  data: PatchData, rawPrices: Prices, start: ItemState, targets: readonly TierTarget[], opts: OptimizeParetoOptions,
+  /** Junk a free slot lets this plan leave on the item — see `keepSets`. Empty is the old behaviour. */
+  keep: ReadonlySet<string> = new Set(),
+): ParetoResult {
+  const policy = opts.policy;
+  const prices = pricesForBase(rawPrices, start.base);
+  if (start.rarity === 'normal') {
+    throw new Error('a white base has no mods to transform — plan it from the Lab instead');
+  }
+  const targetIds = targets.map((t) => t.modId);
+  const current = [...start.prefixes, ...start.suffixes].map((p) => p.modId);
+  const currentSet = new Set(current);
+  validateFromItemTarget(data, start.base, targetIds, currentSet);
+  const tierOf = new Map(targets.map((t) => [t.modId, t.minTierIndex ?? 0]));
+  // Junk is what the target doesn't want and a currency could take off. A mod in `keep` is one the
+  // player's free slot allows to stay, so it drops out of this list and is thereafter indistinguishable
+  // from a fractured mod: still on the item, still occupying its slot and family for the engine's math,
+  // simply never removed. Prefixes before suffixes, which is the order the plan enumeration has always
+  // seen and the reason an empty `keep` reproduces it exactly.
+  const loose = removableJunk(start, targetIds);
+  const junk = [...loose.prefixes, ...loose.suffixes].filter((id) => !keep.has(id));
+  const missing = targetIds.filter((id) => !currentSet.has(id)); // wanted but not yet present → add
+  // A perfect essence adds its guaranteed mod while removing one random mod, so a perfect target can
+  // only be placed by sacrificing something: a junk mod, or a throwaway rolled for it. A desecrated
+  // target is added by a Desecration (boss omen) into an open slot — it removes nothing. Everything
+  // else is a rolled (normal) add.
+  const missingPerfect = missing.filter((id) => resolveMod(data, id).source === 'perfect_essence');
+  const missingDesecrated = missing.filter((id) => resolveMod(data, id).source === 'desecrated');
+  const missingRollable = missing.filter((id) => {
+    const s = resolveMod(data, id).source;
+    return s !== 'perfect_essence' && s !== 'desecrated';
+  });
+  if (junk.length === 0 && missing.length === 0) {
+    const result = evaluatePlanFrom(data, start, []); // already the target — nothing to do
+    return {
+      frontier: [{ steps: [], result, cost: planExpectedCost(prices, result, []), probability: 1 }],
+      plansEvaluated: 1,
+    };
+  }
+
+  // A MAGIC item is partway up the add chain, and this enumerates the ways to continue it.
+  //
+  // A Regal converts to Rare *and* adds one mod, so it is an opener rather than a step in the middle;
+  // this planner names the mod every step adds, so a Regal names one too. An AUGMENTATION fills a
+  // Magic item's second slot and LEAVES IT MAGIC — which the planner could not express at all until
+  // 2026-09-01, so the only way it knew to add a mod to a Magic item was to Regal it to Rare.
+  //
+  // That mattered because the two are a real cost-probability trade, not a strictly worse option. On a
+  // Magic item holding one prefix, an Augmentation must land a SUFFIX (the prefix side is full at 1),
+  // so it draws from the suffix pool alone; a Regal draws from both sides and is correspondingly less
+  // likely to hit a particular suffix. The Augmentation is dearer for it — 0.2699 against the Regal's
+  // 0.1977 on the live sheet — which is exactly the shape of every other choice on this frontier.
+  //
+  // The empty opener is offered too, because a target that fits a Magic item (≤1 prefix and ≤1 suffix)
+  // needs neither. Nothing here checks which case applies: an exalt on a Magic item scores 0 in
+  // `evaluatePlanFrom` and the plan drops, which is the same "offer it and let evaluation prune" rule
+  // the desecrate branch relies on rather than duplicating plan.ts's legality.
+  const openers: { steps: PlanStep[]; adds: readonly string[]; perfect?: string }[] = [{ steps: [], adds: [] }];
+  if (start.rarity !== 'rare') {
+    const addStep = (currency: 'augment' | 'regal', add: string): PlanStep =>
+      ({ currency, add, minTierIndex: tierOf.get(add) ?? 0 });
+    // A Magic item holds at most two mods, so an Augmentation only has somewhere to go while it holds
+    // fewer. Offering it on a full Magic item would just score 0 — but not offering it keeps the
+    // sequence list smaller, and this one multiplies.
+    const room = start.prefixes.length + start.suffixes.length < 2;
+    for (const first of missingRollable) {
+      openers.push({ steps: [addStep('regal', first)], adds: [first] });
+      if (!room) continue;
+      // Augment alone: the target is finished on a Magic item, no Regal needed.
+      openers.push({ steps: [addStep('augment', first)], adds: [first] });
+      // Augment then Regal: fills the second Magic slot from the smaller pool, THEN converts. For a
+      // 3-mod target this is a different route from Regal-then-exalt, not a longer spelling of it.
+      for (const second of missingRollable) {
+        if (second === first) continue;
+        openers.push({ steps: [addStep('augment', first), addStep('regal', second)], adds: [first, second] });
+      }
+    }
+    // …or on a THROWAWAY, when an essence is due: the Regal lands anything and makes the item the Rare a
+    // Perfect Essence needs, and that essence eats it at once. This is the opener a Magic item holding
+    // only mods you want has — there is nothing else on it for the essence to take.
+    for (const add of missingPerfect) {
+      for (const side of ['prefix', 'suffix'] as const) {
+        const throwaway = { id: 'throwaway:opener', side };
+        openers.push({
+          steps: [{ currency: 'throwaway', orb: 'regal', throwaway }, { currency: 'perfect-essence', add, remove: throwaway.id }],
+          adds: [], perfect: add,
+        });
+      }
+    }
+  }
+
+  const bossOk = bossOmenAllowed(start.base.category);
+  const sequences: PlanStep[][] = [];
+  for (const opener of openers) {
+    const rest = missingRollable.filter((id) => !opener.adds.includes(id));
+    const perfectLeft = missingPerfect.filter((id) => id !== opener.perfect);
+    for (const seq of transformSequences(data, junk, rest, perfectLeft, missingDesecrated, tierOf, bossOk)) {
+      sequences.push(opener.steps.length > 0 ? [...opener.steps, ...seq] : seq);
+    }
+  }
+
+  // This loop used to be unbounded and silent: it read nothing from `opts` but `policy`, so the
+  // player's Search-effort setting reached it and did nothing, and the progress bar showed no movement
+  // for its whole run. The lever is the WALL CLOCK — `maxPlans` selects an orb-strength *depth* in the
+  // from-white planner, and there is no depth to select on either path any more: the lever DP searches
+  // every strength on every step and proves the losers cannot win, rather than trading breadth for
+  // time. So `maxMillis` stays absent unless the caller passes it, exactly as the MDP's does, and
+  // tests stay deterministic.
+  //
+  // WHAT CHANGED, AND WHY THE COUNTS MOVED. Each sequence used to be expanded into its omen power set
+  // (2^k plans) and every one of them scored. `searchSkeletons` now hands each to the lever DP, which
+  // decides orb strength AND omen for every step in one backward pass. That adds an axis this planner
+  // never had — `baseTransforms` sets no `tier`, so every add was a base-strength orb and the badge
+  // said so — while evaluating a small fraction of the assignments it now stands for.
+  const found = searchSkeletons(data, prices, start, withGreaterExaltations(prices, sequences), {
+    ...(policy ? { policy } : {}),
+    ...(opts.maxMillis === undefined ? {} : { maxMillis: opts.maxMillis }),
+    ...(opts.onProgress ? { onProgress: opts.onProgress } : {}),
+  });
+
+  // Re-scored through the same functions every other planner uses: the DP only RANKS.
+  const plans = found.candidates.map((c): ParetoPlan => {
+    const result = evaluatePlanFrom(data, start, c.steps);
+    return { steps: c.steps, result, cost: planExpectedCost(prices, result, c.steps), probability: result.total };
+  });
+
+  return {
+    frontier: paretoFrontier(plans),
+    // The assignments this search stands for, not the handful it scored — the DP rules the rest out by
+    // proof rather than by evaluation, and a count that omitted them would understate the search.
+    plansEvaluated: found.searched,
+    ...(found.truncated ? { truncated: true } : {}),
+  };
+}

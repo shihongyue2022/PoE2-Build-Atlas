@@ -1,0 +1,488 @@
+// The solved policy as plain data, and the walk that turns it into the graph a player reads.
+//
+// markovFromItem.ts solves the lattice; this file is what happens afterwards. The solve ends with one
+// pass that settles, for EVERY state, which action the policy plays, what that costs and where it
+// lands (`RouteTable`). The graph is then a walk over that table from a chosen root (`routeFrom`) —
+// the craft's own start for the result every tab shows, and any other state when the Lab is asked
+// what finishing costs from an item you could buy instead.
+//
+// Plain data on purpose: the table rides the solve result across the worker boundary, which is a
+// structured clone. Typed arrays and strings survive that; a closure over the solver's state would
+// not, and keeping the solver alive in the worker instead would tie a route on screen to a worker
+// that any later Cancel terminates. See `RouteTable`.
+
+import type { McAction } from './markovActions.ts';
+import type { McRarity, McState, ObstacleMasks, StateKey } from './markovState.ts';
+import {
+  FLAG_JUNK_PREFIX, FLAG_JUNK_SUFFIX, decodeState, flaggedTarget, has, popcount, slotsFilled,
+} from './markovState.ts';
+
+export interface PolicyNode {
+  readonly key: string;
+  /**
+   * One entry per FILLED POSITION, holding the interchangeable mod ids that could be filling it.
+   *
+   * A group of ids rather than one, because a position may be several same-family alternatives merged
+   * into one bit — the state records that the position is filled, and cannot say which member did it,
+   * because nothing downstream depends on the answer. One id per entry for every craft without
+   * alternatives. The UI joins each group with "or" (`mapMarkov`); the LENGTH is still the number of
+   * target mods on the item, which is what the graph's box label counts.
+   */
+  readonly present: readonly (readonly string[])[];
+  /** Positions whose family is occupied by a below-tier ("off-tier") roll, or by a DIFFERENT mod of the
+   *  same family on the same side (markovSiblings.ts) — either way, it must be annulled first. */
+  readonly blocked: readonly (readonly string[])[];
+  /**
+   * Mods on the item that nobody asked for but that block a target all the same: a sibling in its family
+   * on the OTHER side, or one blocking two targets at once (markovSiblings.ts). One entry per obstacle
+   * position, holding its mod ids. Absent when there are none — every state of a craft whose targets
+   * share a family with nothing on the other side. Never counted in `present`, which is target mods.
+   */
+  readonly obstacles?: readonly (readonly string[])[];
+  readonly junkPrefixes: number;
+  readonly junkSuffixes: number;
+  /** Set when the mod a Desecration placed is JUNK, naming the side it sits on. It blocks
+   *  re-desecrating until it is removed. */
+  readonly desecratedJunk?: 'prefix' | 'suffix';
+  /** Set when the mod a Desecration placed is one of the TARGETS — that position's mod ids. Blocks
+   *  re-desecrating just the same, which is why keeping it can cost more than it looks. */
+  readonly desecratedTarget?: readonly string[];
+  /** The root the route was walked from: the craft's own start, or the item a Lab row proposes buying. */
+  readonly isStart: boolean;
+  readonly isGoal: boolean;
+  /**
+   * The white base a route from a BOUGHT item falls back to when the policy starts over — drawn as the
+   * end of that route, never walked, because what happens after it is the from-scratch plan the Lab
+   * already shows. Only ever set on a route whose root is not the craft's own start.
+   */
+  readonly isRestart?: true;
+  /** Minimum expected cost to reach the target from here. */
+  readonly expectedCost: number;
+  /** The optimal currency to use here (undefined at the goal). */
+  readonly action?: McAction;
+  /**
+   * What playing `action` once costs here, ON AVERAGE: its price, plus — for a Desecration carrying an
+   * Omen of Abyssal Echoes — the omen times the chance this policy rerolls, since the omen is spent only
+   * then. The action's plain price for everything else; undefined at the goal.
+   */
+  readonly actionCost?: number;
+  /**
+   * For a Desecration carrying an Omen of Abyssal Echoes: throw the offer back when even the best of its
+   * three costs more than this to finish from (`RouteTable.rerollAbove`). Absent everywhere else.
+   */
+  readonly rerollAbove?: number;
+  /** The item's rarity here. Without it a 2-mod Magic item and a 2-mod Rare item render identically
+   *  while behaving completely differently — one of them cannot take an Exalt at all. */
+  readonly rarity: McRarity;
+  /**
+   * How much this state matters to a run that SUCCEEDS — expected visits per successful attempt.
+   *
+   * This is what decides which states the graph draws, and the obvious metric is the wrong one. Plain
+   * visit frequency ranks the FAILURES first: on a craft with a free base ~98% of states choose
+   * "start over", so they are entered constantly while every one of them shows the same action and
+   * the same cost (they all share V(start)). A real 6-target T2 craft drew ten boxes at 90% coverage
+   * and nine read "Start over with a new base · 2,132 div" — statistically faithful and useless. The
+   * spine a player needs sat below 99%.
+   *
+   * So it is weighted by the probability of reaching the goal from here. A state whose best move is
+   * to restart has no route onward and drops out; what is left is the path the craft actually takes.
+   * Restart edges are still DRAWN from the states that survive — they are the back-arrows, and how
+   * often a step throws you back is precisely what the reader needs to see.
+   *
+   * Expected VISITS, not a probability: one attempt can pass through the same state twice, so this
+   * can exceed 1. Ranking, not odds.
+   */
+  readonly visitRate: number;
+  /**
+   * Moves still to make, by the same estimate `regress` is judged against.
+   *
+   * Carried rather than recomputed by the UI: engineMap had its own copy of this expression, and the
+   * moment rarity entered the formula the two disagreed — a state the solver called a step forward
+   * would have been drawn as a step back.
+   */
+  readonly depth: number;
+}
+
+export interface PolicyEdge {
+  readonly from: string;
+  readonly to: string;
+  readonly action: McAction;
+  readonly prob: number;
+  /** True when this outcome moves AWAY from the target (a "brick" — the back-arrow in the graph). */
+  readonly regress: boolean;
+  /**
+   * On the one edge into the goal: the finished items it stands for, likeliest first. Every finished
+   * state is drawn as one goal (`routeFrom`'s fold), which would otherwise hide what the step leaves
+   * on the spare slots — a Regal that finishes a tablet puts its new modifier on one side or the other.
+   */
+  readonly finishes?: readonly GoalFinish[];
+}
+
+/** One finished item a step can land on: the junk it holds on each side, and how likely it is. */
+export interface GoalFinish {
+  readonly junkPrefixes: number;
+  readonly junkSuffixes: number;
+  readonly prob: number;
+}
+
+/**
+ * The optimal policy over the WHOLE lattice, as plain data.
+ *
+ * Built by the solver in one pass once V has settled, and the only thing the graph is ever drawn from —
+ * the craft's own route included — so a route from any state and the route every tab shows cannot
+ * disagree about what the policy does.
+ *
+ * Everything here survives a structured clone, which is the point: a from-white Lab result carries it
+ * to the main thread (see `MarkovOptions.keepRoutes`), and a route from a different root is then one
+ * `routeFrom` call rather than another solve. The outcomes are a compressed row list — state `i`'s run
+ * from `outStart[i]` to `outStart[i + 1]` — in the order the solver published them.
+ */
+export interface RouteTable {
+  /** Every state's key, in lattice order — an index anywhere below is an index into this. */
+  readonly keys: readonly StateKey[];
+  /** V: the minimum expected cost to finish from each state. */
+  readonly value: Float64Array;
+  /** Index into `actions` of the move the policy plays; -1 at a goal or a state with no route. */
+  readonly act: Int32Array;
+  /** The distinct moves the policy plays, as published (see the solver's `published`). */
+  readonly actions: readonly McAction[];
+  /** What playing the state's move once costs on average, Echoes spend included. */
+  readonly actCost: Float64Array;
+  readonly outStart: Int32Array;
+  readonly outTo: Int32Array;
+  /** Realized odds — for an offer, the chance of KEEPING each outcome, not of drawing it. */
+  readonly outProb: Float64Array;
+  readonly goal: Uint8Array;
+  /** The one goal every goal state is drawn as — see the fold in `routeFrom`. */
+  readonly goalIdx: number;
+  /** Where "start over" lands: the craft's own start. */
+  readonly restartIdx: number;
+  /** Whether "start over" is a move at all — a from-white craft only. */
+  readonly canRestart: boolean;
+  /**
+   * Where the policy plays a Desecration with an Omen of Abyssal Echoes, the value above which it throws
+   * the offer back: reroll when the BEST of the three costs more than this to finish from, keep it
+   * otherwise. NaN where the move rerolls nothing — the realized odds already assume the player follows
+   * this rule, so a player shown the odds needs the rule as well.
+   */
+  readonly rerollAbove: Float64Array;
+  /** The mod ids that can fill each position, for naming a state's mods. */
+  readonly positions: readonly (readonly string[])[];
+  readonly slotMasks: readonly number[];
+  /** Which positions are obstacles, not targets (markovSiblings.ts). */
+  readonly obstacles: ObstacleMasks;
+}
+
+/**
+ * Distance-to-goal for layout/regress: missing targets + blocked (each needs a remove then an add) +
+ * junk, counting an unwanted desecrated mod as junk too (it likewise costs a removal to clear), and an
+ * obstacle the same way (`obstacleMask`: it is junk that happens to block a target).
+ */
+export function distanceToGoal(st: McState, slotMasks: readonly number[], obstacleMask: number): number {
+  // A state below Rare is at least two moves out however good its mods are: the Regal that converts
+  // it, plus the Annulment that clears the mod that Regal is forced to add. Without this a Magic item
+  // already holding every target scores 0 — the goal's own distance — while not being the goal, so
+  // the route walk (which may only step to a STRICTLY smaller distance) has nowhere to go and stalls.
+  // This is a layout and ordering heuristic, like the rest of the expression, not an exact metric.
+  const toRare = st.rarity === 'rare' ? 0 : 2;
+  // No term for the flag: a flagged JUNK mod is already counted in jp/js (marking it does not add an
+  // affix), and a flagged TARGET is a mod you wanted and have. The old axis needed one because it
+  // described a mod held outside those counters.
+  // Unfilled SLOTS, not missing candidates: with `slot 3 = {Cold, Lightning}` an item holding Cold
+  // is one step from done, and counting the Lightning it will never need as "missing" would put the
+  // goal permanently out of reach of a walk that may only step to a strictly smaller distance.
+  // Every slot a singleton makes this `n - popcount(present)` again, exactly as before.
+  return (slotMasks.length - slotsFilled(st.present, slotMasks))
+    + popcount(st.blocked) + st.jp + st.js + popcount(st.present & obstacleMask) + toRare;
+}
+
+/**
+ * How the UI should describe the mod a Desecration placed here, if any.
+ *
+ * Two fields rather than one, because the two cases read differently to a player: junk only needs
+ * its side (junk mods are interchangeable), while a flagged TARGET needs naming — it is a mod they
+ * asked for, and the fact that it also locks the item out of desecrating again is the whole reason
+ * the state is distinct.
+ */
+export function flagFieldsOf(
+  st: McState, positions: readonly (readonly string[])[], obstacles: ObstacleMasks,
+): { desecratedJunk?: 'prefix' | 'suffix'; desecratedTarget?: readonly string[] } {
+  if (st.flagged === FLAG_JUNK_PREFIX) return { desecratedJunk: 'prefix' };
+  if (st.flagged === FLAG_JUNK_SUFFIX) return { desecratedJunk: 'suffix' };
+  const i = flaggedTarget(st.flagged);
+  // A bone that placed an OBSTACLE placed a mod nobody wanted — junk, to the reader, on its side.
+  if (i >= 0 && has(obstacles.prefix, i)) return { desecratedJunk: 'prefix' };
+  if (i >= 0 && has(obstacles.suffix, i)) return { desecratedJunk: 'suffix' };
+  return i >= 0 ? { desecratedTarget: positions[i]! } : {};
+}
+
+/**
+ * The graph the optimal policy draws from `root`: every state it can reach, and the arrows between.
+ *
+ * From the craft's own start this is the graph the result has always carried. From any other state it
+ * is the route a player would follow after buying that item — with one difference: when the root is
+ * not the start, "start over" is where the route ENDS. The white base is drawn once, as a terminal
+ * carrying what crafting from scratch costs, and not walked, because what follows it is the
+ * from-scratch plan the Lab already shows beside this one.
+ */
+/**
+ * Reading states and moves out of a table — the pieces `routeFrom` and `stepFrom` both build from, so
+ * the whole route and the one-step view can never describe a state or a move two different ways.
+ *
+ * `endsAtRestart`: the white base is a terminal carrying what crafting from scratch costs (a route
+ * from a BOUGHT item), rather than a state with a move of its own.
+ */
+function tableReader(t: RouteTable, endsAtRestart: boolean) {
+  /**
+   * Fold every goal state onto one key for display.
+   *
+   * The lattice has a goal per value of the flag axis — a finished item is finished whether or not a
+   * Desecration placed one of its mods — and they all have V = 0, so they are the same answer. Drawn
+   * as they come they would put several identical "✓ target" boxes in the graph and imply the player
+   * has a choice of endings.
+   */
+  const canonical = (i: number): number => (t.goal[i] === 1 ? t.goalIdx : i);
+  const obstacleMask = t.obstacles.prefix | t.obstacles.suffix;
+  // Distance-to-goal per state, decoded once: a walk asks it of both ends of every edge.
+  const depthMemo = new Int32Array(t.keys.length).fill(-1);
+  const depthOf = (i: number): number => {
+    let d = depthMemo[i]!;
+    if (d < 0) { d = distanceToGoal(decodeState(t.keys[i]!), t.slotMasks, obstacleMask); depthMemo[i] = d; }
+    return d;
+  };
+  const named = (mask: number): (readonly string[])[] => t.positions.filter((_, i) => has(mask, i));
+
+  /** State `i` as a node, `isStart` when it is the root of what is being drawn. */
+  const nodeAt = (i: number, isStart: boolean): Omit<PolicyNode, 'visitRate'> => {
+    const key = t.keys[i]!;
+    const st = decodeState(key);
+    const isGoal = t.goal[i] === 1;
+    const isRestart = endsAtRestart && i === t.restartIdx;
+    const a = isGoal || isRestart ? -1 : t.act[i]!;
+    const action = a >= 0 ? t.actions[a]! : undefined;
+    const reroll = t.rerollAbove[i]!;
+    return {
+      key,
+      present: named(st.present & ~obstacleMask),
+      blocked: named(st.blocked),
+      ...((st.present & obstacleMask) !== 0 ? { obstacles: named(st.present & obstacleMask) } : {}),
+      junkPrefixes: st.jp, junkSuffixes: st.js, rarity: st.rarity,
+      ...flagFieldsOf(st, t.positions, t.obstacles),
+      isStart, isGoal, ...(isRestart ? { isRestart: true as const } : {}),
+      depth: depthOf(i), expectedCost: t.value[i] ?? Infinity,
+      ...(action ? { action, actionCost: t.actCost[i]! } : {}),
+      ...(action && Number.isFinite(reroll) ? { rerollAbove: reroll } : {}),
+    };
+  };
+
+  /**
+   * State `i`'s outcomes under its move, and the state each edge ends in (canonical).
+   *
+   * Outcomes that finish the item fold onto the one goal, so they become ONE edge, where the first of
+   * them sat — their odds summed, or a step that always finishes read "51% onward" — that keeps the
+   * items it stands for when any of them holds junk (a clean finish is what the goal box shows).
+   */
+  const outcomesOf = (i: number, action: McAction): { edges: PolicyEdge[]; to: number[] } => {
+    const key = t.keys[i]!;
+    const edges: PolicyEdge[] = [];
+    const to: number[] = [];
+    let goalEdge = -1;
+    const finishes: { junkPrefixes: number; junkSuffixes: number; prob: number }[] = [];
+    for (let j = t.outStart[i]!; j < t.outStart[i + 1]!; j++) {
+      const real = t.outTo[j]!;
+      const prob = t.outProb[j]!;
+      const end = canonical(real);
+      if (t.goal[real] === 1) {
+        const fin = decodeState(t.keys[real]!);
+        const same = finishes.find((f) => f.junkPrefixes === fin.jp && f.junkSuffixes === fin.js);
+        if (same) same.prob += prob;
+        else finishes.push({ junkPrefixes: fin.jp, junkSuffixes: fin.js, prob });
+        if (goalEdge >= 0) { edges[goalEdge] = { ...edges[goalEdge]!, prob: edges[goalEdge]!.prob + prob }; continue; }
+        goalEdge = edges.length;
+      }
+      edges.push({ from: key, to: t.keys[end]!, action, prob, regress: depthOf(end) > depthOf(i) });
+      to.push(end);
+    }
+    if (finishes.some((f) => f.junkPrefixes + f.junkSuffixes > 0)) {
+      edges[goalEdge] = { ...edges[goalEdge]!, finishes: finishes.sort((x, y) => y.prob - x.prob) };
+    }
+    return { edges, to };
+  };
+
+  return { nodeAt, outcomesOf };
+}
+
+/**
+ * The graph the optimal policy draws from `root`: every state it can reach, and the arrows between.
+ *
+ * From the craft's own start this is the graph the result has always carried. From any other state it
+ * is the route a player would follow after buying that item — with one difference: when the root is
+ * not the start, "start over" is where the route ENDS. The white base is drawn once, as a terminal
+ * carrying what crafting from scratch costs, and not walked, because what follows it is the
+ * from-scratch plan the Lab already shows beside this one.
+ */
+export function routeFrom(t: RouteTable, root: number): { nodes: PolicyNode[]; edges: PolicyEdge[] } {
+  const read = tableReader(t, t.canRestart && root !== t.restartIdx);
+
+  // Two phases on purpose: the BFS below discovers the states and their edges, and `visitRate` is a
+  // property of the finished GRAPH — it cannot be known for a node until every path into it exists.
+  // Typing the accumulator without the field is what makes that ordering explicit rather than a
+  // half-built object the compiler waves through.
+  const nodes: Omit<PolicyNode, 'visitRate'>[] = [];
+  const edges: PolicyEdge[] = [];
+  // Each state's place in `nodes` (-1 until walked), and each edge's two ends as states — so the
+  // visit-rate passes run over positions in typed arrays rather than over string keys in Maps, which
+  // on a 6,000-state route from fubgun's staff took three seconds a click.
+  const at = new Int32Array(t.keys.length).fill(-1);
+  const edgeFrom: number[] = [];
+  const edgeTo: number[] = [];
+  const queue: number[] = [root];
+  for (let head = 0; head < queue.length; head++) {
+    const i = queue[head]!;
+    if (at[i]! >= 0) continue;
+    at[i] = nodes.length;
+    const node = read.nodeAt(i, i === root);
+    nodes.push(node);
+    if (!node.action) continue;
+    const out = read.outcomesOf(i, node.action);
+    for (let k = 0; k < out.edges.length; k++) {
+      const to = out.to[k]!;
+      edges.push(out.edges[k]!);
+      edgeFrom.push(i);
+      edgeTo.push(to);
+      if (at[to]! < 0) queue.push(to);
+    }
+  }
+
+  /**
+   * Rank every state by how much it matters to a run that SUCCEEDS.
+   *
+   * Two passes, and the second is the whole point.
+   *
+   *   forward(s) — expected visits per attempt: `f(s) = [s is root] + Σ_t f(t)·P(t→s)`.
+   *   toGoal(s)  — P(reach the goal from s without restarting): `g(s) = Σ_t P(s→t)·g(t)`, `g(goal)=1`.
+   *
+   * The product is expected visits to `s` on a successful attempt, and `forward` ALONE was measured
+   * to be actively misleading. On a craft with a free base ~98% of states choose "start over", so
+   * they are entered constantly and rank at the top — while every one of them shows the same action
+   * and the same cost, because they all share V(start). A real 6-target T2 craft drew ten boxes at
+   * 90% coverage and nine of them said "Start over with a new base · 2,132 div". The part a player
+   * needs — Chaos, Annul, Perfect Exalt, Desecrate, where the cost finally falls 2,131 → 751 — sat
+   * below 99%, past 89 boxes of noise.
+   *
+   * `toGoal` fixes it by construction: a state whose best move is to restart has no non-restart edge
+   * out, so its `g` is 0 and it leaves the ranking entirely. What survives is the spine of the craft.
+   * The restart edges are still DRAWN from the states that are kept — they are the back-arrows, and
+   * how often a step throws you back is exactly what the reader has to see.
+   *
+   * Power iteration for both, capped at 1000 sweeps — and on a big route the cap is what stops it, not
+   * convergence: every route from fubgun's staff runs all 1000 (states that loop through each other
+   * mix slowly). Measured 2026-09-11, converging it properly changes nothing a reader sees — across 40
+   * of those routes the states drawn at 90% and at 99% coverage were identical, and no visit rate that
+   * matters moved by more than 0.3% — while a Gauss-Seidel solve with self-loops divided out still
+   * needed up to 1,978 sweeps. These numbers only decide what gets drawn, so the cap stays. Run over
+   * positions, with every sum taken in the order the Map-keyed version took it — edge order within a
+   * node, node order within a sweep — so the answer is the same to the bit.
+   */
+  const M = nodes.length;
+  // Adjacency by node position, cut edges left out, each list in edge order.
+  const inStart = new Int32Array(M + 1);
+  const outStartAt = new Int32Array(M + 1);
+  const kept: number[] = [];
+  for (let e = 0; e < edges.length; e++) {
+    // A restart ENDS the attempt. Followed, it feeds probability back into the start and both passes
+    // diverge — the loop is the reason for the cut, not a special case. Cut by where it LANDS as well
+    // as by its name, which from the craft's own start is the rule this always was. From a bought item
+    // an edge back into the ROOT is not a restart — annulling junk back to the item you bought is part
+    // of the route — so it stays; the chain is still transient, because every restart edge is cut.
+    if (edges[e]!.action.currency === 'restart' || edgeTo[e] === t.restartIdx) continue;
+    kept.push(e);
+    inStart[at[edgeTo[e]!]! + 1]!++;
+    outStartAt[at[edgeFrom[e]!]! + 1]!++;
+  }
+  for (let j = 0; j < M; j++) { inStart[j + 1]! += inStart[j]!; outStartAt[j + 1]! += outStartAt[j]!; }
+  const inFrom = new Int32Array(kept.length);
+  const inProb = new Float64Array(kept.length);
+  const outTo = new Int32Array(kept.length);
+  const outProb = new Float64Array(kept.length);
+  const inFill = inStart.slice(0, M);
+  const outFill = outStartAt.slice(0, M);
+  for (const e of kept) {
+    const from = at[edgeFrom[e]!]!;
+    const to = at[edgeTo[e]!]!;
+    const p = edges[e]!.prob;
+    inFrom[inFill[to]!] = from; inProb[inFill[to]!++] = p;
+    outTo[outFill[from]!] = to; outProb[outFill[from]!++] = p;
+  }
+
+  // One sweep writes every state's next value and returns the largest change — one pass, not two.
+  const settle = (step: (prev: Float64Array, next: Float64Array) => number, init: Float64Array): Float64Array => {
+    let cur: Float64Array = init;
+    let next: Float64Array = new Float64Array(M);
+    for (let round = 0; round < 1000; round++) {
+      const delta = step(cur, next);
+      [cur, next] = [next, cur];
+      if (delta <= 1e-12) break;
+    }
+    return cur;
+  };
+
+  // The root is the first state the walk visits, so it sits at position 0.
+  const forward = settle((prev, next) => {
+    let delta = 0;
+    for (let j = 0; j < M; j++) {
+      let acc = j === 0 ? 1 : 0;
+      for (let q = inStart[j]!; q < inStart[j + 1]!; q++) acc += prev[inFrom[q]!]! * inProb[q]!;
+      next[j] = acc;
+      const d = Math.abs(acc - prev[j]!);
+      if (d > delta) delta = d;
+    }
+    return delta;
+  }, Float64Array.from(nodes, (_, j) => (j === 0 ? 1 : 0)));
+
+  const goal = Uint8Array.from(nodes, (nd) => (nd.isGoal ? 1 : 0));
+  const toGoal = settle((prev, next) => {
+    let delta = 0;
+    for (let j = 0; j < M; j++) {
+      let acc = 1;
+      if (goal[j] !== 1) {
+        acc = 0;
+        for (let q = outStartAt[j]!; q < outStartAt[j + 1]!; q++) acc += outProb[q]! * prev[outTo[q]!]!;
+      }
+      next[j] = acc;
+      const d = Math.abs(acc - prev[j]!);
+      if (d > delta) delta = d;
+    }
+    return delta;
+  }, Float64Array.from(goal));
+
+  return {
+    nodes: nodes.map((nd, j) => ({ ...nd, visitRate: forward[j]! * toGoal[j]! })),
+    edges,
+  };
+}
+
+/**
+ * One move from state `i`: the state, what the policy plays there, and every state that move can leave
+ * the item in — what a player following the plan needs after each orb, without walking the whole route.
+ *
+ * Built by the same reader as `routeFrom`, so a state and its outcomes read exactly as they do in the
+ * graph. "Start over" is a move like any other here (its outcome is the fresh base, with a move of its
+ * own), because the player following along keeps going. `visitRate` means nothing for one step: the
+ * state is 1, its outcomes 0. An outcome that leaves the item as it was is an edge back to `i`, with no
+ * second node for it.
+ */
+export function stepFrom(t: RouteTable, i: number): { nodes: PolicyNode[]; edges: PolicyEdge[] } {
+  const read = tableReader(t, false);
+  const here: PolicyNode = { ...read.nodeAt(i, true), visitRate: 1 };
+  if (!here.action) return { nodes: [here], edges: [] };
+  const out = read.outcomesOf(i, here.action);
+  const seen = new Set<number>([i]);
+  const next: PolicyNode[] = [];
+  for (const j of out.to) {
+    if (seen.has(j)) continue;
+    seen.add(j);
+    next.push({ ...read.nodeAt(j, false), visitRate: 0 });
+  }
+  return { nodes: [here, ...next], edges: out.edges };
+}

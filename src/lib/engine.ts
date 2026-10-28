@@ -1,0 +1,608 @@
+// Browser facade over the pure TS crafting engine + optimizer. This is the client-side replacement
+// for the Java HTTP backend: it loads the patch data snapshot once (fetched as static assets so the
+// mods data never lands in the JS bundle) and exposes a small, UI-shaped API — list bases,
+// list a base's rollable mods with their tiers, and compute the (cost ↔ probability) Pareto frontier
+// for a tier-targeted craft.
+//
+// The UI-shaped types live in ./engineTypes.ts and the presentation/mapping helpers in ./engineMap.ts;
+// this file is the thin public API (data loading + the list/compute/currency calls the UI imports).
+
+import { indexPatch, type BasesFile, type ModsFile } from '../../packages/engine/src/indexPatch.ts';
+import { resolveMod } from '../../packages/engine/src/pool.ts';
+import { runeOpportunity } from '../../packages/engine/src/runeConvert.ts';
+import { withRunes, usesAssumedPool } from '../../packages/engine/src/runes.ts';
+import type { RuneOpportunity } from '../../packages/engine/src/runeConvert.ts';
+import type { ItemState, Mod, PatchData } from '../../packages/engine/src/types.ts';
+import { TABLET_CATEGORY } from '../../packages/engine/src/types.ts';
+import {
+  annulProbability, augmentationProbability, bossOmenAllowed, chaosProbability,
+  ANCIENT_BONE_FLOOR, desecrationBossAnySideProbability, desecrationOffered, desecrationOmenForMod, desecrationProbability,
+  exaltProbability, regalProbability,
+} from '../../packages/engine/src/probability.ts';
+// Whether a Desecration on this base can be boss-targeted ("Weapon or Jewellery" only). Re-exported
+// because the UI has to DESCRIBE desecration differently on armour, not just cost it differently.
+export { bossOmenAllowed };
+import {
+  ECHOES_OMEN, cheapestEssenceLevel, currencyKey, essenceLevelOf, indexPrices, pricesForBase, stepCost,
+  type PricedStep, type Prices, type PricesFile,
+} from '../../packages/optimizer/src/cost.ts';
+import { atStrength } from '../../packages/optimizer/src/levers.ts';
+import { stepProbability, type PlanStep } from '../../packages/engine/src/plan.ts';
+import { optimizePareto, type OptimizeParetoOptions } from '../../packages/optimizer/src/optimize.ts';
+import { optimizeFromItem } from '../../packages/optimizer/src/fromItem.ts';
+import { markovFromItem, type MarkovOptions } from '../../packages/optimizer/src/markovFromItem.ts';
+import { markovBoneFreeFirst, type BoneFreeOptions } from '../../packages/optimizer/src/markovBoneFree.ts';
+import { routeFrom, stepFrom } from '../../packages/optimizer/src/markovRoute.ts';
+import {
+  alternativesFromWhite, alternativesFromItem, type AlternativesOptions,
+} from '../../packages/optimizer/src/alternatives.ts';
+import type {
+  EngineBase, EngineMod, EngineBaseMods, EngineResult, TargetInput,
+  ExistingItem, CurrencyAction, AltTargetInput, EngineAlternatives, EngineMarkovResult,
+  EnginePriceBasis, RuneChoice,
+} from './engineTypes.ts';
+import {
+  prettyName, toEngineMod, toTierTargets, toAltTargets, buildItemState, addBlockedReason,
+  bossOmenLabel, mapFrontier, mapAlternatives, mapMarkov, mapRoute, rollLabel,
+} from './engineMap.ts';
+
+// Fetched as URLs (Vite copies them to /assets) rather than imported as modules, so the big JSON is
+// lazily loaded and never inflates the main bundle or the TS type-checker.
+// The app ships the 0.5.0 (poe2db) snapshot — cross-checked against Craft of Exile (docs/validation.md,
+// "External cross-check, round 2"). The Java-extracted 0.5 data stays only as the engine-vs-Java
+// differential anchor in the test suite; it is stale vs the live game for several bases.
+import modsUrl from '../../data/patches/0.5.0/mods.json?url';
+import basesUrl from '../../data/patches/0.5.0/base_items.json?url';
+import pricesUrl from '../../data/patches/0.5.0/prices.json?url';
+
+// Re-export the UI-shaped types so components keep importing them from '../../lib/engine'.
+export { modFamilies, isRollable } from './engineTypes.ts';
+
+/**
+ * The Aldur rune that would fuse the gain-as-extra targets a player has chosen, or nothing.
+ *
+ * Routed through this facade rather than imported into the component directly, because that is how
+ * every other engine read in the UI works — and because it is the difference between a component
+ * that can be tested with a stubbed engine and one that cannot. `EngineLab.test.tsx` mocks this
+ * module with `data: {} as never`, which is honest (those tests are about the picker, not the data)
+ * and immediately fatal to anything that reaches into the snapshot itself.
+ */
+export function runeHint(
+  data: PatchData, baseId: string, targets: readonly { readonly modId: string; readonly slot?: number }[],
+): RuneOpportunity | undefined {
+  const base = data.bases?.get(baseId);
+  return base ? runeOpportunity(data, base, targets) : undefined;
+}
+export type {
+  EngineBase, EngineTier, EngineMod, EngineBaseMods, TargetInput, EngineStep, EnginePlan, EngineResult,
+  ItemModInput, ExistingItem, CurrencyAction, AltTargetInput, EngineSlot, EngineAlternative, EngineAlternatives,
+  EngineMarkovResult, EnginePolicyNode, EnginePolicyEdge, EnginePriceBasis, PolicyMod,
+} from './engineTypes.ts';
+
+// ── Data loading (memoized) ──────────────────────────────────────────────────
+
+export interface Engine { data: PatchData; prices: Prices; }
+let cache: Promise<Engine> | null = null;
+
+/**
+ * A data file's body as JSON, or an error that says which file and what the server answered.
+ *
+ * `Response.json()` on a non-OK response parses whatever the server sent, and a missing file on Vercel
+ * is the plain-text page "The page could not be found". That surfaced in the issue tracker as
+ * `Unexpected token 'T', "The page c"... is not valid JSON` — true, and useless: it names neither the
+ * file nor the 404, which is the whole story. The usual cause is a tab older than the live site: these
+ * URLs are content-hashed and the daily price refresh replaces `prices.json`, so a tab opened before it
+ * asks for a file the new deployment no longer has. `engineClient` recognises that case and tells the
+ * player to reload; this makes sure every OTHER case at least says what failed.
+ */
+async function jsonOf<T>(res: Response, what: string): Promise<T> {
+  if (!res.ok) throw new Error(`couldn't load ${what} (HTTP ${res.status} ${res.statusText || ''}`.trimEnd() + ')');
+  return res.json() as Promise<T>;
+}
+
+/** Load and index the patch snapshot once; subsequent calls reuse the same promise. */
+export function loadEngine(): Promise<Engine> {
+  if (!cache) {
+    cache = (async () => {
+      // `mods.json` is the biggest asset the app fetches and its download would otherwise not START
+      // until this function runs —
+      // after the JS bundle has been fetched and parsed. The build injects a tiny head script that
+      // kicks the fetch off during HTML parse and leaves the Promise here (see `preloadPatchData` in
+      // vite.config.ts). Reusing that exact Promise is what makes it one request rather than two.
+      // Absent (dev, tests, and the worker, which has no `window`) this is just a normal fetch.
+      const warm = (globalThis as { __patchPreload?: { mods?: Promise<Response | null> } }).__patchPreload;
+      const modsRes = (await warm?.mods) ?? (await fetch(modsUrl));
+      // `Response.json()` is `any`, so without these the three files entered `indexPatch` /
+      // `indexPrices` unchecked — the one place a data refresh could change a shape and nothing would
+      // complain until a probability came out wrong. Named here, at the boundary they cross.
+      const [mods, bases, prices] = await Promise.all([
+        jsonOf<ModsFile>(modsRes, 'the modifier data'),
+        fetch(basesUrl).then((r) => jsonOf<BasesFile>(r, 'the base-item data')),
+        fetch(pricesUrl).then((r) => jsonOf<PricesFile>(r, 'the price sheet')),
+      ]);
+      return { data: indexPatch(mods, bases), prices: indexPrices(prices) };
+    })();
+    // A FAILED load must not be memoised. It was: one dropped request left `cache` holding a rejected
+    // promise for the life of the page, so every later Compute failed identically with no network
+    // traffic at all. Forgetting it lets the next call try again, which is the right answer to a
+    // transient failure and costs nothing when the failure is permanent.
+    cache.catch(() => { cache = null; });
+  }
+  return cache;
+}
+
+/** Where the loaded price sheet came from — see EnginePriceBasis. Kept tiny and UI-shaped so the
+ *  cost views can caveat their own numbers without reaching into the optimizer's Prices type. */
+export function priceBasis(eng: { prices: Prices }): EnginePriceBasis {
+  const m = eng.prices.meta;
+  return {
+    estimated: m?.estimated ?? true, // absent provenance ⇒ assume estimated; never overclaim
+    ...(m?.updated ?? m?.generated ? { asOf: m?.updated ?? m?.generated } : {}),
+    ...(m?.patch ? { patch: m.patch } : {}),
+    ...(m?.unit ? { unit: m.unit } : {}),
+    ...(m?.caveat ? { caveat: m.caveat } : {}),
+    ...(m?.league ? { league: m.league } : {}),
+    // Read straight off the sheet rather than hardcoded: these move with the economy, and a stale
+    // conversion would misreport every large cost while looking authoritative.
+    // Optional-chained on purpose. `currency` is required by the type, but this accessor exists to
+    // report honestly on whatever sheet it was handed, and rates are only a display nicety — blanking
+    // the whole panel because one key is missing would be a wildly disproportionate failure.
+    rates: {
+      ...(eng.prices.currency?.chaos ? { chaos: eng.prices.currency.chaos } : {}),
+      ...(eng.prices.currency?.divine ? { divine: eng.prices.currency.divine } : {}),
+    },
+  };
+}
+
+// ── Listing ───────────────────────────────────────────────────────────────────
+
+/** All craftable bases, sorted by display name. */
+export function listBases(data: PatchData): EngineBase[] {
+  return [...data.bases.values()]
+    // Gear only. Precursor Tablets are crafted on their own tab, which lists them itself: the Plan and
+    // Item tabs' controls — item level, runes, essences, desecration — have nothing to say to a tablet.
+    .filter((b) => b.category !== TABLET_CATEGORY)
+    // The DATA's name wins when it carries more than the id does. For most bases the two are the same
+    // string and `prettyName` is what makes "Body_Armours_str_int" readable; for a spell-element wand
+    // or staff variant the data holds the real game bases that row covers ("Frigid Wand"), which is
+    // how a player recognises the item in their stash and is not derivable from the id at all.
+    .map((b): EngineBase => ({
+      id: b.id, name: b.name && b.name !== b.id ? b.name : prettyName(b.id), category: b.category,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * The prefixes and suffixes a base can carry, each with its tiers (best-first): the rollable normal
+ * pool plus the essence-only mods (obtainable only via an essence, their tiers being essence levels).
+ */
+export function listMods(data: PatchData, baseId: string, runes: readonly string[] = []): EngineBaseMods {
+  const raw = data.bases.get(baseId);
+  if (!raw) return { prefixes: [], suffixes: [] };
+  // Socketed runes are applied HERE rather than filtered afterwards, so the picker offers exactly what
+  // the planners will roll: `withRunes` folds a "Can roll …" rune's pool into `normal`, which is the
+  // same base every solve runs on. Defaulting to none keeps every existing caller — and every test —
+  // asking the question it already asked.
+  const base = withRunes(raw, runes);
+  const map = (ids: readonly string[], type: 'prefix' | 'suffix'): EngineMod[] =>
+    ids.map((id) => toEngineMod(data, id, type)).filter((m): m is EngineMod => m !== null);
+  const byText = (a: EngineMod, b: EngineMod) => a.text.localeCompare(b.text);
+  return {
+    prefixes: [...map(base.pools.normal.prefixes, 'prefix'), ...map(base.pools.essence.prefixes, 'prefix')].sort(byText),
+    suffixes: [...map(base.pools.normal.suffixes, 'suffix'), ...map(base.pools.essence.suffixes, 'suffix')].sort(byText),
+  };
+}
+
+/**
+ * The perfect-essence mods a base can carry (from its essence pool, source 'perfect_essence'). These are
+ * NOT from-white targets — a Perfect Essence adds its guaranteed mod on a Rare while removing one random
+ * mod — so they're offered only in the from-item flow. Single "tier" (the perfect level), best-first.
+ */
+export function listPerfectEssences(data: PatchData, baseId: string): EngineMod[] {
+  const base = data.bases.get(baseId);
+  if (!base) return [];
+  const build = (ids: readonly string[], type: 'prefix' | 'suffix'): EngineMod[] =>
+    ids.flatMap((id): EngineMod[] => {
+      const mod = data.mods.get(id);
+      if (!mod || mod.source !== 'perfect_essence' || mod.tiers.length === 0) return [];
+      const t = mod.tiers[0]!;
+      const values = (t.ranges ?? []).map(rollLabel).filter((v) => v !== '');
+      const range = values[0] ?? '';
+      return [{
+        id: mod.id, text: mod.text ?? mod.id, type, family: mod.family,
+        ...(mod.families && mod.families.length > 1 ? { families: mod.families } : {}),
+        source: mod.alloy === true ? 'alloy' : 'perfect',
+        tiers: [{ display: 1, name: t.name, ilvl: t.ilvl, label: `${t.name} · ilvl ${t.ilvl}${range ? ` · ${range}` : ''}`, range, values }],
+      }];
+    });
+  return [...build(base.pools.essence.prefixes, 'prefix'), ...build(base.pools.essence.suffixes, 'suffix')]
+    .sort((a, b) => a.text.localeCompare(b.text));
+}
+
+/**
+ * The desecrated mods a base can carry (its desecrated pool). These are NOT crafted-from-white here —
+ * a desecrated mod is added by the Desecration currency on a Rare — so they're offered only so you can
+ * MODEL an item that already carries one: it occupies a slot + family (shifting every other currency's
+ * odds) and is the only mod an Omen of Light annul removes for certain. Single "tier", best-first.
+ */
+export function listDesecrated(data: PatchData, baseId: string): EngineMod[] {
+  const base = data.bases.get(baseId);
+  if (!base) return [];
+  const build = (ids: readonly string[], type: 'prefix' | 'suffix'): EngineMod[] =>
+    ids.flatMap((id): EngineMod[] => {
+      const mod = data.mods.get(id);
+      if (!mod || mod.source !== 'desecrated' || mod.tiers.length === 0) return [];
+      const t = mod.tiers[0]!;
+      const values = (t.ranges ?? []).map(rollLabel).filter((v) => v !== '');
+      const range = values[0] ?? '';
+      return [{
+        id: mod.id, text: mod.text ?? mod.id, type, family: mod.family,
+        ...(mod.families && mod.families.length > 1 ? { families: mod.families } : {}),
+        source: 'desecrated',
+        tiers: [{ display: 1, name: t.name, ilvl: t.ilvl, label: `desecrated · ilvl ${t.ilvl}${range ? ` · ${range}` : ''}`, range, values }],
+      }];
+    });
+  return [...build(base.pools.desecrated.prefixes, 'prefix'), ...build(base.pools.desecrated.suffixes, 'suffix')]
+    .sort((a, b) => a.text.localeCompare(b.text));
+}
+
+// ── Compute ───────────────────────────────────────────────────────────────────
+
+/**
+ * Compute the (expected cost ↔ success probability) Pareto frontier for a tier-targeted craft on
+ * `baseId` at item level `level`. A target whose mod is essence-only is guaranteed by an essence at
+ * its chosen level (its tier picks the essence level → real value/gate/price); at most one such mod
+ * is allowed and the target must also include a rollable mod. Throws on an invalid target shape
+ * (0 or >6 mods, >3 of a side, off-pool mod, two essences); the caller surfaces the message.
+ */
+export function optimize(
+  eng: Engine, baseId: string, level: number, targets: readonly TargetInput[],
+  opts: OptimizeParetoOptions & RuneChoice = {},
+): EngineResult {
+  const { data, prices } = eng;
+  const raw = data.bases.get(baseId);
+  if (!raw) throw new Error(`Unknown base: ${baseId}`);
+  // A from-white craft has no item to carry its runes, so they ride in on the options.
+  const base = withRunes(raw, opts.runes ?? []);
+  const res = optimizePareto(data, prices, base, toTierTargets(data, targets), { ...opts, level });
+  // A pool rune's weights are assumed, and weight is in the denominator of every weighted draw — so
+  // the whole result is qualified, not the steps that happen to land one of its modifiers.
+  return mapFrontier(data, res, usesAssumedPool(opts.runes ?? []));
+}
+
+/**
+ * Plan the full sequence to turn an item you already hold (`item`, a Rare) into `targets` — the
+ * (expected cost ↔ probability) frontier, using the reset-to-your-item cost model that keeps the good
+ * mods you started with. Mods on the item but not in the target are removed; missing target mods are
+ * added. Throws on a Magic item or an illegal target shape; the caller surfaces the message.
+ */
+export function optimizeItem(
+  eng: Engine, item: ExistingItem, targets: readonly TargetInput[], opts: OptimizeParetoOptions = {},
+): EngineResult {
+  const { data, prices } = eng;
+  const res = optimizeFromItem(data, prices, buildItemState(data, item), toTierTargets(data, targets), opts);
+  return mapFrontier(data, res, usesAssumedPool(item.runes ?? []));
+}
+
+/**
+ * The TRUE expected cost + optimal-policy graph for a from-item craft, from the MDP model (push-forward,
+ * no restart — see markovFromItem). Rollable, desecrated and BOTH essence grades go through it.
+ *
+ * There used to be a blanket `applicable: false` here for any regular-essence target, on the reasoning
+ * that those need a Magic item while the model starts from the Rare you hold. Half of that was right:
+ * the model now HAS an Essence action, and the Lab's from-white craft reaches Magic on its way up, so
+ * the gate was refusing the case it works for. The genuinely unreachable case — a target needing a
+ * regular Essence on an item that is already Rare — is refused inside `markovFromItem`, which can name
+ * the mod and the rule instead of speaking for every essence craft at once.
+ */
+export function optimizeItemMarkov(
+  eng: Engine, item: ExistingItem, targets: readonly TargetInput[], opts: MarkovOptions = {},
+  /** A from-white craft whose bones are optional is solved without them first, on this clock of its own,
+   *  and that plan seeds the solve with them — or answers as a ceiling (`markovBoneFree.ts`). Absent ⇒
+   *  the craft is solved once, as it always was. */
+  withoutBones?: BoneFreeOptions,
+): EngineMarkovResult {
+  const { data, prices } = eng;
+  const state = buildItemState(data, item);
+  const tiers = toTierTargets(data, targets);
+  const res = withoutBones
+    ? markovBoneFreeFirst(data, prices, state, tiers, opts, withoutBones)
+    : markovFromItem(data, prices, state, tiers, opts);
+  // `targets` is handed on so every position can carry the tier it was ASKED at. It is the UI-shaped
+  // list, which is the only place `tierDisplay` survives — `toTierTargets` converts it to the engine's
+  // worst-first index on the way in, and the graph needs it back the way the player wrote it.
+  return mapMarkov(data, res, usesAssumedPool(item.runes ?? []), targets);
+}
+
+/**
+ * The route from one of a Lab result's starting items (`holdings[].key`) — a walk over the solved
+ * policy the result already carries, so it costs a fraction of a second where another solve would
+ * cost the whole craft again. Null when the result carries no table (see `EngineMarkovResult.routes`) or
+ * the key is not a state of it.
+ */
+export function routeFor(eng: Engine, markov: EngineMarkovResult, key: string): EngineMarkovResult | null {
+  const t = markov.routes;
+  if (!t) return null;
+  const root = t.keys.indexOf(key as (typeof t.keys)[number]);
+  return root < 0 ? null : mapRoute(eng.data, routeFrom(t, root), markov);
+}
+
+/**
+ * One move of the plan from state `key` — the state, the move, and every state it can leave the item in
+ * — for following the plan along with the game (`CraftAlong`). A lookup in the solved policy the result
+ * already carries, labelled the way the route graph labels it. Null without a table (see
+ * `EngineMarkovResult.routes`) or for a key that is not a state of it.
+ */
+export function stepFor(eng: Engine, markov: EngineMarkovResult, key: string): EngineMarkovResult | null {
+  const t = markov.routes;
+  if (!t) return null;
+  const i = t.keys.indexOf(key as (typeof t.keys)[number]);
+  return i < 0 ? null : mapRoute(eng.data, stepFrom(t, i), markov);
+}
+
+// ── Existing-item currency actions (Option 1) ─────────────────────────────────
+// "I already have this item — what does each currency do to it, and with what odds?" Every number here
+// is the EXACT probability of a SINGLE use of that currency producing the outcome you asked for. It is
+// deliberately NOT a total "how many orbs / how much cost" — for currencies that change the item on a
+// miss (chaos rerolls, annul removes a random mod), the total depends on your retry strategy, which is
+// the harder planner math. So we report the honest per-use odds and leave the budget to the full planner.
+
+/** One row before it is priced — a step descriptor plus the words that go beside it. */
+interface ActionRow {
+  readonly step: PricedStep;
+  readonly label: string;
+  readonly detail: string;
+  readonly prob: number;
+  readonly reason?: string;
+  /** Average spend beyond the step's up-front price: an Echoes omen, paid only if the offer is rerolled. */
+  readonly extraCost?: number;
+}
+
+/**
+ * The Desecration rows: a plain bone, an Ancient one where the sheet prices it, and — for a carved mod —
+ * the bone plus its boss omen. Each comes again with an Omen of Abyssal Echoes where that is priced: the
+ * same draw, and one reroll of all three if none of them is the mod.
+ *
+ * Sits beside the Exalt because it answers the same question, and inside the caller's `rare` branch
+ * because the bone's own text says so: "Desecrates a **Rare** Weapon or Quiver" / "…a **Rare** Armour".
+ *
+ * Two rules belong to SPENDING a bone rather than to the draw, and `desecrationProbability` — a
+ * per-draw primitive — enforces neither:
+ *
+ *   1. **The bone offers three modifiers and you keep one.** Worth ~3x, applied by every caller that
+ *      spends one (`plan.ts`'s desecrate step, the MDP's desecrate actions) via `desecrationOffered`.
+ *   2. **An item holds at most one desecrated mod**, so a bone is refused outright while a carved mod
+ *      is still on it — the `hasDesecrated` gate in `markovActions`.
+ *
+ * Quoting the raw per-draw number would advertise odds no route ever charges, which is the one thing
+ * this panel must never do. The boss omens are separate rows because they are a different draw (1/N
+ * over one boss's carved pool, not a weighted draw over normal ∪ desecrated), and their text is "your
+ * next **Weapon or Jewellery** Desecration attempt" — so on armour they are impossible, said out loud
+ * rather than left as a missing row, because that gap is the most confusing part of the mechanic.
+ */
+function desecrationRows(data: PatchData, state: ItemState, add: Mod, sheet: Prices): ActionRow[] {
+  const rows: ActionRow[] = [];
+  const carried = state.desecrated === true;
+  const held = carried ? 'the item already holds a desecrated mod — remove it first' : null;
+  const why = (): string => held ?? addBlockedReason(data, state, add);
+  const row = (step: PricedStep, label: string, detail: string, draw: number): ActionRow => {
+    const prob = desecrationOffered(draw, step.echoes ? 1 : 0);
+    return prob > 0 ? { step, label, detail, prob } : { step, label, detail, prob, reason: why() };
+  };
+  // Every row comes twice where the sheet prices an Omen of Abyssal Echoes: as itself, and with one
+  // reroll of the whole offer — wanting one mod, you reroll exactly when none of the three is it. The
+  // omen is spent only then, so the row carries its average spend: its price times that chance.
+  const echoesPrice = sheet.omens[ECHOES_OMEN];
+  const offer = (step: PricedStep, label: string, detail: string, draw: number, reason?: string): void => {
+    for (const e of echoesPrice === undefined ? [false] : [false, true]) {
+      const r: ActionRow = e
+        ? {
+          ...row({ ...step, echoes: true }, `${label} + Omen of Abyssal Echoes`,
+            `${detail} — if none is, the omen rerolls all 3 (spent only then)`, draw),
+          extraCost: echoesPrice! * (1 - desecrationOffered(draw)),
+        }
+        : row(step, label, detail, draw);
+      rows.push(reason === undefined ? r : { ...r, reason });
+    }
+  };
+
+  // The plain bone draws by weight from the COMBINED normal ∪ desecrated pool, so it can land an
+  // ordinary mod as well as a carved one — which is why this row belongs on every add, not only on
+  // desecrated ones.
+  offer({ currency: 'desecrate' }, 'Desecration', `offers 3 mods — the odds one of them is ${add.text}`,
+    carried ? 0 : desecrationProbability(data, state, add.id));
+  // An Ancient bone reads "Minimum Modifier Level: 40": the same draw with every normal tier below ilvl
+  // 40 taken out — better odds for a high tier, at a much dearer bone.
+  if (sheet.currency.desecrate_ancient !== undefined) {
+    offer({ currency: 'desecrate', ancient: true }, 'Desecration (Ancient bone)',
+      `offers 3 mods of modifier level 40+ — the odds one of them is ${add.text}`,
+      carried ? 0 : desecrationProbability(data, state, add.id, { floor: ANCIENT_BONE_FLOOR }));
+  }
+
+  const boss = desecrationOmenForMod(add);
+  if (boss === undefined) return rows; // not a carved mod: no boss owns it, so no omen can target it
+  const allowed = bossOmenAllowed(state.base.category);
+  const name = bossOmenLabel(boss);
+  const draw = carried || !allowed ? 0 : desecrationBossAnySideProbability(data, state, add.id, { omen: boss });
+  offer({ currency: 'desecrate', boss }, `Desecration + Omen of the ${name}`,
+    `draws only from the ${name}’s carved pool, then offers 3`, draw,
+    allowed ? undefined : 'the boss omens only work on a Weapon or Jewellery');
+  return rows;
+}
+
+/**
+ * What each currency can do to an item you already hold. `addModId` = a mod you want ONTO the item;
+ * `removeModId` = a mod currently on it you'd sacrifice. Returns the applicable currencies with their
+ * exact per-use probability and feasibility:
+ *   • Rare + add → **Exalted** (fill an open slot); + a removeModId → **Chaos** (swap it out for the
+ *     add); + a **Desecration**, plus its boss omen when the mod is a carved one.
+ *   • Magic + add → **Augmentation** (fill the open slot) and **Regal** (upgrade to Rare adding it).
+ *   • removeModId alone → **Annulment** (remove one random mod — odds it's the one you named).
+ *
+ *   • Every add orb also appears at **Greater** and **Perfect** strength where the sheet prices one and
+ *     it can actually land — the route cards beside this panel have named those orbs since the
+ *     orb-strength axis shipped, and a check that only knew base orbs disagreed with them on one screen.
+ *   • An **Essence** row: Perfect (Rare — adds its mod for certain while eating one at random, with the
+ *     Crystallisation omens that choose the side) and regular (Magic — the forced add, P=1).
+ */
+export function currencyActions(
+  eng: Engine, item: ExistingItem, sel: { addModId?: string; removeModId?: string },
+): CurrencyAction[] {
+  const { data, prices } = eng;
+  const state = buildItemState(data, item);
+  const actions: CurrencyAction[] = [];
+  // Every row is priced by the PLANNERS' own `stepCost`, on a base-resolved sheet. Two reasons, and
+  // the panel got both wrong before: a Desecration's bone depends on the item's category (jawbone
+  // 0.62ex, rib 0.30ex, collarbone 4.00ex) and only `pricesForBase` knows which; and the Omen of Light
+  // surcharge was summed by hand here — `prices.currency[k] ?? 0` plus `prices.omens[id] ?? 0` — a
+  // second copy of the pricing rule, which is the exact shape the D8 mispricing hid in. A row that
+  // quotes a different number from the route that uses the same orb is worse than no row.
+  const sheet = pricesForBase(prices, state.base);
+  const text = (id: string): string => data.mods.get(id)?.text ?? id;
+  const push = (
+    step: PricedStep, label: string, detail: string, prob: number, reason?: string, extraCost = 0,
+  ): void => {
+    const row = {
+      currency: step.currency, label, detail, prob, cost: stepCost(sheet, step) + extraCost, feasible: prob > 0,
+    };
+    actions.push(reason === undefined ? row : { ...row, reason });
+  };
+
+  /**
+   * The same orb at Greater and Perfect strength, pushed under the base row it belongs to.
+   *
+   * Three gates, and the first two are not optional. A strength the sheet does not list is SKIPPED,
+   * never priced at the base key — `stepCost` charges 0 for a missing key, so an unlisted Perfect orb
+   * would read FREE and be the panel's top recommendation. And `atStrength` decides which currencies
+   * have strengths at all, imported rather than restated, because a second copy of that switch is how
+   * this panel and the planners would come to disagree about what the game sells.
+   *
+   * The third is a judgement: a strength that cannot land (`prob <= 0`) is dropped rather than shown
+   * blocked. A raised ilvl floor puts the LOW tiers out of reach, so a Perfect orb legitimately can't
+   * produce a T8 mod — true, and a different question from "can this mod go on this item at all",
+   * which the base row above already answers. Showing both makes the panel argue with itself.
+   */
+  const pushStrengths = (step: PlanStep, name: string, detail: string): void => {
+    for (const [tier, adjective] of [['greater', 'Greater'], ['perfect', 'Perfect']] as const) {
+      const at = atStrength(step, tier);
+      if (at === undefined || sheet.currency[currencyKey(at)] === undefined) continue;
+      const prob = stepProbability(data, state, at);
+      if (!(prob > 0)) continue;
+      push(at, `${adjective} ${name}`, `${detail} — ${adjective.toLowerCase()} orbs only roll the better tiers`, prob);
+    }
+  };
+
+  const { addModId, removeModId } = sel;
+  if (addModId) {
+    const add = resolveMod(data, addModId);
+    const reason = (): string => addBlockedReason(data, state, add);
+    const onItem = (id: string): boolean => state.prefixes.concat(state.suffixes).some((m) => m.modId === id);
+    if (state.rarity === 'rare') {
+      const p = exaltProbability(data, state, addModId);
+      const exalt = `adds ${text(addModId)} to an open ${add.type}`;
+      push({ currency: 'exalt' }, 'Exalted Orb', exalt, p, p > 0 ? undefined : reason());
+      pushStrengths({ currency: 'exalt', add: addModId }, 'Exalted Orb', exalt);
+      if (removeModId) {
+        const c = chaosProbability(data, state, removeModId, addModId);
+        const swap = `removes ${text(removeModId)}, adds ${text(addModId)}`;
+        push({ currency: 'chaos' }, 'Chaos Orb', swap, c,
+          c > 0 ? undefined : (!onItem(removeModId) ? `${text(removeModId)} isn’t on the item` : `can’t add ${text(addModId)} even after the swap`));
+        pushStrengths({ currency: 'chaos', add: addModId, remove: removeModId }, 'Chaos Orb', swap);
+      }
+      for (const row of desecrationRows(data, state, add, sheet)) push(row.step, row.label, row.detail, row.prob, row.reason, row.extraCost);
+      // A Perfect Essence adds its mod for CERTAIN and takes one at random in exchange, so the only
+      // uncertainty — and the only thing worth quoting — is which mod it eats. That makes a sacrifice
+      // mandatory to the question, not optional to it: `PlanStep`'s perfect-essence variant requires
+      // `remove`, and without one there is no probability to state, only the trade to explain.
+      if (add.source === 'perfect_essence') {
+        const essence = `adds ${text(addModId)} for certain, in exchange for one mod at random`;
+        if (removeModId === undefined) {
+          push({ currency: 'perfect-essence', add: addModId }, 'Perfect Essence', essence, 0,
+            'name a mod to sacrifice above and this shows the odds it takes that one');
+        } else {
+          for (const [omen, label, note] of [
+            [undefined, 'Perfect Essence', 'it takes any mod'],
+            ['sinistral', 'Perfect Essence + Omen of Sinistral Crystallisation', 'it can only take a prefix'],
+            ['dextral', 'Perfect Essence + Omen of Dextral Crystallisation', 'it can only take a suffix'],
+          ] as const) {
+            const step: PlanStep = { currency: 'perfect-essence', add: addModId, remove: removeModId, ...(omen ? { omen } : {}) };
+            const prob = stepProbability(data, state, step);
+            if (omen !== undefined && !(prob > 0)) continue; // an omen for the side the mod isn't on
+            push(step, label, `${essence} — odds it’s ${text(removeModId)}, ${note}`, prob,
+              prob > 0 ? undefined : (!onItem(removeModId) ? `${text(removeModId)} isn’t on the item` : reason()));
+          }
+        }
+      }
+    }
+    if (state.rarity === 'magic') {
+      const a = augmentationProbability(data, state, addModId);
+      const augment = `adds ${text(addModId)} to the open ${add.type}`;
+      push({ currency: 'augment' }, 'Orb of Augmentation', augment, a, a > 0 ? undefined : reason());
+      pushStrengths({ currency: 'augment', add: addModId }, 'Orb of Augmentation', augment);
+      const rg = regalProbability(data, state, addModId);
+      const regal = `upgrades to Rare, adds ${text(addModId)}`;
+      push({ currency: 'regal' }, 'Regal Orb', regal, rg, rg > 0 ? undefined : reason());
+      pushStrengths({ currency: 'regal', add: addModId }, 'Regal Orb', regal);
+      // A regular Essence is the Magic-only branch: it forces its mod and turns the item Rare, P=1.
+      // Which LEVEL to quote is a real choice — Abrasion runs Lesser 116ex against Greater 0.81ex, so
+      // naming the wrong one misprices the row by 140x — and it is already made once, by the same
+      // function both planners use.
+      if (add.source === 'essence') {
+        const essenceTier = cheapestEssenceLevel(sheet, add, 0, state.level);
+        const level = essenceLevelOf(add.tiers[essenceTier]?.name ?? '');
+        const step: PlanStep = { currency: 'essence', add: addModId, essenceTier, ...(level ? { essenceLevel: level } : {}) };
+        const prob = stepProbability(data, state, step);
+        push(step, 'Essence', `forces ${text(addModId)} onto the open ${add.type} and makes the item Rare`, prob,
+          prob > 0 ? undefined : reason());
+      }
+    }
+  }
+  if (removeModId) {
+    const p = annulProbability(data, state, removeModId);
+    const onItem = state.prefixes.concat(state.suffixes).some((m) => m.modId === removeModId);
+    push({ currency: 'annul' }, 'Orb of Annulment', `removes one random mod — odds it’s ${text(removeModId)}`, p,
+      p > 0 ? undefined : (onItem ? undefined : `${text(removeModId)} isn’t on the item`));
+    // Omen of Light makes the Annulment remove the DESECRATED mod for certain (P=1) — the targeted-
+    // removal lever. Only meaningful when the sacrifice is itself a desecrated mod on a desecrated item.
+    if (onItem && data.mods.get(removeModId)?.source === 'desecrated' && state.desecrated) {
+      const lp = annulProbability(data, state, removeModId, { omen: 'light' });
+      push({ currency: 'annul', omen: 'light' }, 'Orb of Annulment + Omen of Light',
+        `removes the desecrated ${text(removeModId)} for certain`, lp);
+    }
+  }
+  return actions;
+}
+
+// ── Budget-constrained alternatives ──────────────────────────────────────────
+// "I have 200ex — what's the closest thing to my item I can actually get for it?" Every row is a
+// near-miss item plus the odds you FINISH it inside the budget (not an expected cost, which busts
+// about half the time). Row 0 is always exactly what you asked for.
+
+/**
+ * Near-miss alternatives to a from-white craft, ranked closest-first, each with the odds you finish it
+ * inside `budget` (exalt-equivalents). An alternative may slide a tier, swap one mod for a same-family
+ * sibling, or drop one mod — at most one slot swapped-or-dropped. Pinned targets are never touched.
+ */
+export function alternatives(
+  eng: Engine, baseId: string, level: number, targets: readonly AltTargetInput[], budget: number,
+  opts: AlternativesOptions & RuneChoice = {},
+): EngineAlternatives {
+  const { data, prices } = eng;
+  const raw = data.bases.get(baseId);
+  if (!raw) throw new Error(`Unknown base: ${baseId}`);
+  const base = withRunes(raw, opts.runes ?? []);
+  return mapAlternatives(data, alternativesFromWhite(data, prices, base, toAltTargets(data, targets), budget, { ...opts, level }));
+}
+
+/**
+ * Near-miss alternatives for transforming an item you already hold — same relaxations, costed with the
+ * reset-to-your-item model. A fractured mod on the item is inherently pinned (it's locked there).
+ */
+export function alternativesForItem(
+  eng: Engine, item: ExistingItem, targets: readonly AltTargetInput[], budget: number,
+  opts: AlternativesOptions = {},
+): EngineAlternatives {
+  const { data, prices } = eng;
+  const start = buildItemState(data, item);
+  return mapAlternatives(data, alternativesFromItem(data, prices, start, toAltTargets(data, targets), budget, opts));
+}

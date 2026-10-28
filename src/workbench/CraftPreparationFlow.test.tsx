@@ -1,0 +1,131 @@
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { loadShippedPatch } from '../../packages/engine/src/loadPatch';
+import { indexPrices } from '../../packages/optimizer/src/cost';
+import type { Engine } from '../lib/engine';
+import CraftPreparationFlow from './CraftPreparationFlow';
+import { breachPreparation } from './craftReference';
+import { blueprintMaterialLabel } from './craftBlueprint';
+
+const engine: Engine = { data: loadShippedPatch('data/patches/0.5.0'), prices: indexPrices({ league: 'Test', prices: { annul: 2, divine: 100 } }) };
+const preparation = breachPreparation('Breach Ring', 60)!;
+vi.mock('./workbenchRuntime', () => ({ HOSTED_WORKBENCH: false }));
+const show = (referenceRaw = 'sample', league = 'Test') => render(<CraftPreparationFlow engine={engine} preparation={preparation} referenceRaw={referenceRaw} league={league} routeMaterials={['Orb of Annulment', 'Fracturing Orb']} />);
+const label = blueprintMaterialLabel('Orb of Annulment'), fracture = blueprintMaterialLabel('Fracturing Orb');
+it('keeps recorded route materials and costs after the route changes and after reloading a generic jewellery project', () => {
+  const routeLabel = blueprintMaterialLabel('Greater Chaos Orb');
+  const view = render(<CraftPreparationFlow engine={engine} preparation={{ steps: [] }} referenceRaw="route-project" league="Test" routeMaterials={['Greater Chaos Orb']} />);
+  fireEvent.change(screen.getByRole('spinbutton', { name: `材料数量：${routeLabel}` }), { target: { value: '4' } });
+  fireEvent.click(screen.getByText('调整单价'));
+  fireEvent.change(screen.getByRole('spinbutton', { name: `材料单价：${routeLabel}` }), { target: { value: '5' } });
+  expect(screen.getByLabelText('准备材料预算')).toHaveTextContent('0.2 神圣石');
+  view.rerender(<CraftPreparationFlow engine={engine} preparation={{ steps: [] }} referenceRaw="route-project" league="Test" routeMaterials={['Exalted Orb']} />);
+  expect(screen.getByRole('spinbutton', { name: `材料数量：${routeLabel}` })).toHaveValue(4);
+  expect(screen.getByLabelText('准备材料预算')).toHaveTextContent('0.2 神圣石');
+  view.unmount();
+  render(<CraftPreparationFlow engine={engine} preparation={{ steps: [] }} referenceRaw="route-project" league="Test" />);
+  expect(screen.getByRole('spinbutton', { name: `材料数量：${routeLabel}` })).toHaveValue(4);
+  expect(screen.getByLabelText('准备材料预算')).toHaveTextContent('0.2 神圣石');
+});
+beforeEach(() => { vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {}))); });
+afterEach(() => { vi.unstubAllGlobals(); });
+
+it('shows only route materials by default and keeps the general preparation guide separate from recorded expenses', () => {
+  render(<CraftPreparationFlow engine={engine} preparation={preparation} referenceRaw="prepared-ring" league="Test" routeMaterials={['Perfect Exalted Orb']} />);
+  const ledger = screen.getByRole('region', { name: '当前路线材料' });
+  expect(ledger.querySelectorAll('.cb-ledger-row')).toHaveLength(1);
+  expect(screen.queryByRole('button', { name: `使用材料：${fracture}` })).toBeNull();
+  expect(screen.getByText('先做品质准备，再填最终词缀')).not.toBeVisible();
+  fireEvent.click(screen.getByText('底座准备参考 · 通用攻略（按需查阅）'));
+  fireEvent.click(screen.getByText('先做品质准备，再填最终词缀'));
+  expect(screen.getByText(/普通裂痕戒指为基础/)).toBeVisible();
+  expect(ledger.querySelectorAll('.cb-ledger-row')).toHaveLength(1);
+  expect(screen.getByLabelText('准备材料预算')).toHaveTextContent('选择材料');
+  fireEvent.change(screen.getByRole('combobox', { name: '补记其他耗材' }), { target: { value: 'Fracturing Orb' } });
+  expect(ledger.querySelectorAll('.cb-ledger-row')).toHaveLength(2);
+  expect(screen.getByRole('spinbutton', { name: `材料数量：${fracture}` })).toHaveValue(1);
+  expect(screen.getByLabelText('准备材料预算')).toHaveTextContent('已计价部分');
+});
+
+it('uses material artwork as toggle buttons, updates step/total costs and distinguishes missing prices', () => {
+  show();
+  expect(screen.getByRole('region', { name: '当前路线材料' }).querySelectorAll('.cb-ledger-row')).toHaveLength(2);
+  expect(screen.getByLabelText('准备材料预算')).toHaveTextContent('选择材料');
+  const button = screen.getByRole('button', { name: `使用材料：${label}` });
+  expect(within(button).getByRole('img').getAttribute('src')).toMatch(/^https:\/\/web\.poecdn\.com\//);
+  fireEvent.click(button);
+  fireEvent.change(screen.getByRole('spinbutton', { name: `材料数量：${label}` }), { target: { value: '3' } });
+  expect(screen.getByLabelText(`材料小计：${label}`)).toHaveTextContent('0.06 神圣石');
+  expect(screen.getByLabelText('准备材料预算')).toHaveTextContent('材料预算：0.06 神圣石');
+  fireEvent.click(screen.getByRole('button', { name: `增加数量：${fracture}` }));
+  expect(screen.getByLabelText('准备材料预算')).toHaveTextContent('已计价部分：0.06 神圣石');
+  expect(screen.getByText(/1 项待补单价/)).toBeInTheDocument();
+  const fractureMaterial = screen.getByRole('button', { name: `使用材料：${fracture}` }).closest('.cb-prep-material') as HTMLElement;
+  fireEvent.click(within(fractureMaterial).getByText('调整单价'));
+  fireEvent.change(screen.getByRole('spinbutton', { name: `材料单价：${fracture}` }), { target: { value: '7.5' } });
+  expect(screen.getByLabelText('准备材料预算')).toHaveTextContent('材料预算：0.135 神圣石');
+  fireEvent.click(button);
+  expect(screen.getByLabelText('准备材料预算')).toHaveTextContent('材料预算：0.075 神圣石');
+});
+
+it('persists quantities and overrides for this reference and league without reusing another project budget', () => {
+  const view = show();
+  fireEvent.change(screen.getByRole('spinbutton', { name: `材料数量：${label}` }), { target: { value: '4' } });
+  expect(screen.getByLabelText('准备材料预算')).toHaveTextContent('0.08 神圣石');
+  view.unmount();
+  const restored = show();
+  expect(screen.getByRole('button', { name: `使用材料：${label}` })).toHaveAttribute('aria-pressed', 'true');
+  expect(screen.getByRole('spinbutton', { name: `材料数量：${label}` })).toHaveValue(4);
+  expect(screen.getByLabelText('准备材料预算')).toHaveTextContent('0.08 神圣石');
+  restored.unmount();
+  const other = show('another sample');
+  expect(screen.getByLabelText('准备材料预算')).toHaveTextContent('选择材料'); other.unmount();
+  show('sample', 'Other League');
+  expect(screen.getByLabelText('准备材料预算')).toHaveTextContent('选择材料');
+  fireEvent.change(screen.getByRole('spinbutton', { name: `材料数量：${label}` }), { target: { value: '2' } });
+  expect(screen.getByLabelText('准备材料预算')).toHaveTextContent('已计价部分');
+  fireEvent.click(screen.getByRole('button', { name: '清空材料预算' }));
+  expect(screen.getByLabelText('准备材料预算')).toHaveTextContent('选择材料');
+});
+
+it('fetches same-league rates once, converts material and base totals and preserves original quote units on refresh', async () => {
+  let divine = 100;
+  const network = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify({ ok: true, exchange: { league: 'Test', source: 'poe.ninja', asOf: '2026-10-24T00:00:00Z', rates: { exalted: 1, divine, chaos: 5 } } }))));
+  vi.stubGlobal('fetch', network);
+  const view = show();
+  await waitFor(() => expect(screen.getByText(/1 神圣石 ≈ 20 混沌石/)).toBeInTheDocument());
+  fireEvent.change(screen.getByRole('spinbutton', { name: `材料数量：${label}` }), { target: { value: '3' } });
+  fireEvent.click(screen.getByRole('checkbox', { name: '计入底装买价' }));
+  fireEvent.change(screen.getByRole('spinbutton', { name: '底装购买金额' }), { target: { value: '2' } });
+  expect(screen.getByLabelText('制作总成本')).toHaveTextContent('总成本：2.06 神圣石');
+  fireEvent.change(screen.getByRole('combobox', { name: '制作成本显示币种' }), { target: { value: 'chaos' } });
+  expect(screen.getByLabelText('制作总成本')).toHaveTextContent('总成本：41.2 混沌石');
+  expect(network).toHaveBeenCalledTimes(1);
+  divine = 200;
+  fireEvent.click(screen.getByRole('button', { name: '刷新汇率' }));
+  await waitFor(() => expect(screen.getByLabelText('制作总成本')).toHaveTextContent('总成本：81.2 混沌石'));
+  expect(screen.getByRole('spinbutton', { name: '底装购买金额' })).toHaveValue(2);
+  fireEvent.change(screen.getByRole('spinbutton', { name: '底装购买金额' }), { target: { value: '' } });
+  expect(screen.getByLabelText('制作总成本')).toHaveTextContent('已计价合计：1.2 混沌石 · 待补齐');
+  view.unmount(); vi.unstubAllGlobals();
+});
+
+it('keeps a failed or wrong-league lookup explicit and permits complete manual rates without borrowing that feed', async () => {
+  vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(JSON.stringify({ ok: true, exchange: { league: 'Wrong', source: 'poe.ninja', asOf: '2026-10-24T00:00:00Z', rates: { exalted: 1, divine: 500, chaos: 25 } } })))));
+  show('sample', 'Other');
+  await waitFor(() => expect(screen.getByText(/汇率数据或赛季不一致/)).toBeInTheDocument());
+  fireEvent.change(screen.getByRole('spinbutton', { name: `材料数量：${fracture}` }), { target: { value: '2' } });
+  const material = screen.getByRole('button', { name: `使用材料：${fracture}` }).closest('.cb-prep-material') as HTMLElement;
+  fireEvent.click(within(material).getByText('调整单价'));
+  fireEvent.change(screen.getByRole('spinbutton', { name: `材料单价：${fracture}` }), { target: { value: '3' } });
+  fireEvent.change(screen.getByRole('combobox', { name: `单价币种：${fracture}` }), { target: { value: 'chaos' } });
+  expect(screen.getByLabelText('准备材料预算')).toHaveTextContent('已计价部分');
+  fireEvent.click(screen.getByText('手填／核对汇率'));
+  fireEvent.change(screen.getByRole('spinbutton', { name: '汇率：神圣石兑Ex' }), { target: { value: '100' } });
+  fireEvent.change(screen.getByRole('spinbutton', { name: '汇率：混沌石兑Ex' }), { target: { value: '5' } });
+  expect(screen.getByLabelText('准备材料预算')).toHaveTextContent('材料预算：0.3 神圣石');
+  fireEvent.change(screen.getByRole('combobox', { name: '制作成本显示币种' }), { target: { value: 'chaos' } });
+  expect(screen.getByLabelText('制作总成本')).toHaveTextContent('总成本：6 混沌石');
+  fireEvent.click(screen.getByRole('button', { name: '恢复来源汇率' }));
+  expect(screen.getByLabelText('准备材料预算')).toHaveTextContent('已计价部分');
+});

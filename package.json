@@ -1,0 +1,90 @@
+{
+  "name": "poe2-build-atlas",
+  "version": "1.1.0",
+  "description": "Integrated Path of Exile 2 workbench for skill damage attribution, equipment planning, trade search and crafting.",
+  "author": {
+    "name": "shihongyue2022",
+    "url": "https://github.com/shihongyue2022"
+  },
+  "license": "AGPL-3.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "type-check": "tsc --noEmit",
+    "type-check:engine": "tsc -p packages/engine/tsconfig.json",
+    "type-check:optimizer": "tsc -p packages/optimizer/tsconfig.json",
+    "lint": "eslint .",
+    "test:e2e": "playwright test",
+    "test:workbench": "vitest run src/workbench --maxWorkers=2",
+    "i18n:build": "node scripts/build-ui-catalogs.mjs",
+    "test:workbench:languages": "node scripts/workbench-languages-regression.mjs",
+    "test:workbench:browser": "node scripts/workbench-smoke.mjs",
+    "test:workbench:trade-browser": "node scripts/workbench-trade-regression.mjs",
+    "test:workbench:guided-browser": "node scripts/workbench-guided-regression.mjs",
+    "test:workbench:equipment-browser": "node scripts/workbench-equipment-regression.mjs",
+    "test:optimizer": "vitest run packages/optimizer",
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest --coverage",
+    "test:engine": "vitest run packages/engine",
+    "update-data": "bash tools/refresh/run.sh",
+    "update-prices": "node tools/refresh/prices.mjs",
+    "og": "npx tsx scripts/og.mts",
+    "update-streamers": "npx tsx tools/streamers/fetch.mjs"
+  },
+  "dependencies": {
+    "@sentry/react": "^10.26.0",
+    "@vercel/analytics": "^1.5.0",
+    "botid": "^1.5.11",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "react": "^19.2.1",
+    "react-dom": "^19.2.1",
+    "sonner": "^2.0.7",
+    "tailwind-merge": "^3.4.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.62.1",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "@vitest/ui": "^4.0.13",
+    "autoprefixer": "^10.4.22",
+    "eslint": "^10.9.1",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.12.0",
+    "jsdom": "^27.2.0",
+    "marked": "^18.0.11",
+    "postcss": "^8.5.6",
+    "rollup-plugin-visualizer": "^6.0.11",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.6.0",
+    "typescript-eslint": "^8.69.0",
+    "vite": "^7.2.0",
+    "vitest": "^4.1.11"
+  },
+  "contributors": [
+    {
+      "name": "Dboire",
+      "email": "dboire@student.42.fr",
+      "url": "https://github.com/Dboire9"
+    }
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/shihongyue2022/PoE2-Build-Atlas.git"
+  },
+  "homepage": "https://shihongyue2022.github.io/apps/poe2-companion/",
+  "bugs": {
+    "url": "https://github.com/shihongyue2022/PoE2-Build-Atlas/issues"
+  }
+}

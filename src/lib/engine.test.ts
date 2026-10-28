@@ -1,0 +1,945 @@
+import { describe, it, expect } from 'vitest';
+import {
+  listBases, listMods, listPerfectEssences, listDesecrated, optimize, optimizeItem, optimizeItemMarkov,
+  currencyActions, alternatives, alternativesForItem, type CurrencyAction,
+  type EngineMod, type ExistingItem, type ItemModInput,
+} from './engine.ts';
+import { ANCIENT_BONE_FLOOR, desecrationProbability } from '../../packages/engine/src/probability.ts';
+import { buildItemState } from './engineMap.ts';
+import { loadPatch } from '../../packages/engine/src/loadPatch.ts';
+import { loadPrices } from '../../packages/optimizer/src/loadPrices.ts';
+import { loadFrozenPrices } from '../../packages/optimizer/src/frozenPrices.ts';
+
+// The facade's data loading uses fetch(?url) which needs a browser; here we build the same snapshot
+// via the node loaders and exercise the pure mapping/optimize glue the UI depends on.
+const eng = { data: loadPatch('data/patches/0.5'), prices: loadPrices('data/patches/0.5') };
+const MANA = 'Wands/MAXIMUM_MANA';
+const ESS = 'Wands/ESSENCE_INCREASED_CAST_SPEED'; // essence-only suffix (its tiers are essence levels)
+const findMod = (list: readonly EngineMod[], id: string) => list.find((m) => m.id === id)!;
+
+describe('engine facade — base & mod listing', () => {
+  it('lists Wands among the bases', () => {
+    expect(listBases(eng.data).some((b) => b.id === 'Wands')).toBe(true);
+  });
+
+  // The Plan and Item tabs' pickers read this list; tablets are crafted on their own tab.
+  it('leaves Precursor Tablets out of the gear bases', () => {
+    const shipped = loadPatch('data/patches/0.5.0');
+    expect(shipped.bases.has('Tablets_ritual')).toBe(true);
+    expect(listBases(shipped).filter((b) => b.category === 'Tablets')).toEqual([]);
+    expect(listBases(shipped).some((b) => b.id === 'Wands')).toBe(true);
+  });
+
+  it('presents a mod’s tiers best-first (display 1 = highest ilvl)', () => {
+    const mana = findMod(listMods(eng.data, 'Wands').prefixes, MANA);
+    expect(mana.tiers[0]!.display).toBe(1);
+    const ilvls = mana.tiers.map((t) => t.ilvl);
+    // T1 (display 1) is the best = highest ilvl gate; displays ascend as tiers get worse.
+    expect(mana.tiers[0]!.ilvl).toBe(Math.max(...ilvls));
+    expect(mana.tiers[mana.tiers.length - 1]!.ilvl).toBe(Math.min(...ilvls));
+  });
+
+  it('surfaces essence-only mods (from the essence pool) tagged as such, tiers = essence levels', () => {
+    const ess = findMod(listMods(eng.data, 'Wands').suffixes, ESS);
+    expect(ess.source).toBe('essence');
+    // tier labels are the essence level names (Lesser/…/Greater Essence of …), not "T1 · …".
+    expect(ess.tiers.some((t) => /essence/i.test(t.name))).toBe(true);
+  });
+});
+
+describe('engine facade — optimize', () => {
+  it('returns an achievable, well-formed frontier for a single T1 target', () => {
+    const r = optimize(eng, 'Wands', 82, [{ modId: MANA, tierDisplay: 1 }]);
+    expect(r.frontier.length).toBeGreaterThan(0);
+    const plan = r.frontier[0]!;
+    expect(Number.isFinite(plan.expected)).toBe(true);
+    expect(plan.probability).toBeGreaterThan(0);
+    // steps render human text (mod text, not raw id) and a currency label.
+    expect(plan.steps[0]!.target).toBe('+# to maximum Mana');
+    expect(plan.steps[0]!.label).toMatch(/Transmut/);
+  });
+
+  it('targeting T1 is strictly harder (lower probability) than accepting any tier', () => {
+    const mana = findMod(listMods(eng.data, 'Wands').prefixes, MANA);
+    const anyTier = mana.tiers.length; // worst display ⇒ minTierIndex 0 ⇒ any tier
+    const best = (r: ReturnType<typeof optimize>) => Math.max(...r.frontier.map((p) => p.probability));
+    const t1 = optimize(eng, 'Wands', 82, [{ modId: MANA, tierDisplay: 1 }]);
+    const any = optimize(eng, 'Wands', 82, [{ modId: MANA, tierDisplay: anyTier }]);
+    expect(best(any)).toBeGreaterThan(best(t1));
+  });
+
+  it('an essence-only target is guaranteed by a deterministic (P=1) essence step at the chosen level', () => {
+    const r = optimize(eng, 'Wands', 82, [
+      { modId: MANA, tierDisplay: 1 },       // a rollable mod for the essence to land on
+      { modId: ESS, tierDisplay: 1 },        // essence-only, best level (Greater)
+    ]);
+    expect(r.frontier.length).toBeGreaterThan(0);
+    const essStep = r.frontier[0]!.steps.find((s) => s.currency === 'essence');
+    expect(essStep).toBeDefined();
+    expect(essStep!.prob).toBe(1);
+    expect(essStep!.label.toLowerCase()).toContain('essence');
+  });
+
+  // One ESSENCE MODIFIER per item, counting regular and perfect together — not one regular essence.
+  it('rejects two crafted mods (an item carries one, Essence or Perfect Essence or Alloy)', () => {
+    const secondEssence = 'Wands/ESSENCE_SPELL_CRIT_CHANCE';
+    expect(() => optimize(eng, 'Wands', 82, [
+      { modId: ESS, tierDisplay: 1 }, { modId: secondEssence, tierDisplay: 1 },
+    ])).toThrow(/at most one crafted modifier/i);
+  });
+
+  it('rejects an essence-only-only target (needs a rollable mod to make the Magic base)', () => {
+    expect(() => optimize(eng, 'Wands', 82, [{ modId: ESS, tierDisplay: 1 }])).toThrow(/rollable mod/i);
+  });
+
+  it('reports the currency-tier search depth (never silently truncated)', () => {
+    const r = optimize(eng, 'Wands', 82, [{ modId: MANA, tierDisplay: 1 }]);
+    expect(r.plansEvaluated).toBeGreaterThan(0);
+  });
+});
+
+describe('engine facade — existing-item currency actions (Option 1)', () => {
+  const SPELL = 'Wands/INCREASED_SPELL_DAMAGE'; // a wand prefix
+  const PERFECT_ESS = 'Wands/ESSENCE_MANA_COST_EFFICIENCY'; // perfect-essence-only suffix
+  const ESSENCE_ONLY = 'Wands/ESSENCE_INCREASED_CAST_SPEED'; // regular-essence-only suffix
+  const rare = (prefixes: string[], suffixes: string[]): ExistingItem => ({
+    baseId: 'Wands', level: 82, rarity: 'rare',
+    prefixes: prefixes.map((modId) => ({ modId, tierDisplay: 1 })),
+    suffixes: suffixes.map((modId) => ({ modId, tierDisplay: 1 })),
+  });
+
+  it('a rare with an open slot → an Exalted action with a real per-use probability', () => {
+    const acts = currencyActions(eng, rare([MANA], []), { addModId: 'Wands/INTELLIGENCE' });
+    const ex = acts.find((a) => a.currency === 'exalt')!;
+    expect(ex.feasible).toBe(true);
+    expect(ex.prob).toBeGreaterThan(0);
+    expect(ex.prob).toBeLessThanOrEqual(1);
+    expect(ex.detail).toMatch(/adds/);
+  });
+
+  it('a removeModId turns on the Chaos swap (removes the sacrifice, adds the target)', () => {
+    const acts = currencyActions(eng, rare([MANA], ['Wands/INTELLIGENCE']), { addModId: SPELL, removeModId: 'Wands/INTELLIGENCE' });
+    const chaos = acts.find((a) => a.currency === 'chaos')!;
+    expect(chaos.feasible).toBe(true);
+    expect(chaos.prob).toBeGreaterThan(0);
+    expect(chaos.detail).toMatch(/removes .* adds/);
+    expect(chaos.cost).toBeCloseTo(0.2, 12); // the single-orb price, not a total budget
+  });
+
+  it('Annulment odds are uniform over the mods on the item (2 mods → 1/2)', () => {
+    const acts = currencyActions(eng, rare([MANA], ['Wands/INTELLIGENCE']), { removeModId: MANA });
+    const annul = acts.find((a) => a.currency === 'annul')!;
+    expect(annul.feasible).toBe(true);
+    expect(annul.prob).toBeCloseTo(1 / 2, 12);
+  });
+
+  it('naming a mod that isn’t on the item is infeasible, with a reason', () => {
+    const acts = currencyActions(eng, rare([MANA], []), { removeModId: 'Wands/INTELLIGENCE' });
+    const annul = acts.find((a) => a.currency === 'annul')!;
+    expect(annul.feasible).toBe(false);
+    expect(annul.reason).toMatch(/isn.t on the item/);
+  });
+
+  it('a magic item offers Augmentation + Regal (not Exalted — that is rare-only)', () => {
+    const magic: ExistingItem = { baseId: 'Wands', level: 82, rarity: 'magic', prefixes: [{ modId: MANA, tierDisplay: 1 }], suffixes: [] };
+    const acts = currencyActions(eng, magic, { addModId: 'Wands/INTELLIGENCE' });
+    expect(acts.some((a) => a.currency === 'augment')).toBe(true);
+    expect(acts.some((a) => a.currency === 'regal')).toBe(true);
+    expect(acts.some((a) => a.currency === 'exalt')).toBe(false);
+  });
+
+  // ── Orb strengths ─────────────────────────────────────────────────────────
+  // The route cards have named Greater and Perfect orbs since the orb-strength axis shipped, while
+  // this panel knew only base orbs — the same screen disagreeing with itself about what the app knows.
+
+  it('offers an Exalt at every strength the sheet prices', () => {
+    const acts = currencyActions(eng, rare([MANA], []), { addModId: 'Wands/INTELLIGENCE' });
+    const ex = acts.filter((a) => a.currency === 'exalt');
+    expect(ex.map((a) => a.label)).toEqual(['Exalted Orb', 'Greater Exalted Orb', 'Perfect Exalted Orb']);
+    // Priced through `stepCost`, so each row is the orb's own price and not the base one.
+    expect(ex.map((a) => a.cost)).toEqual([1, 5, 20]);
+    for (const a of ex) expect(a.prob).toBeGreaterThan(0);
+  });
+
+  /**
+   * THE trap, and the reason this is a filter rather than a loop.
+   *
+   * `stepCost` charges 0 for a key the sheet does not list. This fixture prices `exalt_greater` and
+   * `exalt_perfect` but NOT `chaos_greater` / `chaos_perfect` — so an ungated enumeration would offer
+   * a Perfect Chaos Orb at **0 ex**, which is not merely wrong but the cheapest row on the panel and
+   * therefore the one a player would reach for. Gated on `currencyKey`, never on a key rebuilt here.
+   */
+  it('skips a strength the sheet does not price, rather than quoting it free', () => {
+    const acts = currencyActions(eng, rare([MANA], ['Wands/INTELLIGENCE']), { addModId: SPELL, removeModId: 'Wands/INTELLIGENCE' });
+    expect(acts.filter((a) => a.currency === 'chaos').map((a) => a.label)).toEqual(['Chaos Orb']);
+    expect(acts.every((a) => a.cost > 0 || !a.feasible)).toBe(true);
+  });
+
+  it('gives a magic item its Augmentation and Regal strengths too', () => {
+    const magic: ExistingItem = { baseId: 'Wands', level: 82, rarity: 'magic', prefixes: [{ modId: MANA, tierDisplay: 1 }], suffixes: [] };
+    const acts = currencyActions(eng, magic, { addModId: 'Wands/INTELLIGENCE' });
+    expect(acts.filter((a) => a.currency === 'augment').length).toBeGreaterThan(1);
+    expect(acts.filter((a) => a.currency === 'regal').length).toBeGreaterThan(1);
+  });
+
+  // ── Essences ──────────────────────────────────────────────────────────────
+
+  it('offers a Perfect Essence, and states the odds it eats the mod you named', () => {
+    // Two prefixes and a suffix: a uniform removal is 1 in 3, and Sinistral narrows it to 1 in 2.
+    const item = rare([MANA, SPELL], ['Wands/INTELLIGENCE']);
+    const acts = currencyActions(eng, item, { addModId: PERFECT_ESS, removeModId: MANA });
+    const rows = acts.filter((a) => a.currency === 'perfect-essence');
+    expect(rows[0]!.label).toBe('Perfect Essence');
+    expect(rows[0]!.prob).toBeCloseTo(1 / 3, 12);
+    // Only the omen for the side the sacrifice is ON — MANA is a prefix, so Dextral cannot take it.
+    expect(rows.map((a) => a.label)).toEqual([
+      'Perfect Essence', 'Perfect Essence + Omen of Sinistral Crystallisation',
+    ]);
+    expect(rows[1]!.prob).toBeCloseTo(1 / 2, 12);
+  });
+
+  // The add is guaranteed; the only uncertainty is which mod it eats. With no sacrifice named there is
+  // no probability to state, so the row explains the trade instead of quoting a number for it.
+  it('asks for a sacrifice rather than quoting a Perfect Essence without one', () => {
+    const acts = currencyActions(eng, rare([MANA], []), { addModId: PERFECT_ESS });
+    const pe = acts.find((a) => a.currency === 'perfect-essence')!;
+    expect(pe.feasible).toBe(false);
+    expect(pe.reason).toMatch(/name a mod to sacrifice/i);
+  });
+
+  it('offers a regular Essence on a Magic item, forced and certain', () => {
+    const magic: ExistingItem = { baseId: 'Wands', level: 82, rarity: 'magic', prefixes: [{ modId: MANA, tierDisplay: 1 }], suffixes: [] };
+    const acts = currencyActions(eng, magic, { addModId: ESSENCE_ONLY });
+    const ess = acts.find((a) => a.currency === 'essence')!;
+    expect(ess.prob).toBe(1);
+    expect(ess.cost).toBeGreaterThan(0); // a level was chosen, so a price was found
+    // …and the orbs that cannot place it say so rather than going quiet.
+    expect(acts.find((a) => a.currency === 'augment')!.reason).toMatch(/only an Essence/i);
+  });
+
+  // A regular essence needs a Magic item — on a Rare there is no such move, and offering one would be
+  // the "plausible but wrong" failure docs/copy-audit.md exists to prevent.
+  it('does not offer a regular Essence on a Rare', () => {
+    const acts = currencyActions(eng, rare([MANA], []), { addModId: ESSENCE_ONLY });
+    expect(acts.some((a) => a.currency === 'essence')).toBe(false);
+  });
+});
+
+// ── The Desecration rows (TODO 18, first half) ────────────────────────────────
+// A player holding a Rare and a bone had to leave the panel that exists to answer "what does one orb
+// do?". These cover what the row must get right, which is more than calling one probability function:
+// the three-mod offer, the one-carved-mod-per-item rule, the Weapon-or-Jewellery omen gate, and — the
+// D8 rule — that the price shown is the price a ROUTE using the same orb is charged.
+describe('engine facade — the Quick check’s Desecration rows', () => {
+  const CARVED = 'Wands/DESECRATED_HINDERED_ENEMY_INCREASED_PHYSICAL_DAMAGE'; // a Sovereign wand suffix
+  const ARMOUR_CARVED = 'Body_Armours_Normal/DESECRATED_FIRE_AND_CHAOS_DAMAGE_RESISTANCE';
+  const rare = (prefixes: string[], suffixes: ItemModInput[] = []): ExistingItem => ({
+    baseId: 'Wands', level: 82, rarity: 'rare',
+    prefixes: prefixes.map((modId) => ({ modId, tierDisplay: 1 })),
+    suffixes,
+  });
+  const des = (acts: readonly CurrencyAction[]) => acts.filter((a) => a.currency === 'desecrate');
+
+  it('quotes the THREE-mod offer, not the single draw', () => {
+    const item = rare([MANA]);
+    const [bone] = des(currencyActions(eng, item, { addModId: 'Wands/INTELLIGENCE' }));
+    const draw = desecrationProbability(eng.data, buildItemState(eng.data, item), 'Wands/INTELLIGENCE');
+    expect(draw).toBeGreaterThan(0);
+    // A bone OFFERS three modifiers and you keep one. Quoting `draw` would understate the row by ~3x
+    // and — worse — disagree with every route that spends the same bone.
+    expect(bone!.prob).toBeCloseTo(1 - (1 - draw) ** 3, 12);
+    expect(bone!.prob).toBeGreaterThan(draw);
+  });
+
+  it('a carved mod is addable by a bone and by nothing else on this panel', () => {
+    const acts = currencyActions(eng, rare([MANA]), { addModId: CARVED });
+    const ex = acts.find((a) => a.currency === 'exalt')!;
+    expect(ex.feasible).toBe(false);
+    // Not the old catch-all "it can’t roll on this base" — it rolls here fine, just not from an Exalt.
+    expect(ex.reason).toMatch(/only a Desecration can add it/);
+    expect(des(acts)[0]!.feasible).toBe(true);
+  });
+
+  it('a carved target on a WEAPON gets its boss-omen row, named and feasible', () => {
+    const rows = des(currencyActions(eng, rare([MANA]), { addModId: CARVED }));
+    const boss = rows.find((a) => /Omen of the/.test(a.label))!;
+    expect(boss.label).toMatch(/Omen of the Sovereign/);
+    expect(boss.feasible).toBe(true);
+    // Forcing one boss's pool is the point of the omen: it must beat the untargeted draw.
+    expect(boss.prob).toBeGreaterThan(rows.find((a) => !/Omen/.test(a.label))!.prob);
+  });
+
+  it('on ARMOUR the boss omens are impossible, and the row says why rather than vanishing', () => {
+    const armour: ExistingItem = { baseId: 'Body_Armours_int', level: 82, rarity: 'rare', prefixes: [], suffixes: [] };
+    const rows = des(currencyActions(eng, armour, { addModId: ARMOUR_CARVED }));
+    expect(rows.find((a) => !/Omen/.test(a.label))!.feasible).toBe(true); // the plain bone still works
+    const boss = rows.find((a) => /Omen of the/.test(a.label))!;
+    expect(boss.feasible).toBe(false);
+    expect(boss.reason).toMatch(/Weapon or Jewellery/);
+  });
+
+  it('refuses the bone while a carved mod is still on the item', () => {
+    const held = rare([MANA], [{ modId: CARVED, tierDisplay: 1, desecrated: true }]);
+    const rows = des(currencyActions(eng, held, { addModId: 'Wands/INTELLIGENCE' }));
+    expect(rows.length).toBeGreaterThan(0);
+    for (const r of rows) {
+      expect(r.feasible).toBe(false);
+      expect(r.reason).toMatch(/already holds a desecrated mod/);
+    }
+    // The Exalt is unaffected — the cap is on carved mods, not on the slot.
+    expect(currencyActions(eng, held, { addModId: 'Wands/INTELLIGENCE' })
+      .find((a) => a.currency === 'exalt')!.feasible).toBe(true);
+  });
+});
+
+// The panel and the planners must quote ONE price for one orb. Run against the SHIPPED 0.5.0 sheet,
+// because it is the one that carries a per-category `bones` block — the 0.5 sheet has a single flat
+// `desecrate` key, under which this whole class of error is invisible.
+describe('engine facade — the Quick check prices what the routes charge', () => {
+  const shipped = { data: loadPatch('data/patches/0.5.0'), prices: loadPrices('data/patches/0.5.0') };
+  const wand: ExistingItem = {
+    baseId: 'Wands', level: 82, rarity: 'rare',
+    prefixes: [{ modId: 'Wands/WeaponSpellDamage', tierDisplay: 1 }], suffixes: [],
+  };
+
+  it('charges a Wand its OWN bone, not the flat desecrate key', () => {
+    const bones = shipped.prices.bones!;
+    // Guard against a vacuous pass: if the sheet ever prices every bone alike, this test proves
+    // nothing and should fail loudly rather than go quiet.
+    expect(bones['jawbone']).not.toBe(shipped.prices.currency['desecrate']);
+    const bone = currencyActions(shipped, wand, { addModId: 'Wands/Intelligence' })
+      .find((a) => a.currency === 'desecrate')!;
+    expect(bone.cost).toBeCloseTo(bones['jawbone']!, 12);
+  });
+
+  it('charges an omened row the orb PLUS its omen, from the same table the planners read', () => {
+    const carved = shipped.data.bases.get('Wands')!.pools.desecrated.suffixes[0]!;
+    const held: ExistingItem = {
+      ...wand, suffixes: [{ modId: carved, tierDisplay: 1, desecrated: true }],
+    };
+    const acts = currencyActions(shipped, held, { removeModId: carved });
+    const plain = acts.find((a) => a.label === 'Orb of Annulment')!;
+    const light = acts.find((a) => /Omen of Light/.test(a.label))!;
+    // This sum used to be written out by hand here — a second copy of `stepCost`, which is the shape
+    // the D8 mispricing hid in. Asserted relationally so the daily price refresh can't break it.
+    expect(light.cost).toBeCloseTo(plain.cost + shipped.prices.omens['OmenofLight']!, 9);
+  });
+
+  it('offers an Ancient bone, drawn at modifier level 40 and charged the Ancient jawbone', () => {
+    const acts = currencyActions(shipped, wand, { addModId: 'Wands/Intelligence' });
+    const ancient = acts.find((a) => a.label === 'Desecration (Ancient bone)')!;
+    const draw = desecrationProbability(shipped.data, buildItemState(shipped.data, wand), 'Wands/Intelligence',
+      { floor: ANCIENT_BONE_FLOOR });
+    expect(ancient.prob).toBeCloseTo(1 - (1 - draw) ** 3, 12);
+    expect(ancient.cost).toBeCloseTo(shipped.prices.bones!['jawbone_ancient']!, 9);
+  });
+
+  it('offers each bone again with an Omen of Abyssal Echoes: six draws, the omen spent only on a miss', () => {
+    const acts = currencyActions(shipped, wand, { addModId: 'Wands/Intelligence' });
+    const plain = acts.find((a) => a.label === 'Desecration')!;
+    const echoed = acts.find((a) => a.label === 'Desecration + Omen of Abyssal Echoes')!;
+    const draw = desecrationProbability(shipped.data, buildItemState(shipped.data, wand), 'Wands/Intelligence');
+    // Wanting one mod you reroll exactly when none of the three is it, so it is kept if it shows in
+    // either set of three.
+    expect(echoed.prob).toBeCloseTo(1 - (1 - draw) ** 6, 12);
+    // The omen is spent only when the first three miss, so the row carries its average spend.
+    expect(echoed.cost).toBeCloseTo(plain.cost + shipped.prices.omens['OmenofAbyssalEchoes']! * (1 - draw) ** 3, 9);
+  });
+});
+
+describe('engine facade — from-item planner (Option 2)', () => {
+  const any = 99; // tierDisplay past the tier count ⇒ any tier (keeps the smoke test feasible)
+  // A rare wand with Mana (P) + Intelligence & Cast Speed (S). Target keeps Mana+Int, swaps Cast Speed
+  // for Increased Spell Damage (a prefix) — so Cast Speed is junk and Spell Damage is missing.
+  const item: ExistingItem = {
+    baseId: 'Wands', level: 82, rarity: 'rare',
+    prefixes: [{ modId: MANA, tierDisplay: 1 }],
+    suffixes: [{ modId: 'Wands/INTELLIGENCE', tierDisplay: 1 }, { modId: 'Wands/INCREASED_CAST_SPEED', tierDisplay: 1 }],
+  };
+  const targets = [
+    { modId: MANA, tierDisplay: any }, { modId: 'Wands/INTELLIGENCE', tierDisplay: any },
+    { modId: 'Wands/INCREASED_SPELL_DAMAGE', tierDisplay: any },
+  ];
+
+  it('returns a frontier that removes the junk and adds the missing mod', () => {
+    const r = optimizeItem(eng, item, targets);
+    expect(r.frontier.length).toBeGreaterThan(0);
+    // Some plan removes Cast Speed (annul) or swaps it in one orb (chaos), and the step text says so.
+    const removers = r.frontier.flatMap((p) => p.steps).filter((s) => s.currency === 'annul' || s.currency === 'chaos');
+    expect(removers.length).toBeGreaterThan(0);
+    expect(removers.some((s) => /removes|−/.test(s.target))).toBe(true);
+  });
+
+  // This asserted the opposite until 2026-08-23: a Magic item threw "the from-item planner currently
+  // supports Rare items". Rarity describes the item you HOLD, so that turned the commonest starting
+  // point in the game — a magic base part-way through a craft — into an error, and the message invited
+  // the player to misdescribe their item to get past it. A Regal opens it now.
+  it('plans a Magic item by opening with a Regal', () => {
+    const magic: ExistingItem = { ...item, rarity: 'magic', suffixes: [{ modId: 'Wands/INTELLIGENCE', tierDisplay: 1 }] };
+    const r = optimizeItem(eng, magic, targets);
+    expect(r.frontier.length).toBeGreaterThan(0);
+    // Exalt and Chaos both score 0 on a Magic item, so every plan must convert to Rare first.
+    for (const p of r.frontier) expect(p.steps[0]!.currency).toBe('regal');
+  });
+});
+
+// The app fetches the 0.5.0 snapshot at runtime; here we build that same snapshot via the node loaders
+// and confirm the newly-shipped essence pool is reachable through the optimizer (not just present in data).
+describe('engine facade — essence targeting on the shipped 0.5.0 data', () => {
+  const eng050 = { data: loadPatch('data/patches/0.5.0'), prices: loadPrices('data/patches/0.5.0') };
+
+  it('surfaces 0.5.0 essence mods and reaches one via a deterministic (P=1) essence step', () => {
+    const { prefixes, suffixes } = listMods(eng050.data, 'Wands');
+    const essence = [...prefixes, ...suffixes].find((m) => m.source === 'essence');
+    expect(essence, 'Wands has an essence mod in 0.5.0').toBeDefined();
+    // A rollable mod on the OPPOSITE side so both fit; the essence needs a Magic base to convert.
+    const rollable = (essence!.type === 'prefix' ? suffixes : prefixes).find((m) => m.source === 'normal')!;
+    const r = optimize(eng050, 'Wands', 82, [
+      { modId: rollable.id, tierDisplay: rollable.tiers.length },   // any tier
+      { modId: essence!.id, tierDisplay: essence!.tiers.length },   // lowest essence level → feasible at ilvl 82
+    ]);
+    expect(r.frontier.length).toBeGreaterThan(0);
+    const essStep = r.frontier[0]!.steps.find((s) => s.currency === 'essence');
+    expect(essStep).toBeDefined();
+    expect(essStep!.prob).toBe(1);
+    expect(essStep!.label.toLowerCase()).toContain('essence');
+  });
+});
+
+// Perfect essences: offered only in the from-item flow (a Perfect Essence adds its guaranteed mod on a
+// Rare while removing one random mod). Verify the facade lists them and the planner reaches one.
+describe('engine facade — perfect essences in the from-item planner (0.5.0)', () => {
+  const eng050 = { data: loadPatch('data/patches/0.5.0'), prices: loadPrices('data/patches/0.5.0') };
+
+  it('surfaces both currencies that use this flow, each single-tier', () => {
+    const perfects = listPerfectEssences(eng050.data, 'Wands');
+    expect(perfects.length).toBeGreaterThan(0);
+    // TWO sources, because two currencies share this mechanic: a Perfect Essence and an ALLOY, which
+    // poe2db files in the same pool (`Removes: true` on both). They are one thing to the planner and
+    // two to a player — different names, and prices that differ by three orders of magnitude — so the
+    // list carries the distinction while the flow does not.
+    expect(perfects.every((m) => (m.source === 'perfect' || m.source === 'alloy') && m.tiers.length === 1)).toBe(true);
+    expect(perfects.some((m) => m.source === 'alloy')).toBe(true);
+    expect(perfects.some((m) => m.source === 'perfect')).toBe(true);
+    // Neither may leak into the from-white picker (listMods stays normal + regular essence).
+    const white = listMods(eng050.data, 'Wands');
+    expect([...white.prefixes, ...white.suffixes].some((m) => m.source === 'perfect' || m.source === 'alloy')).toBe(false);
+  });
+
+  it('reaches a perfect-essence target by sacrificing a junk mod (perfect-essence step)', () => {
+    const pe = listPerfectEssences(eng050.data, 'Wands')[0]!;
+    // a junk normal prefix on a different family so the add is legal before the removal
+    const junk = listMods(eng050.data, 'Wands').prefixes.find((m) => m.source === 'normal' && m.family !== pe.family)!;
+    const item: ExistingItem = {
+      baseId: 'Wands', level: 82, rarity: 'rare',
+      prefixes: [{ modId: junk.id, tierDisplay: 1 }], suffixes: [],
+    };
+    const r = optimizeItem(eng050, item, [{ modId: pe.id, tierDisplay: 1 }]);
+    expect(r.frontier.length).toBeGreaterThan(0);
+    const step = r.frontier[0]!.steps.find((s) => s.currency === 'perfect-essence');
+    expect(step, 'the plan uses a perfect essence').toBeDefined();
+    expect(step!.label.toLowerCase()).toContain('perfect essence');
+    expect(step!.target).toMatch(/random/); // "+<add>  −<removed> (random)"
+  });
+
+  // The target keeps the existing mod AND wants the perfect one, so nothing on the Rare may be eaten.
+  // This used to be refused; the planner now rolls a THROWAWAY for the essence to eat instead, and the
+  // route has to SAY so in words a player can follow at the counter.
+  it('rolls a throwaway for the essence when the Rare has nothing to spare, and says so', () => {
+    const pe = listPerfectEssences(eng050.data, 'Wands')[0]!;
+    const keep = listMods(eng050.data, 'Wands').prefixes.find((m) => m.source === 'normal' && m.family !== pe.family)!;
+    const item: ExistingItem = {
+      baseId: 'Wands', level: 82, rarity: 'rare',
+      prefixes: [{ modId: keep.id, tierDisplay: 1 }], suffixes: [],
+    };
+    const r = optimizeItem(eng050, item, [{ modId: keep.id, tierDisplay: 1 }, { modId: pe.id, tierDisplay: 1 }]);
+    expect(r.frontier.length).toBeGreaterThan(0);
+    const steps = r.frontier.at(-1)!.steps;
+    const i = steps.findIndex((s) => s.currency === 'throwaway');
+    expect(i, 'the route rolls a throwaway').toBeGreaterThanOrEqual(0);
+    const throwaway = steps[i]!;
+    const side = /any (prefix|suffix)/.exec(throwaway.target)![1]!;
+    // Labelled as the orb to buy — never the internal name — and as what it is for.
+    expect(throwaway.label).toMatch(/^Exalted/);
+    expect(throwaway.target).toBe(`any ${side} — a throwaway for the next step to remove`);
+    // …and the essence right after it names what it takes, by side, not by a placeholder id.
+    expect(steps[i + 1]!.currency).toBe('perfect-essence');
+    expect(steps[i + 1]!.target).toBe(`+${pe.text}  −the throwaway ${side} (random)`);
+  });
+});
+
+// Desecrated mods: modelled on an item you already hold (they occupy a slot + family), removable for
+// certain by an Omen of Light annul, and keep-able in a plan — but never crafted onto the item here.
+describe('engine facade — desecrated mods on an item (0.5.0)', () => {
+  const eng050 = { data: loadPatch('data/patches/0.5.0'), prices: loadPrices('data/patches/0.5.0') };
+  const des = listDesecrated(eng050.data, 'Wands');
+  const D = des[0]!; // a desecrated mod
+  const norm = listMods(eng050.data, 'Wands');
+  // a normal mod on the OPPOSITE side, different family, so the two sit together legally
+  const N = (D.type === 'prefix' ? norm.suffixes : norm.prefixes).find((m) => m.source === 'normal' && m.family !== D.family)!;
+  const item = (): ExistingItem => ({
+    baseId: 'Wands', level: 82, rarity: 'rare',
+    prefixes: D.type === 'prefix' ? [{ modId: D.id, tierDisplay: 1 }] : [{ modId: N.id, tierDisplay: 1 }],
+    suffixes: D.type === 'prefix' ? [{ modId: N.id, tierDisplay: 1 }] : [{ modId: D.id, tierDisplay: 1 }],
+  });
+
+  it('listDesecrated surfaces the desecrated pool (source "desecrated", single tier), kept out of from-white', () => {
+    expect(des.length).toBeGreaterThan(0);
+    expect(des.every((m) => m.source === 'desecrated' && m.tiers.length === 1)).toBe(true);
+    const white = listMods(eng050.data, 'Wands');
+    expect([...white.prefixes, ...white.suffixes].some((m) => m.source === 'desecrated')).toBe(false);
+    expect(listPerfectEssences(eng050.data, 'Wands').some((m) => m.source === 'desecrated')).toBe(false);
+  });
+
+  it('offers Annulment + Omen of Light (P=1) to remove a desecrated sacrifice, beside the random annul', () => {
+    const acts = currencyActions(eng050, item(), { removeModId: D.id });
+    const plain = acts.find((a) => a.currency === 'annul' && !/Light/.test(a.label))!;
+    const light = acts.find((a) => a.currency === 'annul' && /Light/.test(a.label))!;
+    expect(plain.prob).toBeCloseTo(1 / 2, 9);          // 2 mods on the item → random annul is 1/2
+    expect(light).toBeDefined();
+    expect(light.prob).toBeCloseTo(1, 9);              // Omen of Light → the desecrated mod for certain
+    expect(light.cost).toBeGreaterThan(plain.cost);    // the omen carries a surcharge
+    expect(light.detail).toMatch(/certain/i);
+  });
+
+  it('does NOT offer Omen of Light when the sacrifice is a normal mod', () => {
+    const acts = currencyActions(eng050, item(), { removeModId: N.id });
+    expect(acts.some((a) => /Light/.test(a.label))).toBe(false);
+  });
+
+  it('a plan KEEPS a desecrated mod already on the item (P=1, no steps)', () => {
+    const r = optimizeItem(eng050, item(), [
+      { modId: D.id, tierDisplay: 1 }, { modId: N.id, tierDisplay: 99 }, // keep both; N at any tier
+    ]);
+    const best = r.frontier[r.frontier.length - 1]!;
+    expect(best.probability).toBeCloseTo(1, 9);
+    expect(best.steps.length).toBe(0);
+  });
+
+  it('crafts a desecrated target onto an item via a Desecration + its boss omen', () => {
+    // A rare with one normal prefix; add a desecrated PREFIX by desecrating into the open prefix slot.
+    const dp = listDesecrated(eng050.data, 'Wands').find((m) => m.type === 'prefix')!;
+    const np = norm.prefixes.find((m) => m.source === 'normal' && m.family !== dp.family)!;
+    const start: ExistingItem = { baseId: 'Wands', level: 82, rarity: 'rare', prefixes: [{ modId: np.id, tierDisplay: 1 }], suffixes: [] };
+    const r = optimizeItem(eng050, start, [{ modId: np.id, tierDisplay: 1 }, { modId: dp.id, tierDisplay: 1 }]);
+    expect(r.frontier.length).toBeGreaterThan(0);
+    const desStep = r.frontier[r.frontier.length - 1]!.steps.find((s) => s.currency === 'desecrate');
+    expect(desStep, 'the plan uses a Desecration').toBeDefined();
+    expect(desStep!.label).toMatch(/Desecration \+ Omen of the (Blackblooded|Liege|Sovereign)/);
+    expect(desStep!.target).toBe(dp.text);
+  });
+
+  it('rejects two desecrated targets — an item holds at most one', () => {
+    const two = listDesecrated(eng050.data, 'Wands').filter((m) => m.type === 'suffix').slice(0, 2);
+    expect(two.length).toBe(2);
+    const np = norm.prefixes.find((m) => m.source === 'normal')!;
+    expect(() => optimize(eng050, 'Wands', 82, [
+      { modId: np.id, tierDisplay: np.tiers.length },
+      { modId: two[0]!.id, tierDisplay: 1 }, { modId: two[1]!.id, tierDisplay: 1 },
+    ])).toThrow(/at most one desecrated mod/i);
+  });
+
+  it('crafts a desecrated mod from white: build a Rare with 3 rollables, then Desecrate', () => {
+    const dp = listDesecrated(eng050.data, 'Wands').find((m) => m.type === 'suffix')!;
+    // 2 normal prefixes of DISTINCT families + 1 normal suffix reach Rare (transmute→augment→regal),
+    // then Desecrate the suffix. (Distinct families so the target isn't self-excluding.)
+    const seenFam = new Set<string>();
+    const np = norm.prefixes.filter((m) => m.source === 'normal' && !seenFam.has(m.family) && seenFam.add(m.family)).slice(0, 2);
+    const ns = norm.suffixes.find((m) => m.source === 'normal' && m.family !== dp.family)!;
+    const r = optimize(eng050, 'Wands', 82, [
+      { modId: np[0]!.id, tierDisplay: np[0]!.tiers.length }, { modId: np[1]!.id, tierDisplay: np[1]!.tiers.length },
+      { modId: ns.id, tierDisplay: ns.tiers.length }, { modId: dp.id, tierDisplay: 1 },
+    ]);
+    expect(r.frontier.length).toBeGreaterThan(0);
+    const best = r.frontier[r.frontier.length - 1]!;
+    const desAt = best.steps.findIndex((s) => s.currency === 'desecrate');
+    const regalAt = best.steps.findIndex((s) => s.currency === 'regal');
+    expect(desAt).toBeGreaterThan(regalAt); // desecration only after the item is Rare
+    expect(regalAt).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe('engine facade — fractured mods flow through to the odds', () => {
+  it('a fractured mod is excluded from Annulment removal (the other mod is removed for certain)', () => {
+    const item: ExistingItem = {
+      baseId: 'Wands', level: 82, rarity: 'rare',
+      prefixes: [{ modId: MANA, tierDisplay: 1, fractured: true }],
+      suffixes: [{ modId: 'Wands/INTELLIGENCE', tierDisplay: 1 }],
+    };
+    // Mana fractured ⇒ Intelligence is the only removable mod ⇒ annul hits it with P=1 (was 1/2).
+    const annulInt = currencyActions(eng, item, { removeModId: 'Wands/INTELLIGENCE' }).find((a) => a.currency === 'annul')!;
+    expect(annulInt.prob).toBeCloseTo(1, 12);
+    // Annulling the fractured mod itself is impossible.
+    const annulMana = currencyActions(eng, item, { removeModId: MANA }).find((a) => a.currency === 'annul')!;
+    expect(annulMana.prob).toBe(0);
+  });
+
+  it('from-scratch fractured routing: a plan keeps the carved mod and rolls the rest around it', () => {
+    // Mirror EngineLab: fracture Mana on the base, target = Mana + Intelligence. Starts from a Rare with
+    // Mana (locked) and exalts Intelligence; nothing removes Mana.
+    const item: ExistingItem = {
+      baseId: 'Wands', level: 82, rarity: 'rare',
+      prefixes: [{ modId: MANA, tierDisplay: 99, fractured: true }], suffixes: [],
+    };
+    const r = optimizeItem(eng, item, [{ modId: MANA, tierDisplay: 99 }, { modId: 'Wands/INTELLIGENCE', tierDisplay: 99 }]);
+    expect(r.frontier.length).toBeGreaterThan(0);
+    const removesMana = r.frontier.some((p) => p.steps.some((s) => /removes .*Mana|−.*Mana/.test(s.target)));
+    expect(removesMana).toBe(false);
+    expect(r.frontier.some((p) => p.steps.some((s) => s.currency === 'exalt'))).toBe(true);
+  });
+
+  it('a fractured mod coexists with a DESECRATED target (both want a Rare — no conflict)', () => {
+    // Unlike essence, desecration acts on a Rare, which is exactly what a fractured base is. Fracture a
+    // normal prefix, target it + a desecrated suffix → the plan keeps the carved mod and Desecrates.
+    const desS = listDesecrated(eng.data, 'Wands').find((m) => m.type === 'suffix')!;
+    const carved: ExistingItem = {
+      baseId: 'Wands', level: 82, rarity: 'rare',
+      prefixes: [{ modId: MANA, tierDisplay: 1, fractured: true }], suffixes: [],
+    };
+    const r = optimizeItem(eng, carved, [{ modId: MANA, tierDisplay: 1 }, { modId: desS.id, tierDisplay: 1 }]);
+    expect(r.frontier.length).toBeGreaterThan(0);
+    const desStep = r.frontier[r.frontier.length - 1]!.steps.find((s) => s.currency === 'desecrate');
+    expect(desStep, 'the plan Desecrates the desecrated target').toBeDefined();
+    // …and nothing removes the fractured mod.
+    expect(r.frontier.some((p) => p.steps.some((s) => /removes .*Mana|−.*Mana/.test(s.target)))).toBe(false);
+  });
+
+  it('a fractured (from-item) craft with an essence-only target fails with a clear reason', () => {
+    // The reported bug: fracturing routes through the from-item planner (Rare start), but a regular
+    // essence needs a Magic item — so the essence mod can't be applied. The message must say so, not
+    // give a generic "can't be put on Wands".
+    const carved: ExistingItem = {
+      baseId: 'Wands', level: 82, rarity: 'rare',
+      prefixes: [{ modId: MANA, tierDisplay: 1, fractured: true }], suffixes: [],
+    };
+    expect(() => optimizeItem(eng, carved, [{ modId: MANA, tierDisplay: 1 }, { modId: ESS, tierDisplay: 1 }]))
+      .toThrow(/regular essence needs a Magic item/i);
+    // …and the same essence target IS craftable from white (the flow that has a Magic stage).
+    const white = optimize(eng, 'Wands', 82, [{ modId: MANA, tierDisplay: 99 }, { modId: ESS, tierDisplay: 1 }]);
+    expect(white.frontier.length).toBeGreaterThan(0);
+  });
+});
+
+// Budget alternatives: "I have N ex — what's the closest thing I can actually finish?" Uses the 0.5.0
+// snapshot the app ships, so the mod ids match what the UI would hand the facade.
+describe('engine facade — budget alternatives (0.5.0)', () => {
+  // FROZEN prices here alone. This block pins how TIGHT the budget bracket is (< 0.01), which is a
+  // claim about the CDF grid, not about the economy — and the grid is h = budget/maxCells over the
+  // plan's own step costs, so it moves whenever prices do. The 2026-09-01 refresh widened it to
+  // 0.016 with nothing wrong. Every other describe in this file keeps reading the shipped sheet, on
+  // purpose: they assert behaviour rather than magnitudes, and are worth running against what ships.
+  const eng050 = { data: loadPatch('data/patches/0.5.0'), prices: loadFrozenPrices() };
+  const GEM = 'Wands/GlobalIncreaseSpellSkillGemLevelWeapon'; // suffix, 500 total weight
+  const MANA050 = 'Wands/IncreasedMana';
+  const SPELL = 'Wands/WeaponSpellDamage';
+  const hard = [
+    { modId: GEM, tierDisplay: 1 }, { modId: MANA050, tierDisplay: 1 }, { modId: SPELL, tierDisplay: 1 },
+  ];
+  // Budgets are in exalt-equivalents against the LIVE poe.ninja sheet, where a Chaos is ~33ex and an
+  // Exalt is the unit — so 30ex buys a handful of orbs, not the thousands the old seed sheet implied.
+  // Two named budgets because the claims below need opposite economies: one where this craft is
+  // hopeless, and one where relaxing it is near-certain.
+  const TIGHT = 30;
+  const AMPLE = 600;
+
+  it('row 0 is exactly the target you asked for, with its (dismal) odds', () => {
+    const r = alternatives(eng050, 'Wands', 82, hard, 30);
+    const row0 = r.rows[0]!;
+    expect(row0.isTarget).toBe(true);
+    expect(row0.dropped + row0.swapped).toBe(0);
+    expect(row0.valueRetained).toBeCloseTo(1, 9);
+    expect(row0.inBudget).toBeLessThan(0.05); // a T1/T1/T1 wand is not a 30ex craft
+    expect(row0.slots.every((s) => s.kind === 'kept' && s.tierDisplay === 1)).toBe(true);
+  });
+
+  // Declared timeout: the budgeted alternatives search, ~6s locally and slower on CI.
+  it('finds a near-certain near-miss and reports the odds rising down the list', () => {
+    const r = alternatives(eng050, 'Wands', 82, hard, AMPLE);
+    expect(r.rows.length).toBeGreaterThan(2);
+    for (let i = 1; i < r.rows.length; i++) {
+      expect(r.rows[i]!.inBudget).toBeGreaterThan(r.rows[i - 1]!.inBudget);
+    }
+    const best = r.rows[r.rows.length - 1]!;
+    expect(best.inBudget).toBeGreaterThan(0.9);
+    expect(best.plan.steps.length).toBeGreaterThan(0);
+  }, 60_000);
+
+  it('labels each slot for the UI: kept tiers, a swap’s origin, a dropped mod', () => {
+    const r = alternatives(eng050, 'Wands', 82, hard, 30);
+    for (const row of r.rows) {
+      for (const s of row.slots) {
+        expect(s.text.length).toBeGreaterThan(0);
+        if (s.kind === 'dropped') {
+          expect(s.tierDisplay).toBeUndefined();
+          expect(s.fromText).toBe(s.text); // the mod you give up
+        } else {
+          expect(s.tierDisplay).toBeGreaterThanOrEqual(1);
+          expect(s.tierLabel).toMatch(/^T\d/);
+          // only a CHANGED slot says what you originally wanted
+          if (s.kind === 'kept') expect(s.fromText).toBeUndefined();
+          else expect(s.fromText!.length).toBeGreaterThan(0);
+        }
+      }
+    }
+  });
+
+  // The budget CDF is exact when a cost quantum divides every price, and otherwise brackets the truth
+  // in [inBudget, inBudgetMax] (both paths unit-tested in costCdf.test.ts). Real market prices carry
+  // four significant figures spanning 0.06 → 770ex, so no quantum coarser than 1e-5 divides them and
+  // the exact path can't fit the cell budget — the shipped sheet takes the bracket, by design.
+  //
+  // What matters to a user is therefore not `exact` but whether the bracket is narrow enough to sit
+  // beneath the noise, and it is: measured worst case 0.73pp (~1% relative) at AMPLE, 0.03pp at
+  // TIGHT — against prices that move whole percent in a day. The bracket widens with the budget
+  // because the fallback grid is h = budget/maxCells, so if the UI ever offers far larger budgets,
+  // DEFAULT_COST_CELLS is the dial to turn, not this bound.
+  it('brackets budget odds far more tightly than the prices themselves are known', () => {
+    for (const budget of [TIGHT, AMPLE]) {
+      const r = alternatives(eng050, 'Wands', 82, hard, budget);
+      expect(r.rows.length).toBeGreaterThan(0);
+      for (const row of r.rows) {
+        expect(row.inBudgetMax).toBeGreaterThanOrEqual(row.inBudget); // it is a bracket, not a swap
+        expect(row.inBudgetMax - row.inBudget).toBeLessThan(0.01);
+      }
+    }
+  });
+
+  // The exact path is not dead on a live sheet, just no longer universal: a plan whose own step costs
+  // happen to share a coarse quantum still resolves exactly (6 of 16 rows at TIGHT, when last run).
+  // Pinning "at least one" keeps that path exercised end-to-end without hard-coding today's count.
+  it('still resolves exactly where a plan’s costs do share a quantum', () => {
+    const r = alternatives(eng050, 'Wands', 82, hard, TIGHT);
+    const exact = r.rows.filter((row) => row.exact);
+    expect(exact.length).toBeGreaterThan(0);
+    // `exact` is a TOLERANCE (engineMap: max - min < 1e-9), not bit-equality. Asserting `toBe` here
+    // passed only by luck on the old price sheet; a row can legitimately differ in the last few ulps.
+    for (const row of exact) expect(row.inBudgetMax - row.inBudget).toBeLessThan(1e-9);
+  });
+
+  it('a pinned target is never relaxed, swapped or dropped', () => {
+    const r = alternatives(eng050, 'Wands', 82, [
+      { modId: GEM, tierDisplay: 1, pinned: true }, { modId: MANA050, tierDisplay: 1 }, { modId: SPELL, tierDisplay: 1 },
+    ], 30);
+    for (const row of r.rows) {
+      expect(row.slots[0]).toMatchObject({ kind: 'kept', tierDisplay: 1 });
+    }
+    // …and the rest still move, so the pin is a real constraint and not a dead search.
+    expect(r.rows.some((row) => row.slots.slice(1).some((s) => s.kind !== 'kept' || s.tierDisplay !== 1))).toBe(true);
+  });
+
+  it('a bigger budget never lowers the odds of the same item', () => {
+    const lean = alternatives(eng050, 'Wands', 82, hard, 30).rows[0]!;
+    const rich = alternatives(eng050, 'Wands', 82, hard, 3000).rows[0]!;
+    expect(rich.inBudget).toBeGreaterThanOrEqual(lean.inBudget);
+  });
+
+  it('from an item: a fractured mod is pinned even though the caller didn’t pin it', () => {
+    const item: ExistingItem = {
+      baseId: 'Wands', level: 82, rarity: 'rare',
+      prefixes: [{ modId: MANA050, tierDisplay: 1, fractured: true }], suffixes: [],
+    };
+    const r = alternativesForItem(eng050, item, [
+      { modId: MANA050, tierDisplay: 1 }, { modId: GEM, tierDisplay: 1 },
+    ], 30);
+    expect(r.rows.length).toBeGreaterThan(0);
+    for (const row of r.rows) {
+      expect(row.slots[0]).toMatchObject({ kind: 'kept', tierDisplay: 1 });
+    }
+  });
+
+  it('reports its search accounting so the UI can be honest about caps', () => {
+    const r = alternatives(eng050, 'Wands', 82, hard, 30);
+    expect(r.nodesEvaluated).toBeGreaterThan(0);
+    expect(typeof r.truncated).toBe('boolean');
+  });
+});
+
+// The from-item MDP (true expected cost + policy graph). Uses the 0.5.0 snapshot the app ships.
+describe('engine facade — optimizeItemMarkov (0.5.0)', () => {
+  // FROZEN, not the shipped sheet. What this asserts is a property of the MODEL, but it is computed
+  // from prices, so on the live sheet it is really an assertion about this week's economy. The
+  // Forbidden Rites league start proved that: nothing in the engine changed and it went red, because
+  // four orb strengths had not traded yet and kept their Runes of Aldur values. CLAUDE.md already
+  // requires a test asserting an exact cost to read `loadFrozenPrices()`; a test asserting a cost
+  // ORDERING is the same claim wearing a different hat. `priceResolution` and `costConsistency` remain
+  // on the live sheet, and they are the refresh's guard.
+  const eng050 = { data: loadPatch('data/patches/0.5.0'), prices: loadFrozenPrices() };
+  const MANA = 'Wands/IncreasedMana'; const INT = 'Wands/Intelligence'; const SPELL = 'Wands/WeaponSpellDamage';
+  const start: ExistingItem = {
+    baseId: 'Wands', level: 82, rarity: 'rare',
+    prefixes: [{ modId: MANA, tierDisplay: 99 }], suffixes: [{ modId: INT, tierDisplay: 99 }],
+  };
+
+  it('returns the true expected cost + a policy graph with start, goal, and a brick edge', () => {
+    const r = optimizeItemMarkov(eng050, start, [{ modId: MANA, tierDisplay: 99 }, { modId: SPELL, tierDisplay: 99 }]);
+    expect(r.applicable).toBe(true);
+    expect(r.feasible).toBe(true);
+    expect(r.expectedCost).toBeGreaterThan(0);
+    const startNode = r.nodes.find((nd) => nd.isStart)!;
+    // Each position carries the three facts the graph lays out: the modifier, the side it sits on, and
+    // the tier the target was asked at — the last only because `optimizeItemMarkov` is handed the
+    // targets, which is the only place `tierDisplay` survives.
+    expect(startNode.present).toContainEqual({ text: '+# to maximum Mana', type: 'prefix', tier: 99 });
+    expect(startNode.action).toBeTruthy(); // a human action label
+    expect(r.nodes.some((nd) => nd.isGoal && nd.expectedCost === 0)).toBe(true);
+    expect(r.edges.some((e) => e.regress)).toBe(true); // a back-arrow exists
+    // The MDP's honest cost exceeds the linear model's optimistic "cheapest" (free-restart) estimate.
+    const linear = optimizeItem(eng050, start, [{ modId: MANA, tierDisplay: 99 }, { modId: SPELL, tierDisplay: 99 }]);
+    expect(r.expectedCost).toBeGreaterThan(linear.frontier[0]!.expected);
+  });
+
+  it('covers a perfect-essence target (v3a: the MDP models the essence itself)', () => {
+    const pe = listPerfectEssences(eng050.data, 'Wands')[0]!;
+    const r = optimizeItemMarkov(eng050, start, [{ modId: MANA, tierDisplay: 99 }, { modId: pe.id, tierDisplay: 1 }]);
+    expect(r.applicable).toBe(true);
+    expect(r.feasible).toBe(true);
+    expect(r.expectedCost).toBeGreaterThan(0);
+    // The policy has to actually use the essence somewhere — it's the only way to place that mod.
+    expect(r.nodes.some((nd) => nd.action?.startsWith('Perfect Essence'))).toBe(true);
+  });
+
+  it('covers a desecrated target, and its policy labels the boss omen', () => {
+    const des = listDesecrated(eng050.data, 'Wands')[0]!;
+    const r = optimizeItemMarkov(eng050, start, [{ modId: MANA, tierDisplay: 99 }, { modId: des.id, tierDisplay: 1 }]);
+    expect(r.applicable).toBe(true);
+    expect(r.feasible).toBe(true);
+    expect(r.nodes.some((nd) => nd.action?.startsWith('Desecrate (Omen of the '))).toBe(true);
+  });
+
+  /**
+   * The facade used to refuse EVERY regular-essence craft with a blanket `applicable: false`, on the
+   * reasoning that those need a Magic item while this model starts from the Rare you hold. Half right,
+   * and the wrong half was doing the damage: the model gained an Essence action on 2026-08-28, and the
+   * Lab's own from-white craft climbs through Magic on its way up — so the gate was refusing the case
+   * it works for. The genuinely unreachable case is refused deeper down, where it can name the mod.
+   */
+  it('answers a REGULAR-essence craft from a white base, and names the essence to buy', () => {
+    const wands = listMods(eng050.data, 'Wands');
+    const ess = [...wands.prefixes, ...wands.suffixes].find((m) => m.source === 'essence')!;
+    const white: ExistingItem = { baseId: 'Wands', level: 82, rarity: 'normal', prefixes: [], suffixes: [] };
+    const r = optimizeItemMarkov(eng050, white,
+      [{ modId: MANA, tierDisplay: 99 }, { modId: ess.id, tierDisplay: 1 }], { restartCost: 0 });
+    expect(r.applicable).toBe(true);
+    expect(r.feasible).toBe(true);
+    // The label is the essence's own name, which is what the player types into a trade search — not
+    // "Essence (greater)", which would leave them to work out which one.
+    expect(r.nodes.some((nd) => nd.action?.includes('Essence of '))).toBe(true);
+  });
+
+  it('still refuses one on a held RARE, because a regular Essence needs a Magic item', () => {
+    const wands = listMods(eng050.data, 'Wands');
+    const ess = [...wands.prefixes, ...wands.suffixes].find((m) => m.source === 'essence')!;
+    const r = optimizeItemMarkov(eng050, start, [{ modId: MANA, tierDisplay: 99 }, { modId: ess.id, tierDisplay: 1 }]);
+    expect(r.feasible).toBe(false);
+    expect(r.reason).toMatch(/needs a Magic item/i);
+    expect(r.reason).not.toMatch(/from white/i); // still not advice a from-white crafter needs
+  });
+});
+
+/**
+ * SLOT ALTERNATIVES through the FACADE — the whole chain, unmocked.
+ *
+ * The UI tests drive a mocked facade and the optimizer tests bypass the app types, so a `slot` could be
+ * dropped between `TargetInput` and `TierTarget` and every other test in the suite would still pass.
+ * `toTierTargets` is a one-line map; this is what proves the line is there.
+ */
+describe('engine facade — a slot with alternatives reaches the solver (0.5.0)', () => {
+  const eng050 = { data: loadPatch('data/patches/0.5.0'), prices: loadPrices('data/patches/0.5.0') };
+  const CAST = 'Wands/IncreasedCastSpeed';
+  // Three DIFFERENT families, all prefixes — the cross-family case, which no same-family mechanism
+  // could have covered and which the sibling-swap search still cannot see.
+  const XCOLD = 'Wands/DamageGainedAsCold';
+  const XFIRE = 'Wands/DamageGainedAsFire';
+  const XLIGHT = 'Wands/DamageGainedAsLightning';
+  const white: ExistingItem = { baseId: 'Wands', level: 82, rarity: 'normal', prefixes: [], suffixes: [] };
+
+  it('costs less than the same craft with that slot pinned to one mod', () => {
+    const fixed = optimizeItemMarkov(eng050, white, [
+      { modId: CAST, tierDisplay: 99 }, { modId: XCOLD, tierDisplay: 99 },
+    ]);
+    const either = optimizeItemMarkov(eng050, white, [
+      { modId: CAST, tierDisplay: 99 },
+      { modId: XCOLD, tierDisplay: 99, slot: 0 },
+      { modId: XFIRE, tierDisplay: 99, slot: 0 },
+      { modId: XLIGHT, tierDisplay: 99, slot: 0 },
+    ]);
+    expect(fixed.feasible).toBe(true);
+    expect(either.feasible).toBe(true);
+    expect(either.expectedCost).toBeLessThan(fixed.expectedCost);
+  });
+
+  // A finished item holds ONE member of the slot — never all three, which is an item that cannot
+  // exist. This is the shape the old conjunctive goal got wrong.
+  it('finishes on one member of the slot, not on all of them', () => {
+    const r = optimizeItemMarkov(eng050, white, [
+      { modId: CAST, tierDisplay: 99 },
+      { modId: XCOLD, tierDisplay: 99, slot: 0 },
+      { modId: XFIRE, tierDisplay: 99, slot: 0 },
+    ]);
+    const goal = r.nodes.find((nd) => nd.isGoal)!;
+    expect(goal).toBeDefined();
+    const extras = goal.present.filter((p) => /Extra (Cold|Fire) Damage/.test(p.text));
+    expect(extras).toHaveLength(1);
+  });
+});
+
+// ── The frontier is filtered on the axes the cards SHOW ──────────────────────
+// The optimizer prunes on `(expected cost, probability)`, which was right while a card led with the
+// expected-cost total. It no longer does: that total prices scrapping the item and buying a fresh base
+// after every miss, a policy no player follows and one True expected cost already beats. What the card
+// shows is `(what one run costs, chance per attempt)` — and a set non-dominated on one pair is not on
+// the other, because `expected` is `Σ c_k·S_{k-1} / S_n` and so charges a step only by how often you
+// REACH it. A plan saving its 1023ex Perfect Exalt for last, behind a chain it clears one time in ten
+// thousand, scores as though the orb were nearly free.
+//
+// Measured over 61 multi-plan frontiers: 51 had a per-run cost that FELL as the odds rose, and 229 of
+// 470 cards were beaten on BOTH visible numbers by another card in the same list.
+describe('engine facade — no card is beaten on both numbers a reader can see', () => {
+  // Distinct families, rollable by ordinary currency: two mods of one family cannot coexist, and an
+  // essence-only mod makes the craft infeasible — either returns an empty frontier and a test that
+  // asserts nothing.
+  const rollable = (side: 'prefixes' | 'suffixes', n: number, tierDisplay: number) => {
+    const seen = new Set<string>();
+    return listMods(eng.data, 'Wands')[side]
+      .filter((m) => m.source === 'normal' && m.tiers.length >= tierDisplay && !seen.has(m.family) && seen.add(m.family))
+      .slice(0, n)
+      .map((m) => ({ modId: m.id, tierDisplay }));
+  };
+
+  const dominated = (frontier: readonly { perAttempt: number; probability: number }[]) =>
+    frontier.filter((a) => frontier.some((b) =>
+      b !== a && b.perAttempt <= a.perAttempt && b.probability >= a.probability
+      && (b.perAttempt < a.perAttempt || b.probability > a.probability)));
+
+  it('holds on a from-white frontier wide enough to have contained one', () => {
+    const r = optimize(eng, 'Wands', 82, [...rollable('prefixes', 3, 4), ...rollable('suffixes', 2, 4)]);
+    expect(r.frontier.length).toBeGreaterThan(1); // or the assertion below is vacuous
+    expect(dominated(r.frontier)).toEqual([]);
+  });
+
+  // Both planners map through `mapFrontier`, so the filter has to hold from an item too — the Item tab
+  // has hidden the total for longer and carried these cards the whole time.
+  it('holds on a from-item frontier', () => {
+    const item: ExistingItem = {
+      baseId: 'Wands', level: 82, rarity: 'rare',
+      prefixes: [{ modId: MANA, tierDisplay: 5 }],
+      suffixes: [{ modId: 'Wands/INTELLIGENCE', tierDisplay: 5 }],
+    };
+    const r = optimizeItem(eng, item, [
+      { modId: MANA, tierDisplay: 3 },
+      { modId: 'Wands/INTELLIGENCE', tierDisplay: 3 },
+      ...rollable('prefixes', 2, 4),
+    ]);
+    expect(r.frontier.length).toBeGreaterThan(0);
+    expect(dominated(r.frontier)).toEqual([]);
+  });
+
+  // Ordering is what the cards reverse to put the likeliest first, so it has to survive the filter.
+  it('still ascends in both figures, cheapest run first', () => {
+    const r = optimize(eng, 'Wands', 82, [...rollable('prefixes', 2, 4), ...rollable('suffixes', 2, 4)]);
+    for (let i = 1; i < r.frontier.length; i++) {
+      expect(r.frontier[i]!.perAttempt).toBeGreaterThanOrEqual(r.frontier[i - 1]!.perAttempt);
+      expect(r.frontier[i]!.probability).toBeGreaterThan(r.frontier[i - 1]!.probability);
+    }
+  });
+});

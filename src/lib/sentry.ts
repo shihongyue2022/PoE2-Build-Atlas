@@ -1,0 +1,106 @@
+import React from 'react';
+import type * as SentryNS from '@sentry/react';
+
+/**
+ * Error reporting: lazily loaded, and only when it is actually configured.
+ *
+ * Two things this file has to get right. The version before it got both wrong.
+ *
+ * 1. **It is off unless `VITE_SENTRY_DSN` is set AT BUILD TIME.** Vite inlines `import.meta.env.*`
+ *    as a literal, so with no DSN the guard below is provably true and Rollup deletes the entire
+ *    `init` call — silently. A production deploy without that variable reported *nothing*, which is
+ *    the one failure error tracking exists to prevent. `warnIfUnmonitored` in vite.config.ts now
+ *    says so in the build log instead of leaving it to be discovered.
+ *
+ * 2. **It must not sit in the entry bundle.** Measured: importing the SDK statically takes the entry
+ *    chunk from 116 kB gzip to 202 kB — **+74% on the critical path**, in an app that carries a
+ *    bespoke Vite plugin purely to start its data download a few hundred milliseconds earlier.
+ *    So the SDK is a DYNAMIC import. The entry bundle stays 116 kB and Sentry arrives in its own
+ *    chunk once the app is already interactive.
+ *
+ * The cost of (2) is a race: an error can be thrown before the chunk lands. `queued` holds those and
+ * `flush` replays them, so the window costs nothing. Without it, the errors most worth seeing — the
+ * ones that fire during startup — would be exactly the ones dropped.
+ */
+
+const DSN = import.meta.env.VITE_SENTRY_DSN;
+
+/** What a caller may attach to a report. Deliberately tiny — enough to file an issue in the right
+ *  place without importing the SDK's own option types into modules that must not pull it in. */
+export interface ReportContext {
+  readonly tags?: Readonly<Record<string, string>>;
+}
+
+let sdk: typeof SentryNS | null = null;
+const queued: { readonly error: Error; readonly context?: ReportContext }[] = [];
+
+export function initSentry(): void {
+  if (!DSN) return;
+
+  void import('@sentry/react').then((Sentry) => {
+    Sentry.init({
+      dsn: DSN,
+      environment: import.meta.env.MODE,
+
+      // A static site with one route: there is no server span to join and no navigation to trace, so
+      // tracing buys little here. Kept at a low rate for page-load vitals rather than turned off.
+      tracesSampleRate: 0.1,
+
+      // Record ONLY sessions that hit an error. The previous config also recorded 10% of ordinary
+      // sessions, which is surveillance of people who are not having a problem — and it is the
+      // expensive half of the SDK. Text stays unmasked because the craft the player configured IS
+      // the bug report; there are no accounts, no logins and no personal data in this app to leak.
+      replaysSessionSampleRate: 0,
+      replaysOnErrorSampleRate: 1.0,
+
+      integrations: [
+        Sentry.browserTracingIntegration(),
+        Sentry.replayIntegration({ maskAllText: false, blockAllMedia: false }),
+      ],
+    });
+
+    sdk = Sentry;
+    for (const q of queued.splice(0)) Sentry.captureException(q.error, q.context);
+  }).catch(() => {
+    // An ad blocker or a failed chunk fetch must never take the app down with it. Reporting is a
+    // nice-to-have; the craft the player came for is not.
+  });
+}
+
+/**
+ * Send an error if reporting is on and has loaded; queue it if it is still in flight.
+ *
+ * `context` is passed straight to `captureException`, which is the only way tags actually reach
+ * Sentry — hanging a `tags` property off the Error does nothing, it is simply ignored. The queue
+ * carries it too, or an error thrown before the chunk lands would arrive untagged and be filed in the
+ * wrong place, which is precisely the startup case worth keeping.
+ */
+export function reportError(error: Error, context?: ReportContext): void {
+  if (!DSN) return;
+  if (sdk) sdk.captureException(error, context);
+  else if (queued.length < 20) queued.push({ error, ...(context ? { context } : {}) });
+}
+
+/**
+ * Our own boundary rather than `Sentry.ErrorBoundary`, which is what forced the SDK into the entry
+ * bundle in the first place — the component had to exist at module scope, so the whole package came
+ * with it whether or not a DSN was ever set. This is the same twenty lines without that dependency.
+ */
+export class ErrorBoundary extends React.Component<
+  { readonly fallback: React.ReactNode; readonly children: React.ReactNode },
+  { readonly failed: boolean }
+> {
+  override state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  override componentDidCatch(error: Error) {
+    reportError(error);
+  }
+
+  override render() {
+    return this.state.failed ? this.props.fallback : this.props.children;
+  }
+}

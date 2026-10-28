@@ -1,0 +1,618 @@
+import { describe, it, expect } from 'vitest';
+import type { ItemBase, ItemState, Mod, PatchData } from '../../engine/src/index.ts';
+import { markovFromItem, actionCostOf } from './markovFromItem.ts';
+import type { Prices } from './cost.ts';
+import { mulberry32 } from './simulate.ts';
+import { loadPatch } from '../../engine/src/loadPatch.ts';
+import { loadPrices } from './loadPrices.ts';
+import { FLAG_NONE, decodeState, type StateKey } from './markovState.ts';
+
+/**
+ * The tolerance these hand-computed cases need.
+ *
+ * The DEFAULT stopping rule is scale-aware — a thousandth of the craft's cheapest action — because a
+ * flat 1e-9 makes a multi-million-exalt solve grind fifteen decades of residual for digits nobody has.
+ * These tests are pinning the model's ARITHMETIC to nine decimals, not the stopping rule, so they ask
+ * for the precision they assert. A test that the default is scale-aware lives in markovFromItem.test.ts.
+ */
+const EXACT = { tolerance: 1e-12 } as const;
+
+// Synthetic base built so every desecration outcome is hand-countable:
+//   normal    prefixes [NP1]        suffixes []          ← empty suffix pool ⇒ no ordinary junk
+//   desecrated prefixes [DP1]       suffixes [DS1]       ← both tagged kurgal (Blackblooded)
+// With one kurgal mod per side, an UNCONSTRAINED Blackblooded desecration draws 1-of-2 across the two
+// sides, while a Sinistral Necromancy omen narrows it to the single prefix ⇒ P=1. That contrast is
+// exactly the modelling decision this file pins.
+const mk = (
+  id: string, type: 'prefix' | 'suffix', family: string, source: Mod['source'], tags: string[] = [],
+): Mod => ({
+  id, source, type, family, tags, text: id,
+  tiers: [{ name: 't1', ilvl: 1, weight: source === 'normal' ? 100 : 1, ranges: [] }],
+});
+
+const base: ItemBase = {
+  id: 'S', name: 'S', category: 'Wands', // a real Weapon category: boss omens are "Weapon or Jewellery" only (bossOmenAllowed)
+  pools: {
+    normal: { prefixes: ['NP1'], suffixes: [] },
+    desecrated: { prefixes: ['DP1'], suffixes: ['DS1'] },
+    essence: { prefixes: [], suffixes: [] },
+  },
+};
+const data: PatchData = {
+  patch: 't',
+  mods: new Map([
+    ['NP1', mk('NP1', 'prefix', 'Fp1', 'normal')],
+    ['DP1', mk('DP1', 'prefix', 'FdP', 'desecrated', ['kurgal_mod'])],
+    ['DS1', mk('DS1', 'suffix', 'FdS', 'desecrated', ['kurgal_mod'])],
+  ]),
+  bases: new Map([['S', base]]),
+};
+
+const placed = (modId: string, fractured = false): ItemState['prefixes'][number] =>
+  fractured ? { modId, tierName: 't1', fractured: true } : { modId, tierName: 't1' };
+const rare = (pre: ItemState['prefixes'], suf: ItemState['suffixes']): ItemState =>
+  ({ base, level: 100, rarity: 'rare', prefixes: pre, suffixes: suf });
+
+describe('markovFromItem — Desecration as an MDP action (hand-computed)', () => {
+  // Start [NP1 (fractured) | —], target {NP1, DP1}. NP1 is fractured and its family is the whole normal
+  // prefix pool, so NO exalt, annul or chaos is ever available from the start — the only lever is a
+  // Desecration, which makes the arithmetic exact.
+  const start = rare([placed('NP1', true)], []);
+  const targets = [{ modId: 'NP1' }, { modId: 'DP1' }];
+
+  it('an unconstrained boss desecration draws across BOTH sides (E = 9/7)', () => {
+    // Blackblooded has one kurgal mod per side and both sides are legal, so EACH DRAW is 1-of-2 —
+    // but a bone offers three and you keep one (DESECRATION_OFFER_COUNT), so:
+    //   1 − (½)³ = ⅞ → DP1 is somewhere in the offer  ⇒ goal
+    //       (½)³ = ⅛ → all three are DS1, so you are forced to take desecrated junk ⇒ it blocks
+    //                  re-desecrating until annulled (P=1: nothing else is removable, since NP1 is
+    //                  fractured), costing 1 to get back to start.
+    //   E = 1 + ⅞·0 + ⅛·(1 + E)  ⇒  E = 9/7
+    // Under a single draw this was E = 3. The offer is worth 2.3x here, and turns the brick from a
+    // coin-flip into a 1-in-8.
+    const prices: Prices = { currency: { exalt: 1, annul: 1, chaos: 99, desecrate: 1 }, omens: {} };
+    const r = markovFromItem(data, prices, start, targets, EXACT);
+    expect(r.feasible).toBe(true);
+    expect(r.expectedCost).toBeCloseTo(9 / 7, 9);
+    const s0 = r.nodes.find((nd) => nd.isStart)!;
+    // In THIS base the untargeted draw and the Blackblooded one are the same distribution: NP1's
+    // family is occupied (it's the fractured start mod) so the normal pool contributes nothing, and
+    // both desecrated mods are kurgal. Two identical actions at an identical cost — the planner takes
+    // the one that needs no omen. The arithmetic above is what this test is really pinning.
+    expect(s0.action).toEqual({ currency: 'desecrate' });
+    // The brick is a real regression edge, not a silent no-op — and the graph must publish the odds
+    // the PLAYER faces (⅛, all three offers bad), never the per-draw ½. `simulatePolicyMean` samples
+    // these very edges, so a per-draw number here would have the validator confirm a cost the solver
+    // never computed.
+    expect(r.edges.some((e) => e.from === s0.key && e.regress && Math.abs(e.prob - 1 / 8) < 1e-9)).toBe(true);
+    expect(r.edges.some((e) => e.from === s0.key && Math.abs(e.prob - 0.5) < 1e-9)).toBe(false);
+  });
+
+  it('a Sinistral Necromancy omen narrows the draw to one side (P=1, E = 1.2) and the policy buys it', () => {
+    // Constrained to prefixes, DP1 is the only kurgal candidate, so every offer is DP1 ⇒ P=1 for
+    // 1 + 0.2. That 1.2 beats the unconstrained route's 9/7 ≈ 1.286, so VI must prefer paying.
+    //
+    // The omen was priced 0.5 while a bone was a single draw, because the unconstrained route then
+    // cost 3 and 0.5 was comfortably inside it. The offer of three closed most of that gap on its
+    // own — at 0.5 the omen is now DECLINED — so the price is lowered to keep this test testing what
+    // it was written for: that a side omen is bought when it dominates, not that it always is.
+    const prices: Prices = {
+      currency: { exalt: 1, annul: 1, chaos: 99, desecrate: 1 },
+      omens: { OmenofSinistralNecromancy: 0.2 },
+    };
+    const r = markovFromItem(data, prices, start, targets, EXACT);
+    expect(r.expectedCost).toBeCloseTo(1.2, 9);
+    const s0 = r.nodes.find((nd) => nd.isStart)!;
+    // Same tie as above on the boss half; what matters is that the SIDE omen is bought.
+    expect(s0.action).toEqual({ currency: 'desecrate', side: 'prefix' });
+  });
+
+  it('a dear side omen is declined in favour of the cheaper unconstrained draw', () => {
+    // Same shapes, but the omen now costs 4: constrained E = 5 vs unconstrained E = 9/7, so the policy
+    // takes the offer and eats the recovery. Pins that the omen is weighed, not always taken.
+    const prices: Prices = {
+      currency: { exalt: 1, annul: 1, chaos: 99, desecrate: 1 },
+      omens: { OmenofSinistralNecromancy: 4 },
+    };
+    const r = markovFromItem(data, prices, start, targets, EXACT);
+    expect(r.expectedCost).toBeCloseTo(9 / 7, 9);
+    // No `side` key: the omen was weighed and declined.
+    expect(r.nodes.find((nd) => nd.isStart)!.action).toEqual({ currency: 'desecrate' });
+  });
+
+  /**
+   * The Omen of Abyssal Echoes: see the three, and pay the omen to throw them all back once for a fresh
+   * three — which may repeat the first — spending it only then (both confirmed 2026-09-10). Same start as
+   * the 9/7 case. Wanting DP1 you throw back exactly when the offer is all DS1 (⅛) and the omen is worth
+   * it: V(junk) = 1 + E against c + τ, τ = ⅛·V(junk), i.e. while c < ⅞·V(junk) = 2. Then
+   *
+   *   E = 1 + ⅛·(c + ⅛·(1 + E))  ⇒  E = (65 + 8c) / 63
+   *
+   * — 47/45 at c = 0.1, the brick down from ⅛ to 1/64. At c = 2 it meets the plain offer's 9/7.
+   */
+  const echoesAt = (c: number): Prices => ({
+    currency: { exalt: 1, annul: 1, chaos: 99, desecrate: 1 }, omens: { OmenofAbyssalEchoes: c },
+  });
+
+  it('an Omen of Abyssal Echoes rerolls a bad offer, spent only then: E = 47/45 at 0.1, brick 1 in 64', () => {
+    const r = markovFromItem(data, echoesAt(0.1), start, targets, EXACT);
+    expect(r.expectedCost).toBeCloseTo(47 / 45, 9);
+    const s0 = r.nodes.find((nd) => nd.isStart)!;
+    expect(s0.action).toEqual({ currency: 'desecrate', echoes: true });
+    // One bone, plus the omen on the ⅛ of offers it is thrown at.
+    expect(s0.actionCost).toBeCloseTo(1 + 0.1 / 8, 12);
+    // The graph publishes what the player faces with the omen — six draws missing, not three.
+    expect(r.edges.some((e) => e.from === s0.key && e.regress && Math.abs(e.prob - 1 / 64) < 1e-12)).toBe(true);
+    expect(r.edges.some((e) => e.from === s0.key && Math.abs(e.prob - 1 / 8) < 1e-9)).toBe(false);
+  });
+
+  /** The closed-form policy evaluation is a second place the spend must be counted. It runs only once a
+   *  restart is on the table, so this offers one no policy would take. */
+  it('counts the omen’s spend in the closed-form policy evaluation too', () => {
+    const r = markovFromItem(data, echoesAt(0.1), start, targets, { ...EXACT, restartCost: 100, solver: 'policy' });
+    expect(r.expectedCost).toBeCloseTo(47 / 45, 9);
+  });
+
+  it('still rerolls just under the break-even (c = 1.9 < 2): E = 80.2/63, under 9/7', () => {
+    const r = markovFromItem(data, echoesAt(1.9), start, targets, EXACT);
+    expect(r.expectedCost).toBeCloseTo(80.2 / 63, 9);
+    expect(r.nodes.find((nd) => nd.isStart)!.action).toEqual({ currency: 'desecrate', echoes: true });
+  });
+
+  /** Above it the reroll is never worth taking, so the omen is never spent — and the step reads as the
+   *  plain bone it then is, since a player without the omen can play it. */
+  it('never rerolls above it (c = 4), and then reads as the plain bone, at the plain 9/7', () => {
+    const r = markovFromItem(data, echoesAt(4), start, targets, EXACT);
+    expect(r.expectedCost).toBeCloseTo(9 / 7, 9);
+    const s0 = r.nodes.find((nd) => nd.isStart)!;
+    expect(s0.action).toEqual({ currency: 'desecrate' });
+    expect(s0.actionCost).toBeCloseTo(1, 12);
+  });
+
+  /**
+   * A player shown these odds has to follow the reroll rule they assume, so the plan says where the line
+   * is: throw the offer back when even its best costs more to finish from than a fresh three plus the
+   * omen — c + τ, with τ = ⅛·V(junk) and V(junk) = 1 + E. At c = 0.1 that is 0.1 + (1 + 47/45)/8: the
+   * junk sits above it and is thrown back, the target below it and is kept.
+   */
+  it('publishes the line it rerolls below: c + ⅛·(1 + E), junk above it and the target below', () => {
+    const r = markovFromItem(data, echoesAt(0.1), start, targets, EXACT);
+    const s0 = r.nodes.find((nd) => nd.isStart)!;
+    expect(s0.rerollAbove).toBeCloseTo(0.1 + (1 + 47 / 45) / 8, 9);
+    const ends = r.edges.filter((e) => e.from === s0.key).map((e) => r.nodes.find((nd) => nd.key === e.to)!.expectedCost);
+    expect(Math.max(...ends)).toBeGreaterThan(s0.rerollAbove!);
+    expect(Math.min(...ends)).toBeLessThanOrEqual(s0.rerollAbove!);
+  });
+
+  it('draws no reroll line where the plan never rerolls (c = 4)', () => {
+    const r = markovFromItem(data, echoesAt(4), start, targets, EXACT);
+    expect(r.nodes.find((nd) => nd.isStart)!.rerollAbove).toBeUndefined();
+  });
+
+  /** The reroll, played out: the published edges and each step's average cost must land on 47/45, or the
+   *  graph and the figure describe two different processes (see the 9/7 walk below). */
+  it('100k runs of the published Echoes graph land on the hand-computed 47/45', () => {
+    const r = markovFromItem(data, echoesAt(0.1), start, targets, EXACT);
+    const byKey = new Map(r.nodes.map((nd) => [nd.key, nd]));
+    const outs = new Map<string, { to: string; prob: number }[]>();
+    for (const e of r.edges) outs.set(e.from, [...(outs.get(e.from) ?? []), { to: e.to, prob: e.prob }]);
+    for (const [, list] of outs) expect(list.reduce((acc, o) => acc + o.prob, 0)).toBeCloseTo(1, 9);
+    const rng = mulberry32(11);
+    const startKey = r.nodes.find((nd) => nd.isStart)!.key;
+    let total = 0;
+    const RUNS = 100_000;
+    for (let run = 0; run < RUNS; run++) {
+      let cur = startKey;
+      for (let guard = 0; guard < 10_000; guard++) {
+        const nd = byKey.get(cur)!;
+        if (nd.isGoal) break;
+        total += nd.actionCost!;
+        const list = outs.get(cur)!;
+        let x = rng();
+        let next = list[list.length - 1]!.to;
+        for (const o of list) { x -= o.prob; if (x < 0) { next = o.to; break; } }
+        cur = next;
+      }
+    }
+    const mc = total / RUNS;
+    expect(mc).toBeGreaterThan((47 / 45) * 0.99);
+    expect(mc).toBeLessThan((47 / 45) * 1.01);
+  });
+
+  /**
+   * The offer math, played out rather than derived.
+   *
+   * Value iteration and the published edge odds are two separate computations of the same mechanic
+   * (`offerValue` and `realizedDist`), so they can drift apart silently — and if they do, every
+   * percentage in the policy graph would describe a process the cost figure was never computed from.
+   * Walking the graph with dice is the only check that binds them: it samples the EDGES and must land
+   * on the hand-computed 9/7 the solver reports.
+   */
+  it('100k runs of the published graph land on the hand-computed 9/7', () => {
+    const prices: Prices = { currency: { exalt: 1, annul: 1, chaos: 99, desecrate: 1 }, omens: {} };
+    const r = markovFromItem(data, prices, start, targets, EXACT);
+    const byKey = new Map(r.nodes.map((nd) => [nd.key, nd]));
+    const outs = new Map<string, { to: string; prob: number }[]>();
+    for (const e of r.edges) outs.set(e.from, [...(outs.get(e.from) ?? []), { to: e.to, prob: e.prob }]);
+    // Every non-goal state's published odds must be a distribution, or the walk below is meaningless.
+    for (const [, list] of outs) {
+      expect(list.reduce((acc, o) => acc + o.prob, 0)).toBeCloseTo(1, 9);
+    }
+    const rng = mulberry32(7);
+    const startKey = r.nodes.find((nd) => nd.isStart)!.key;
+    let total = 0;
+    const RUNS = 100_000;
+    for (let run = 0; run < RUNS; run++) {
+      let cur = startKey;
+      for (let guard = 0; guard < 10_000; guard++) {
+        const nd = byKey.get(cur)!;
+        if (nd.isGoal) break;
+        total += actionCostOf(prices, nd.action!);
+        const list = outs.get(cur)!;
+        let x = rng();
+        let next = list[list.length - 1]!.to;
+        for (const o of list) { x -= o.prob; if (x < 0) { next = o.to; break; } }
+        cur = next;
+      }
+    }
+    const mc = total / RUNS;
+    expect(mc).toBeGreaterThan((9 / 7) * 0.97);
+    expect(mc).toBeLessThan((9 / 7) * 1.03);
+    expect(mc).toBeCloseTo(r.expectedCost, 1);
+  });
+
+  /**
+   * The flag, hand-computed end to end.
+   *
+   * Start [NP1 (fractured) | —], target {NP1, DP1}. NP1 is present and locked, so the only lever is a
+   * bone, and a bone leaves the item flagged whatever it lands. That is what this pins:
+   *
+   *   bone (cost 1) → ⅞ DP1 is in the offer  ⇒ goal
+   *                   ⅛ all three are DS1    ⇒ flagged junk suffix
+   *   from there, the ONLY way back to a bone is to remove the flagged mod: an Annulment at cost 1,
+   *   certain because DS1 is the item's only removable mod (NP1 is fractured).
+   *
+   *   E = 1 + ⅞·0 + ⅛·(1 + E)  ⇒  E = 9/7
+   *
+   * The arithmetic is the same as before the flag existed, and that is the point: on this fixture the
+   * old `desJunk` axis and the new flag agree, because the thing the bone landed happened to be from
+   * the desecrated pool. What the flag adds is the case the old axis could not see at all — a bone
+   * that lands an ORDINARY mod and blocks the item just as firmly.
+   */
+  it('blocks a second bone until the flagged mod is removed', () => {
+    const prices: Prices = { currency: { exalt: 1, annul: 1, chaos: 99, desecrate: 1 }, omens: {} };
+    const r = markovFromItem(data, prices, start, targets, EXACT);
+    expect(r.feasible).toBe(true);
+    expect(r.expectedCost).toBeCloseTo(9 / 7, 9);
+
+    const byKey = new Map(r.nodes.map((nd) => [nd.key, nd]));
+    // Every state the policy visits that carries a flagged mod must be clearing it, not desecrating.
+    const flaggedStates = r.nodes.filter((nd) => nd.desecratedJunk !== undefined || nd.desecratedTarget !== undefined);
+    expect(flaggedStates.length).toBeGreaterThan(0);
+    for (const nd of flaggedStates) {
+      if (nd.isGoal) continue; // finished is finished, flag or no flag
+      expect(nd.action?.currency).not.toBe('desecrate');
+    }
+    // …and the state a bone leaves you in when it misses is exactly one Annulment from being free.
+    const missed = flaggedStates.find((nd) => !nd.isGoal)!;
+    const outs = r.edges.filter((e) => e.from === missed.key);
+    expect(outs).toHaveLength(1);
+    expect(outs[0]!.prob).toBeCloseTo(1, 12);
+    expect(byKey.get(outs[0]!.to)!.desecratedJunk).toBeUndefined();
+  });
+
+  /**
+   * Two desecrated mods in two SLOTS OF THEIR OWN is still impossible: every way of filling the target
+   * lands both, and an item carries one.
+   *
+   * The rule used to be "at most one desecrated mod in the target", which is a different and stricter
+   * claim — it also refused "carved Cast Speed, or failing that a normal one" in two slots, where only
+   * one carved mod ever ends up on the item. The test below (`allows carved ALTERNATIVES`) covers that
+   * side; this one pins the case that really is unsatisfiable.
+   */
+  it('rejects a target needing two desecrated mods at once', () => {
+    const twoDes: PatchData = {
+      patch: 't',
+      mods: new Map([
+        ...data.mods,
+        ['DS2', mk('DS2', 'suffix', 'FdS2', 'desecrated', ['amanamu_mod'])],
+      ]),
+      bases: new Map([['S', {
+        ...base,
+        pools: { ...base.pools, desecrated: { prefixes: ['DP1'], suffixes: ['DS1', 'DS2'] } },
+      }]]),
+    };
+    const b2 = twoDes.bases.get('S')!;
+    const prices: Prices = { currency: { exalt: 1, annul: 1, desecrate: 1 }, omens: {} };
+    const r = markovFromItem(twoDes, prices, { ...rare([placed('NP1', true)], []), base: b2 },
+      [{ modId: 'DP1' }, { modId: 'DS2' }]);
+    expect(r.feasible).toBe(false);
+    expect(r.reason).toMatch(/at most one desecrated mod, and this target needs two/i);
+  });
+
+  // This used to be a rejection ("no boss omen to select it"), from back when every desecrate action
+  // carried one. A boss tag decides only whether the draw can be NARROWED — the untargeted draw
+  // reaches everything in the pool — so an untagged desecrated mod is reachable, just at longer odds.
+  it('reaches a desecrated target with no boss omen, via the untargeted draw', () => {
+    const noBoss: PatchData = {
+      patch: 't',
+      mods: new Map([...data.mods, ['DP1', mk('DP1', 'prefix', 'FdP', 'desecrated')]]), // no boss tag
+      bases: new Map([['S', base]]),
+    };
+    // chaos: 99 like the fixtures above — `stepCost` treats a MISSING price as 0, so leaving it out
+    // hands the policy a free Chaos Orb and the hand-computed arithmetic below collapses (E = 2).
+    const prices: Prices = { currency: { exalt: 1, annul: 1, chaos: 99, desecrate: 1 }, omens: {} };
+    const r = markovFromItem(noBoss, prices, start, targets, EXACT);
+    expect(r.feasible).toBe(true);
+    // Untagged DP1 is in no boss pool, so a Blackblooded draw could never produce it. Only the
+    // untargeted action can, which is what the policy must be playing.
+    const desecrations = [...r.policy.values()].filter((a) => a.currency === 'desecrate');
+    expect(desecrations.length).toBeGreaterThan(0);
+    expect(desecrations.every((a) => a.boss === undefined)).toBe(true);
+    // Same 1-of-2-per-draw shape as the tagged case (NP1's family is occupied, so only DP1 and DS1
+    // are legal), offered three at a time:  E = 1 + ⅞·0 + ⅛·(1 + E) ⇒ E = 9/7.
+    expect(r.expectedCost).toBeCloseTo(9 / 7, 9);
+  });
+});
+
+describe('markovFromItem — Omen of Light clears desecrated junk (hand-computed)', () => {
+  // Start [NP1 | DS1], target {NP1}: DS1 is desecrated junk squatting the suffix. Three ways to shift it:
+  //   plain annul   — 1, but only ½ hits DS1 (NP1 is removable too) and the miss loses the target
+  //   Dextral annul — priced dear at 5 here, P=1
+  //   Omen of Light — 1 + 0.3, P=1 outright
+  // ⇒ Light is the cheapest certainty at 1.3, so VI must pick it over both.
+  const start = rare([placed('NP1')], [placed('DS1')]);
+  const prices: Prices = {
+    currency: { exalt: 1, annul: 1, chaos: 99, desecrate: 1 },
+    omens: { OmenofLight: 0.3, OmenofDextralAnnulment: 5 },
+  };
+
+  it('removes the desecrated mod outright (E = 1.3) and is chosen over a random or side annul', () => {
+    const r = markovFromItem(data, prices, start, [{ modId: 'NP1' }]);
+    expect(r.feasible).toBe(true);
+    expect(r.expectedCost).toBeCloseTo(1.3, 9);
+    const s0 = r.nodes.find((nd) => nd.isStart)!;
+    expect(s0.action).toEqual({ currency: 'annul', light: true });
+    // Deterministic: exactly one outgoing edge, at P=1, straight to the goal.
+    const outs = r.edges.filter((e) => e.from === s0.key);
+    expect(outs).toHaveLength(1);
+    expect(outs[0]!.prob).toBeCloseTo(1, 12);
+    expect(r.nodes.find((nd) => nd.key === outs[0]!.to)!.isGoal).toBe(true);
+  });
+
+  it('without the omen priced, the same craft falls back to the random annul', () => {
+    // Drop OmenofLight from the sheet: the lever disappears (a missing price can't mint a free omen),
+    // so the best remaining certainty is the dear Dextral annul at 5 — strictly worse than 1.3.
+    const noLight: Prices = { ...prices, omens: { OmenofDextralAnnulment: 5 } };
+    const r = markovFromItem(data, noLight, start, [{ modId: 'NP1' }]);
+    const s0 = r.nodes.find((nd) => nd.isStart)!;
+    expect(s0.action).not.toEqual({ currency: 'annul', light: true });
+    expect(r.expectedCost).toBeGreaterThan(1.3);
+  });
+});
+
+describe('markovFromItem — Perfect Essence as an MDP action (hand-computed)', () => {
+  // Base P: normal prefix NP1 + normal suffix NS1, and a PERFECT-ESSENCE prefix PE1 in the essence pool.
+  // PE1 has weight 0 — a perfect-essence mod never rolls from the normal pool, it is only ever forced on.
+  const pbase: ItemBase = {
+    id: 'P', name: 'P', category: 'Wands', // a real Weapon category: boss omens are "Weapon or Jewellery" only (bossOmenAllowed)
+    pools: {
+      normal: { prefixes: ['NP1'], suffixes: ['NS1'] },
+      desecrated: { prefixes: [], suffixes: [] },
+      essence: { prefixes: ['PE1'], suffixes: [] },
+    },
+  };
+  const pdata: PatchData = {
+    patch: 't',
+    mods: new Map([
+      ['NP1', mk('NP1', 'prefix', 'Fp1', 'normal')],
+      ['NS1', mk('NS1', 'suffix', 'Fs1', 'normal')],
+      ['PE1', { ...mk('PE1', 'prefix', 'Fpe', 'perfect_essence'), tiers: [{ name: 't1', ilvl: 1, weight: 0, ranges: [] }] }],
+    ]),
+    bases: new Map([['P', pbase]]),
+  };
+  const prare = (pre: ItemState['prefixes'], suf: ItemState['suffixes']): ItemState =>
+    ({ base: pbase, level: 100, rarity: 'rare', prefixes: pre, suffixes: suf });
+
+  it('a Crystallisation omen makes the removal certain, so the essence alone costs E = 15', () => {
+    // Start [NP1 | NS1], target {NS1, PE1}. NP1 is the junk to feed the essence; NS1 must survive.
+    // Raw essence: the removal is uniform over the 2 mods.
+    //   ½ → eats NP1 ⇒ goal
+    //   ½ → eats NS1 ⇒ PE1 lands but the wanted suffix is gone, and NS1 must be re-added
+    // A Sinistral Crystallisation omen constrains the removal to prefixes, where NP1 is the only
+    // candidate ⇒ P=1. Priced free here, so it strictly dominates: E = the essence price alone.
+    const prices: Prices = { currency: { exalt: 1, annul: 1, chaos: 99, perfect_essence: 15 }, omens: { OmenofSinistralCrystallisation: 0 } };
+    const r = markovFromItem(pdata, prices, prare([placed('NP1')], [placed('NS1')]), [{ modId: 'NS1' }, { modId: 'PE1' }]);
+    expect(r.feasible).toBe(true);
+    expect(r.expectedCost).toBeCloseTo(15, 9);
+    expect(r.nodes.find((nd) => nd.isStart)!.action)
+      .toEqual({ currency: 'perfect-essence', target: 'PE1', side: 'prefix' });
+  });
+
+  it('without the Crystallisation omen priced, the raw ½ essence is the only route', () => {
+    // Same craft, omen unpriced ⇒ not offered (no free omens). The raw essence eats NS1 half the time,
+    // and recovering costs an exalt to put NS1 back: E = 15 + ½·(cost of re-adding NS1).
+    const prices: Prices = { currency: { exalt: 1, annul: 1, chaos: 99, perfect_essence: 15 }, omens: {} };
+    const r = markovFromItem(pdata, prices, prare([placed('NP1')], [placed('NS1')]), [{ modId: 'NS1' }, { modId: 'PE1' }]);
+    expect(r.feasible).toBe(true);
+    const s0 = r.nodes.find((nd) => nd.isStart)!;
+    expect(s0.action).toEqual({ currency: 'perfect-essence', target: 'PE1' });
+    // The uniform removal over the item's 2 mods, pinned exactly: two outcomes at ½ each, and only the
+    // one that ate the junk NP1 reaches the goal — the other keeps PE1 but has swallowed NS1.
+    const outs = r.edges.filter((e) => e.from === s0.key);
+    expect(outs).toHaveLength(2);
+    for (const e of outs) expect(e.prob).toBeCloseTo(0.5, 12);
+    expect(outs.filter((e) => r.nodes.find((nd) => nd.key === e.to)?.isGoal)).toHaveLength(1);
+    expect(r.expectedCost).toBeGreaterThan(15); // strictly dearer than the guaranteed-removal route
+  });
+
+  it('is declined when its side is full and the removal could land elsewhere', () => {
+    // Prefixes full (NP1 + two junk) and the essence wants a prefix. Unconstrained, the removal might
+    // eat the suffix and leave no room, so the action isn't offered; a Sinistral omen makes it legal.
+    const three: ItemState = prare(
+      [placed('NP1'), placed('J1'), placed('J2')], [placed('NS1')]);
+    const withJunk: PatchData = {
+      ...pdata,
+      mods: new Map([...pdata.mods,
+        ['J1', mk('J1', 'prefix', 'Fj1', 'normal')], ['J2', mk('J2', 'prefix', 'Fj2', 'normal')]]),
+    };
+    const noOmen: Prices = { currency: { exalt: 1, annul: 1, chaos: 99, perfect_essence: 15 }, omens: {} };
+    const rNo = markovFromItem(withJunk, noOmen, three, [{ modId: 'NS1' }, { modId: 'PE1' }]);
+    const startNo = rNo.nodes.find((nd) => nd.isStart)!;
+    expect(startNo.action).not.toMatchObject({ currency: 'perfect-essence' });
+
+    const withOmen: Prices = { ...noOmen, omens: { OmenofSinistralCrystallisation: 0 } };
+    const rYes = markovFromItem(withJunk, withOmen, three, [{ modId: 'NS1' }, { modId: 'PE1' }]);
+    const hasEssence = rYes.nodes.some((nd) => nd.action?.currency === 'perfect-essence');
+    expect(hasEssence).toBe(true);
+  });
+
+  it('rejects a perfect-essence target that is not in the base essence pool', () => {
+    const offPool: PatchData = {
+      ...pdata,
+      bases: new Map([['P', { ...pbase, pools: { ...pbase.pools, essence: { prefixes: [], suffixes: [] } } }]]),
+    };
+    const b = offPool.bases.get('P')!;
+    const prices: Prices = { currency: { exalt: 1, annul: 1, perfect_essence: 15 }, omens: {} };
+    const r = markovFromItem(offPool, prices, { ...prare([placed('NP1')], [placed('NS1')]), base: b },
+      [{ modId: 'NS1' }, { modId: 'PE1' }]);
+    expect(r.feasible).toBe(false);
+    expect(r.reason).toMatch(/essence pool/i);
+  });
+});
+
+/**
+ * CARVED ALTERNATIVES — two slots may each offer a desecrated mod, so long as one of them can be
+ * filled another way.
+ *
+ * The old rule counted carved mods in the TARGET and refused at two, which also refused "carved Cast
+ * Speed, or failing that a normal one" in two slots — an ask where only one carved mod ever lands.
+ * The limit is on the finished item, and it is now enforced structurally: the carved candidates go
+ * into the lattice's conflict masks, so no state holds two. The action space already agreed (a bone
+ * needs an item carrying no bone-placed mod), which is what makes the pruning sound.
+ */
+describe('markovFromItem — desecrated alternatives', () => {
+  // A carved prefix (DP1) and a carved suffix (DS2), plus a ROLLABLE suffix so one of the two slots can
+  // be filled without a bone — which is exactly the case the old rule refused outright.
+  const twoCarved = (): PatchData => ({
+    patch: 't',
+    mods: new Map([
+      ...data.mods,
+      ['DS2', mk('DS2', 'suffix', 'FdS2', 'desecrated', ['amanamu_mod'])],
+      ['NS1', mk('NS1', 'suffix', 'Fs1', 'normal')],
+    ]),
+    bases: new Map([['S', {
+      ...base,
+      pools: {
+        normal: { prefixes: ['NP1'], suffixes: ['NS1'] },
+        desecrated: { prefixes: ['DP1'], suffixes: ['DS1', 'DS2'] },
+        essence: { prefixes: [], suffixes: [] },
+      },
+    }]]),
+  });
+  const prices: Prices = { currency: { exalt: 1, annul: 1, desecrate: 1 }, omens: {} };
+
+  it('accepts two slots that each OFFER a carved mod, when one has a normal alternative', () => {
+    const d = twoCarved();
+    const b2 = d.bases.get('S')!;
+    const r = markovFromItem(d, prices, { ...rare([placed('NP1', true)], []), base: b2 }, [
+      { modId: 'DP1', slot: 0 },
+      { modId: 'DS2', slot: 1 }, { modId: 'NS1', slot: 1 },
+    ]);
+    expect(r.feasible).toBe(true);
+    expect(r.expectedCost).toBeLessThan(Infinity);
+  });
+
+  /**
+   * …and the finished item never carries two of them. This is the property the relaxation rests on:
+   * loosening the target check would be wrong if the lattice could then reach an item the game
+   * forbids, so the goal states are inspected directly rather than trusted.
+   */
+  it('never finishes on an item holding two carved mods', () => {
+    const d = twoCarved();
+    const b2 = d.bases.get('S')!;
+    const r = markovFromItem(d, prices, { ...rare([placed('NP1', true)], []), base: b2 }, [
+      { modId: 'DP1', slot: 0 },
+      { modId: 'DS2', slot: 1 }, { modId: 'NS1', slot: 1 },
+    ]);
+    expect(r.feasible).toBe(true);
+    for (const nd of r.nodes) {
+      expect(nd.present.filter((ids) => ids.includes('DP1') || ids.includes('DS2')).length).toBeLessThanOrEqual(1);
+    }
+  });
+});
+
+/**
+ * THE ITEM YOU ALREADY HOLD counts toward the one-per-item caps — or the model plans a step the game
+ * refuses.
+ *
+ * Both rules are "an item carries at most one of these", and the model reaches them by opposite
+ * routes. A held CARVED mod is recognised: `classifyStart` flags it (from `PlacedMod.desecrated`, or
+ * simply from its pool), and `hasDesecrated` then empties both bone builders, so `push` never even
+ * stores the action. A held ESSENCE mod is not: it lands in `jp`/`js`, which is a bare count with no
+ * marker, so nothing downstream can tell it from ordinary junk.
+ *
+ * The finished item is safe either way — `isAccepting` demands zero junk — so this is about the ROUTE,
+ * and the illegal one is the cheap one: a Perfect Essence's swap does some of the annulling for free,
+ * so the model prefers it and quotes a cost that comes in low.
+ *
+ * Real 0.5.0 data rather than the synthetic base above, because the point is which mods the shipped
+ * pools actually contain.
+ */
+describe('markovFromItem — one carved mod, one essence modifier, counting the item you hold', () => {
+  const real = loadPatch('data/patches/0.5.0');
+  const rp = loadPrices('data/patches/0.5.0');
+  const wand = real.bases.get('Wands')!;
+  const placed = (id: string) => ({ modId: id, tierName: real.mods.get(id)!.tiers[0]!.name });
+  const item = (prefixes: string[], suffixes: string[]): ItemState => ({
+    base: wand, level: 82, rarity: 'rare',
+    prefixes: prefixes.map(placed), suffixes: suffixes.map(placed),
+  });
+  const CAST = 'Wands/IncreasedCastSpeed';
+  const CRIT = 'Wands/SpellCriticalStrikeChance';
+  const HELD_ESS = 'Wands/PerfectEssence_EssenceAbyss';
+  const WANT_ESS = 'Wands/PerfectEssence_FireDamage';
+  const HELD_DES = 'Wands/Desecrated_BleedingDamage';
+  const WANT_DES = 'Wands/Desecrated_SpellAreaOfEffect';
+
+  it('refuses a second essence modifier, naming the one already on the item', () => {
+    const r = markovFromItem(real, rp, item([HELD_ESS], [CAST, CRIT]), [{ modId: WANT_ESS }]);
+    expect(r.feasible).toBe(false);
+    expect(r.reason).toContain(HELD_ESS);
+    expect(r.reason).toMatch(/crafted modifier/i);
+  });
+
+  // …but only where an essence ACTION exists to be offered wrongly. With no essence target the held
+  // mod is ordinary junk to be annulled, which the model already handles — refusing here would decline
+  // a craft it gets right.
+  it('plans normally when the held essence mod is just junk in the way', () => {
+    const r = markovFromItem(real, rp, item([HELD_ESS], [CAST]), [{ modId: CRIT }]);
+    expect(r.feasible).toBe(true);
+    expect(r.expectedCost).toBeGreaterThan(0);
+  });
+
+  // …and the held mod being the target itself is the ordinary "you already have it" case: it is
+  // `present`, not junk, and `perfectEssenceOutcomes` already declines to add what is on the item.
+  it('accepts the held essence mod when it IS the target', () => {
+    const r = markovFromItem(real, rp, item([HELD_ESS], [CAST]), [{ modId: HELD_ESS }, { modId: CAST }]);
+    expect(r.feasible).toBe(true);
+  });
+
+  /**
+   * The desecration half, which needs no refusal because the state carries the fact. This is the
+   * assertion the rule never had: a bone is not merely priced out of the policy but STRUCTURALLY
+   * absent from every state where a carved mod is already on the item.
+   */
+  it('never plays a bone while a carved mod is already on the item', () => {
+    const r = markovFromItem(real, rp, item([HELD_DES], [CAST]), [{ modId: WANT_DES }], { solver: 'policy' });
+    expect(r.feasible).toBe(true);
+    const start = r.nodes.find((nd) => nd.isStart)!;
+    expect(start.desecratedJunk).toBe('prefix'); // recognised from its pool, with nothing marking it
+    const bones = [...r.policy.entries()]
+      .filter(([, a]) => a.currency === 'desecrate')
+      .map(([key]) => decodeState(key as StateKey));
+    // Not vacuous: the craft does desecrate, just never before the held carved mod is gone.
+    expect(bones.length).toBeGreaterThan(0);
+    expect(bones.every((st) => st.flagged === FLAG_NONE)).toBe(true);
+  });
+});

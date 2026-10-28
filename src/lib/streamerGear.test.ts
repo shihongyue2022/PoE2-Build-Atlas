@@ -1,0 +1,305 @@
+import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { loadShippedPatch } from '../../packages/engine/src/loadPatch.ts';
+import type { ItemBase, Mod, PatchData } from '../../packages/engine/src/types.ts';
+import { readGear, placedCount, goalCount, goalOf, type StreamerFile, type StreamerItem } from './streamerGear';
+
+// The browser's copy of the patch, since `readGear` runs in the app: the full file carries stat ids the
+// app never downloads, and a reading that leaned on them passed here while failing every player.
+const data = loadShippedPatch('data/patches/0.5.0');
+/**
+ * TWO files, on purpose — the same split as `loadFrozenPrices()` against the shipped price sheet.
+ *
+ * `shipped` is what the app serves, and the job REWRITES it whenever it runs: a streamer switching
+ * characters replaces every item in it. So it carries only checks that hold for ANY gear — the file
+ * agrees with the patch data, and every modifier is placed or explained.
+ *
+ * `frozen` is the 2026-09-09 snapshot, and the tests that name a specific real case read it: the Aldur
+ * staff, the Crossbow line the reader could not place. Pointed at the shipped file, those tests would
+ * fail the day fubgun changed staff, with nothing wrong.
+ */
+const shipped = JSON.parse(readFileSync('data/streamers/0.5.0.json', 'utf8')) as StreamerFile;
+const frozen = JSON.parse(readFileSync('src/lib/__fixtures__/streamers-2026-09-09.json', 'utf8')) as StreamerFile;
+const gear = frozen.characters[0]!;
+const itemAt = (slot: string): StreamerItem => {
+  const it = gear.items.find((i) => i.slot === slot);
+  if (!it) throw new Error(`no ${slot} in the shipped gear file`);
+  return it;
+};
+
+/**
+ * The shipped gear file against the shipped patch data.
+ *
+ * These run on REAL data on purpose — the file is written by a job on one schedule and the mod data
+ * refreshed on another, so the two can drift apart, and this suite is where that has to surface. A
+ * synthetic fixture would keep passing forever while the app quietly stopped recognising the gear.
+ */
+describe('the shipped gear file agrees with the shipped patch data', () => {
+  it('names a patch this app knows, and has somebody in it', () => {
+    expect(shipped.patch).toBe(data.patch);
+    expect(shipped.characters.length).toBeGreaterThan(0);
+  });
+
+  // Every character, not the first: a streamer added later is exactly who a refresh would break.
+  it.each(shipped.characters.map((c) => [c.character, c] as const))('%s — every base is one this app knows', (_, c) => {
+    for (const it of c.items) expect(data.bases.has(it.baseId), `${it.name} sits on ${it.baseId}`).toBe(true);
+  });
+
+  it.each(shipped.characters.map((c) => [c.character, c] as const))('%s — every modifier is one this app still has', (_, c) => {
+    const missing = c.items.flatMap((it) => it.mods.map((m) => m.modId).filter((id) => !data.mods.has(id)));
+    expect(missing, 'a refresh of one file without the other').toEqual([]);
+  });
+
+  /** The panel's one promise, on live gear: every modifier is placed on the held item, or explained. */
+  it.each(shipped.characters.map((c) => [c.character, c] as const))('%s — every modifier placed or explained', (_, c) => {
+    for (const it of c.items) {
+      const r = readGear(data, it);
+      expect(placedCount(r) + r.omitted.length, it.name).toBe(it.mods.length + it.unresolved.length);
+    }
+  });
+
+  /** A rune is claimed only where the item really holds one family twice. */
+  it.each(shipped.characters.map((c) => [c.character, c] as const))('%s — no rune claimed on an ordinary item', (_, c) => {
+    for (const it of c.items) {
+      if (it.familyConflict.length > 0) continue;
+      const r = readGear(data, it);
+      expect(r.rune, it.name).toBeUndefined();
+      expect(r.goal, it.name).toEqual(goalOf(r.item));
+    }
+  });
+});
+
+describe('readGear', () => {
+  it('splits a real item onto the side each modifier actually belongs to', () => {
+    const helm = itemAt('Helm');
+    const r = readGear(data, helm);
+
+    expect(r.item.baseId).toBe(helm.baseId);
+    expect(r.item.level).toBe(helm.level);
+    expect(r.item.rarity).toBe('rare');
+    // Not merely "six mods landed": each one on the side its own mod entry declares. Reading the side
+    // off the data is the whole reason this cannot be done from the gear file alone.
+    for (const m of r.item.prefixes) expect(data.mods.get(m.modId)!.type).toBe('prefix');
+    for (const m of r.item.suffixes) expect(data.mods.get(m.modId)!.type).toBe('suffix');
+    expect(placedCount(r)).toBe(helm.mods.length);
+    expect(r.omitted).toEqual([]);
+  });
+
+  it('carries each modifier’s tier and its fractured / desecrated flags across', () => {
+    const helm = itemAt('Helm');
+    const r = readGear(data, helm);
+    const placed = [...r.item.prefixes, ...r.item.suffixes];
+    for (const m of helm.mods) {
+      const got = placed.find((p) => p.modId === m.modId);
+      expect(got, m.modId).toBeDefined();
+      expect(got!.tierDisplay).toBe(m.tierDisplay);
+      expect(got!.fractured ?? false).toBe(m.fractured);
+      expect(got!.desecrated ?? false).toBe(m.desecrated);
+    }
+  });
+
+  /**
+   * The Passion of Aldur case, on the real staff that produced it.
+   *
+   * Two `Gain as Extra Fire` of ONE family — an item the game allows and `ItemState` cannot hold. The
+   * second must come off, and the reader must SAY it came off: planning a six-mod craft against a
+   * five-mod item, with nothing on screen to explain the missing one, is the failure this exists for.
+   */
+  it('drops the second modifier of one family, and says which family and why', () => {
+    const staff = itemAt('Weapon');
+    expect(staff.familyConflict.length, 'the fixture is the Aldur staff').toBeGreaterThan(0);
+
+    const r = readGear(data, staff);
+    expect(placedCount(r)).toBe(staff.mods.length - 1);
+    expect(r.omitted).toHaveLength(1);
+    expect(r.omitted[0]).toContain('two modifiers of the');
+    // The rune belongs to the GOAL, not to this sentence: what you HOLD really is short one modifier,
+    // and what you would CRAFT is not. Saying "a rune explains it" here would blur the two.
+    expect(r.rune?.rune).toBe('passion-of-aldur');
+
+    // The invariant the drop exists to protect: no family twice on the item handed to the tab.
+    const families = [...r.item.prefixes, ...r.item.suffixes]
+      .flatMap((m) => data.mods.get(m.modId)!.families ?? [data.mods.get(m.modId)!.family]);
+    expect(new Set(families).size).toBe(families.length);
+  });
+
+  it('carries a modifier the job could not read into the omissions', () => {
+    const cross = itemAt('Weapon2');
+    expect(cross.unresolved.length, 'the fixture has an unreadable line').toBeGreaterThan(0);
+    const r = readGear(data, cross);
+    expect(r.omitted.join(' ')).toContain(cross.unresolved[0]!);
+  });
+
+  it('says the gear file is out of date when it names a modifier this app has not got', () => {
+    const r = readGear(data, { ...itemAt('Helm'), mods: [
+      { modId: 'Helmets_str/NoSuchModifier', tierDisplay: 1, fractured: false, desecrated: false, sanctified: false },
+    ] });
+    expect(placedCount(r)).toBe(0);
+    expect(r.omitted[0]).toContain('out of date');
+  });
+
+  /** An item holds three a side. A fourth is reported, never silently cut. */
+  it('reports a fourth modifier of one side rather than dropping it quietly', () => {
+    const helm = itemAt('Helm');
+    // Four DIFFERENT prefixes of four different families, so the cap is the only thing that can stop
+    // the fourth — otherwise this test would pass on the family rule and prove nothing about the cap.
+    const prefixes = [...data.mods.values()]
+      .filter((m) => m.type === 'prefix' && data.bases.get(helm.baseId)!.pools.normal.prefixes.includes(m.id));
+    const chosen: string[] = [];
+    const seen = new Set<string>();
+    for (const m of prefixes) {
+      if (seen.has(m.family)) continue;
+      seen.add(m.family);
+      chosen.push(m.id);
+      if (chosen.length === 4) break;
+    }
+    expect(chosen).toHaveLength(4);
+
+    const r = readGear(data, { ...helm, mods: chosen.map((id) => (
+      { modId: id, tierDisplay: 1, fractured: false, desecrated: false, sanctified: false }
+    )) });
+    expect(r.item.prefixes).toHaveLength(3);
+    expect(r.omitted).toHaveLength(1);
+    expect(r.omitted[0]).toContain('4th prefix');
+  });
+
+  it('refuses a Corrupted item, because no currency can modify it further', () => {
+    const r = readGear(data, { ...itemAt('Helm'), corrupted: true });
+    expect(r.blocked).toContain('Corrupted');
+  });
+
+  it('leaves `blocked` unset on an ordinary item', () => {
+    expect(readGear(data, itemAt('Helm')).blocked).toBeUndefined();
+  });
+
+  /**
+   * The claim the panel makes when it prints nothing: an empty `omitted` means the import is exact.
+   * Asserted across the whole character rather than on one item, since it is the panel's only promise.
+   */
+  it('accounts for every modifier of every item — placed, or explained', () => {
+    for (const it of gear.items) {
+      const r = readGear(data, it);
+      expect(placedCount(r) + r.omitted.length, it.name)
+        .toBe(it.mods.length + it.unresolved.length);
+    }
+  });
+});
+
+
+/**
+ * The Aldur staff, and the reason `goal` exists at all.
+ *
+ * The item holds two `Gain as Extra Fire`. No currency can roll that — one family, twice — so an
+ * `ItemState` cannot represent it and `item` carries five. But the item is not impossible: it was
+ * made by rolling fire AND cold, which are different families and coexist perfectly, then socketing
+ * a Passion of Aldur, which converts the cold one. Quoting the five-modifier craft as "the plan for
+ * this staff" would be answering about an item nobody owns — and it is CHEAPER, so it would flatter
+ * the craft as well as misdescribe it.
+ */
+describe('an item a rune made', () => {
+  const staff = (): StreamerItem => itemAt('Weapon');
+
+  it('aims at one more modifier than it can hold', () => {
+    const r = readGear(data, staff());
+    expect(placedCount(r)).toBe(staff().mods.length - 1);
+    expect(goalCount(r)).toBe(staff().mods.length);
+  });
+
+  it('names the rune, its element, and what it converts', () => {
+    const r = readGear(data, staff());
+    expect(r.rune?.rune).toBe('passion-of-aldur');
+    expect(r.rune?.element).toBe('fire');
+    expect(r.rune?.converts).toHaveLength(2);
+    expect(r.rune?.converts[1]).toMatch(/^either .*Extra Cold.* or .*Extra Lightning/);
+  });
+
+  /** Either sibling finishes the craft — the rune converts both — so the goal asks for either, in ONE
+   *  slot at the tier of the copy it replaces. Naming Cold alone threw away every roll landing Lightning. */
+  it('lets the converted copy be either sibling', () => {
+    const r = readGear(data, staff());
+    const slot = r.goal.targets.filter((t) => t.slot !== undefined);
+    expect(slot.map((t) => t.modId)).toEqual(['Staves/DamageGainedAsCold', 'Staves/DamageGainedAsLightning']);
+    expect(new Set(slot.map((t) => t.slot)).size, 'one slot').toBe(1);
+    expect(new Set(slot.map((t) => t.tierDisplay)).size, 'one tier').toBe(1);
+  });
+
+  /** The substitution has to be legal, or the goal is an item the game forbids too. */
+  it('substitutes a SIBLING, so every goal modifier is a different family', () => {
+    const r = readGear(data, staff());
+    const ids = r.goal.targets.map((t) => t.modId);
+    expect(new Set(ids).size, 'no modifier twice').toBe(ids.length);
+    const fams = ids.flatMap((id) => {
+      const m = data.mods.get(id)!;
+      return m.families ?? [m.family];
+    });
+    expect(new Set(fams).size, 'no family twice').toBe(fams.length);
+  });
+
+  /**
+   * The wanted element keeps its own tier; the sibling stands in for the copy it replaces.
+   *
+   * BOTH copies on the real staff are T1, so the shipped fixture cannot tell a correct pairing from a
+   * swapped one — mutating the index left every test green. Built here instead, with the copies at
+   * different tiers, which is the only way this rule is observable.
+   */
+  it('gives each substituted sibling the tier of the copy it replaces', () => {
+    const two: StreamerItem = {
+      ...staff(),
+      mods: [
+        { modId: 'Staves/DamageGainedAsFire', tierDisplay: 1, fractured: false, desecrated: false, sanctified: false },
+        { modId: 'Staves/DamageGainedAsFire', tierDisplay: 4, fractured: false, desecrated: false, sanctified: false },
+      ],
+    };
+    const r = readGear(data, two);
+    const goal = r.goal.targets;
+    expect(goalCount(r)).toBe(2);
+    // Route order is [wanted element, then siblings], paired with the copies in the order they appear.
+    expect(goal.find((g) => g.modId === 'Staves/DamageGainedAsFire')?.tierDisplay).toBe(1);
+    expect(goal.find((g) => g.modId === 'Staves/DamageGainedAsCold')?.tierDisplay).toBe(4);
+    expect(goal.find((g) => g.modId === 'Staves/DamageGainedAsLightning')?.tierDisplay).toBe(4);
+  });
+
+  /** Every other item is untouched: goal IS the item, and no rune is claimed. */
+  it('leaves an ordinary item alone', () => {
+    for (const it of gear.items) {
+      const r = readGear(data, it);
+      if (it.familyConflict.length > 0) continue;
+      expect(r.rune, it.name).toBeUndefined();
+      expect(goalCount(r), it.name).toBe(placedCount(r));
+      expect(r.goal).toEqual(goalOf(r.item));
+    }
+  });
+});
+
+/**
+ * A candidate joins its slot only if the item still holds together with it standing there — the same
+ * walk that decides legality for the held item. No shipped base has a modifier sharing a sibling's
+ * family, so this one is built: a Lightning that would clash with another of the item's modifiers is
+ * left out, and the copy falls back to Cold alone.
+ */
+describe('a sibling that would not fit', () => {
+  it('is left out of the slot, and the copy falls back to the sibling that does', () => {
+    const like = (id: string, family: string, text: string): Mod =>
+      ({ ...data.mods.get('Staves/DamageGainedAsFire')!, id, family, text });
+    const mods = [
+      like('B/Fire', 'FireDamage', 'Gain #% of Damage as Extra Fire Damage'),
+      like('B/Cold', 'ColdDamage', 'Gain #% of Damage as Extra Cold Damage'),
+      like('B/Lightning', 'LightningDamage', 'Gain #% of Damage as Extra Lightning Damage'),
+      like('B/Zap', 'LightningDamage', 'Adds # to # Lightning Damage'),
+    ];
+    const none = { prefixes: [], suffixes: [] };
+    const base: ItemBase = {
+      ...data.bases.get('Staves')!, id: 'B',
+      pools: { normal: { prefixes: mods.map((m) => m.id), suffixes: [] }, desecrated: none, essence: none },
+    };
+    const built: PatchData = { patch: 't', mods: new Map(mods.map((m) => [m.id, m])), bases: new Map([['B', base]]) };
+    const held = (modId: string) => ({ modId, tierDisplay: 1, fractured: false, desecrated: false, sanctified: false });
+    const item: StreamerItem = { ...itemAt('Weapon'), baseId: 'B', mods: [held('B/Fire'), held('B/Fire'), held('B/Zap')] };
+
+    expect(readGear(built, item).goal.targets).toEqual([
+      { modId: 'B/Fire', tierDisplay: 1 },
+      { modId: 'B/Cold', tierDisplay: 1 },
+      { modId: 'B/Zap', tierDisplay: 1 },
+    ]);
+  });
+});

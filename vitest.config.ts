@@ -1,0 +1,45 @@
+import { defineConfig } from 'vitest/config';
+import react from '@vitejs/plugin-react';
+import path from 'path';
+import { userGuidePlugin } from './src/lib/guide/vitePlugin.ts';
+
+export default defineConfig({
+  // The guide page renders `virtual:user-guide`, so the tests need the same plugin the build
+  // uses — that way they assert against the real docs/USER_GUIDE.md, not a fixture of it.
+  plugins: [react(), userGuidePlugin(__dirname)],
+  test: {
+    globals: true,
+    environment: 'jsdom',
+    setupFiles: './src/test/setup.ts',
+    css: true,
+    // Vitest's 5s default is too tight for this suite. Several tests do real work rather than
+    // mocking it — 100k-run Monte-Carlo policy simulations, value iteration over the full MDP
+    // lattice, budget CDFs over real 0.5.0 data — and legitimately take 2-4s locally. CI runners
+    // are slower still, which is exactly how `a bigger budget never lowers the odds of the same
+    // item` (2.7s here) blew the 5s default on GitHub Actions. 30s leaves headroom for a slow
+    // runner while still failing a genuine hang rather than waiting forever.
+    testTimeout: 30_000,
+    // `e2e/` belongs to Playwright, which has its own runner, config and browser. Vitest's default
+    // include sweeps every `*.spec.ts` in the project, so without this it picks up the browser suite,
+    // runs it under jsdom with no `test()` from @playwright/test registered, and fails the unit run —
+    // which is how `npm test` went red the moment the smoke tests landed.
+    exclude: ['**/node_modules/**', '**/dist/**', 'e2e/**'],
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'json', 'html'],
+      exclude: [
+        'node_modules/',
+        'src/test/',
+        '**/*.d.ts',
+        '**/*.config.*',
+        '**/mockData',
+        'dist/',
+      ],
+    },
+  },
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+    },
+  },
+});

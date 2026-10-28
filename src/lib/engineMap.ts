@@ -1,0 +1,604 @@
+// Presentation + mapping helpers for the browser facade (src/lib/engine.ts): they turn engine/optimizer
+// values into the UI-shaped types (engineTypes.ts), and UI inputs back into engine targets. Kept out of
+// engine.ts so the facade stays a thin public API. Pure — each takes a PatchData, never the memoized Engine.
+
+import { resolveMod, familyAvailable } from '../../packages/engine/src/pool.ts';
+import { withRunes } from '../../packages/engine/src/runes.ts';
+import type { PatchData, ItemState, PlacedMod, CurrencyTier, Mod } from '../../packages/engine/src/types.ts';
+import type { PlanStep } from '../../packages/engine/src/plan.ts';
+import type { TierTarget, ParetoResult } from '../../packages/optimizer/src/optimize.ts';
+import type { Alternative, AlternativeTarget, AlternativesResult, SlotChange } from '../../packages/optimizer/src/alternatives.ts';
+import type { MarkovResult, McAction, PolicyEdge, PolicyNode } from '../../packages/optimizer/src/markovFromItem.ts';
+import type {
+  EngineMod, EngineTier, EngineResult, EnginePlan, EngineStep, EngineSlot, EngineAlternative,
+  EngineAlternatives, EngineMarkovResult, EnginePolicyEdge, EnginePolicyNode, ExistingItem, PolicyMod,
+  TargetInput, AltTargetInput,
+} from './engineTypes.ts';
+
+// ── Labels ────────────────────────────────────────────────────────────────────
+
+export function prettyName(id: string): string {
+  return id.replace(/_/g, ' ');
+}
+
+const ORB_SUFFIX: Record<CurrencyTier, string> = { base: '', greater: ' (Greater)', perfect: ' (Perfect)' };
+/** Desecration boss omen → its in-game name (Blackblooded=Kurgal, Liege=Amanamu, Sovereign=Ulaman). */
+const BOSS_LABEL: Record<'blackblooded' | 'liege' | 'sovereign', string> = {
+  blackblooded: 'Blackblooded', liege: 'Liege', sovereign: 'Sovereign',
+};
+/**
+ * A boss omen's in-game name on its own, for anything that has to NAME the omen rather than draw a
+ * whole step (the Quick currency check's Desecration rows). Same table as `stepLabel` uses, exported
+ * rather than copied — two spellings of one omen is how a player ends up reading two different names
+ * for the same purchase.
+ */
+export function bossOmenLabel(boss: keyof typeof BOSS_LABEL): string {
+  return BOSS_LABEL[boss];
+}
+
+// A throwaway is labelled by the orb it spends (`ThrowawayStep.orb`), so it has no entry of its own.
+const CURRENCY_LABEL: Record<Exclude<PlanStep['currency'], 'throwaway'>, string> = {
+  transmute: 'Transmutation', augment: 'Augmentation', regal: 'Regal', exalt: 'Exalted',
+  alchemy: 'Alchemy', chaos: 'Chaos', annul: 'Annulment', desecrate: 'Desecration', essence: 'Essence', 'perfect-essence': 'Perfect Essence',
+  // Still an Exalted Orb — the omen is what makes it land two mods, and it is named in the suffix
+  // below rather than here, so the player reads which ORB to buy first and which omen to put on it.
+  'greater-exalt': 'Exalted',
+};
+
+function tierLabel(display: number, tierCount: number, name: string, ilvl: number, range: string): string {
+  const head = display === tierCount ? `T${display} · any` : `T${display}`;
+  return `${head} · ${name} · ilvl ${ilvl}${range}`;
+}
+
+/** Essence mods label their tiers by essence level (the tier name already says "Greater Essence of …"). */
+function essenceTierLabel(name: string, ilvl: number, range: string): string {
+  return `${name} · ilvl ${ilvl}${range}`;
+}
+
+// ── Mod listing ─────────────────────────────────────────────────────────────
+
+/**
+ * How a mod's source is named to a player, as a dropdown suffix — "" for an ordinary rollable one.
+ *
+ * Beside `addBlockedReason`, which already owns the other half of this vocabulary ("only a Perfect
+ * Essence can add it"). Both pickers that offer special-source mods need it and they had one copy
+ * each, so a source added to one list would have gone unlabelled in the other — which is how the
+ * Quick check came to offer essence mods reading exactly like rollable ones.
+ */
+export function modSourceLabel(source: EngineMod['source']): string {
+  switch (source) {
+    case 'perfect': return ' · Perfect Essence';
+    // An Alloy shares the Perfect Essence's mechanic and nothing else a player would recognise: it is
+    // its own currency, with its own name and its own market (3.6 ex to 2,261 ex, against the flat
+    // 4.331 every one of them used to be charged).
+    case 'alloy': return ' · Alloy';
+    case 'essence': return ' · Essence only';
+    case 'desecrated': return ' · Desecrated';
+    // Generic, because the rune's NAME is on the mod (`EngineMod.rune`) and this is keyed by source
+    // alone. A picker that wants "· Thrud's Might" reads the name from there.
+    case 'rune': return ' · Rune';
+    case 'normal': return '';
+  }
+}
+
+/**
+ * One roll, as a player reads it.
+ *
+ * Exported because three call sites built this string by hand — `toEngineMod` plus the perfect-essence
+ * and desecrated builders in `engine.ts` — and all three had the same two bugs, which is what a third
+ * copy of a formatting rule is for.
+ *
+ * Two things the raw pair gets wrong. A fixed roll is stored `[5, 5]` and rendered "5–5", which reads
+ * as a range that is not one — the tier dropdown said `T1 · of Inferno · ilvl 81 · 5–5`. And the SIGN
+ * lives in the words, not the number: `15% reduced Attribute Requirements` is stored `[-15, -15]` and
+ * its best tier `[-35, -35]`, so printing the stored value would give "-35% reduced". Magnitude, then
+ * ordered low-high, because taking the magnitude of `[-10, -8]` reverses it.
+ */
+export function rollLabel(r: readonly number[] | undefined): string {
+  if (!r || r.length < 2) return '';
+  const [lo, hi] = [Math.abs(r[0]!), Math.abs(r[1]!)].sort((a, b) => a - b);
+  return lo === hi ? `${lo}` : `${lo}–${hi}`;
+}
+
+/**
+ * The mod's text with the numbers a given tier actually rolls, e.g. `+5 to Level of all Fire Spell
+ * Skills` rather than `+# to Level of all Fire Spell Skills`.
+ *
+ * Reported by a player asking for +5 who was shown "+1 to Level of all Fire Spell Skills" beside a
+ * dropdown reading "T1 · of Inferno · ilvl 81 · 5–5", and had to join the two up themselves. The "+1"
+ * was a separate data bug (the text came from the WORST tier with its value baked in, fixed in
+ * `tools/refresh/modText.mjs`); this is the half that makes the row say what you are asking for.
+ *
+ * Placeholders are filled in order against `values`, since 153 mods carry two or three. A `#` with no
+ * value left is left as `#` rather than dropped — a sentence missing a number is better than one
+ * silently missing a clause.
+ */
+export function modTextAtTier(mod: EngineMod, tierDisplay: number): string {
+  const tier = mod.tiers.find((t) => t.display === tierDisplay);
+  if (tier === undefined || tier.values.length === 0) return mod.text;
+  let i = 0;
+  return mod.text.replace(/#/g, () => tier.values[i++] ?? '#');
+}
+
+export function toEngineMod(data: PatchData, modId: string, type: 'prefix' | 'suffix'): EngineMod | null {
+  const mod = data.mods.get(modId);
+  if (!mod || mod.tiers.length === 0) return null;
+  // Only rollable (normal) or regular-essence mods are craftable from white here. The essence pool
+  // also holds perfect-essence-only mods (source 'perfect_essence') — those need the remove-and-add-
+  // on-rare flow this optimizer doesn't model yet, so they aren't offered as targets.
+  if (mod.source !== 'normal' && mod.source !== 'essence') return null;
+  const isEssence = mod.source === 'essence';
+  const n = mod.tiers.length;
+  // Present best-first: engine tiers ascend by ilvl (index 0 = worst), so reverse for display.
+  const tiers: EngineTier[] = mod.tiers
+    .map((t, engineIndex) => {
+      const display = n - engineIndex; // engineIndex n-1 (best) → display 1
+      const values = (t.ranges ?? []).map(rollLabel).filter((v) => v !== '');
+      const range = values[0] ?? '';
+      const suffix = range ? ` · ${range}` : '';
+      const label = isEssence ? essenceTierLabel(t.name, t.ilvl, suffix) : tierLabel(display, n, t.name, t.ilvl, suffix);
+      return { display, name: t.name, ilvl: t.ilvl, label, range, values };
+    })
+    .sort((a, b) => a.display - b.display);
+  return {
+    id: mod.id, text: mod.text ?? mod.id, type, family: mod.family,
+    ...(mod.families && mod.families.length > 1 ? { families: mod.families } : {}),
+    // A rune-pool modifier is `normal` to the engine and its own thing to a player: it is on offer
+    // only because a rune is socketed, and the picker has to say so. `mod.rune` is the marker
+    // `apply_runes.mjs` writes; the engine source it carries is unchanged.
+    source: isEssence ? 'essence' : mod.rune ? 'rune' : 'normal',
+    ...(mod.rune ? { rune: mod.rune } : {}),
+    tiers,
+  };
+}
+
+// ── Target mapping ──────────────────────────────────────────────────────────
+
+/** UI tier display (1 = best) → engine minTierIndex (worst acceptable tier; display n ⇒ any tier). */
+const minTierIndexOf = (data: PatchData, t: TargetInput): number => {
+  // For an essence mod the tiers are its levels, so this picks the exact Lesser/Normal/Greater level.
+  const n = resolveMod(data, t.modId).tiers.length;
+  return Math.max(0, Math.min(n - 1, n - t.tierDisplay));
+};
+
+/** `slot` crosses UNCHANGED: it is an opaque grouping id on both sides, and inventing a new numbering
+ *  here would only give two layers a chance to disagree about which candidates are alternatives. */
+const slotOf = (t: TargetInput): { slot?: number } => (t.slot === undefined ? {} : { slot: t.slot });
+
+export function toTierTargets(data: PatchData, targets: readonly TargetInput[]): TierTarget[] {
+  return targets.map((t) => ({ modId: t.modId, minTierIndex: minTierIndexOf(data, t), ...slotOf(t) }));
+}
+
+export function toAltTargets(data: PatchData, targets: readonly AltTargetInput[]): AlternativeTarget[] {
+  return targets.map((t) => ({
+    modId: t.modId, minTierIndex: minTierIndexOf(data, t), ...slotOf(t),
+    ...(t.pinned ? { pinned: true as const } : {}),
+  }));
+}
+
+// ── Item building ─────────────────────────────────────────────────────────────
+
+/** Turn a UI item description into the engine's ItemState (looks up mods, records their tier ilvl). */
+export function buildItemState(data: PatchData, item: ExistingItem): ItemState {
+  const raw = data.bases.get(item.baseId);
+  if (!raw) throw new Error(`Unknown base: ${item.baseId}`);
+  // Socketed runes change what the item can hold, and every planner reads those limits off the base —
+  // so they are applied HERE, once, rather than at each of the four call sites that build an item state.
+  const base = withRunes(raw, item.runes ?? []);
+  const place = (inputs: ExistingItem['prefixes']): PlacedMod[] =>
+    inputs.map((m) => {
+      const mod = resolveMod(data, m.modId);
+      const n = mod.tiers.length;
+      const idx = Math.max(0, Math.min(n - 1, n - m.tierDisplay)); // display 1 = best = last engine index
+      const tierName = (mod.tiers[idx] ?? mod.tiers[0])?.name ?? '';
+      // A mod from the desecrated POOL can only have arrived by Desecration, so it carries the flag
+      // whether or not the player ticked it. An ORDINARY mod a bone placed looks like any other, which
+      // is what the tick is for.
+      const desecrated = m.desecrated === true || mod.source === 'desecrated';
+      return {
+        modId: m.modId, tierName,
+        ...(m.fractured ? { fractured: true } : {}),
+        ...(desecrated ? { desecrated: true } : {}),
+      };
+    });
+  const prefixes = place(item.prefixes);
+  const suffixes = place(item.suffixes);
+  // Gates the Omen of Light annul: it needs something flagged to remove.
+  const desecrated = [...prefixes, ...suffixes].some((m) => m.desecrated === true);
+  const state = { base, level: item.level, rarity: item.rarity, prefixes, suffixes };
+  return desecrated ? { ...state, desecrated: true } : state;
+}
+
+/** Why an add of `mod` onto `state` is impossible (side full / family taken / off-pool). */
+export function addBlockedReason(data: PatchData, state: ItemState, mod: Mod): string {
+  const onSide = mod.type === 'prefix' ? state.prefixes.length : state.suffixes.length;
+  const cap = state.rarity === 'magic' ? 1 : 3;
+  if (onSide >= cap) return `the ${mod.type} side is full`;
+  if (!familyAvailable(data, state, mod)) return `its “${mod.family}” family is already on the item`;
+  // A carved or essence-only mod IS craftable on this base — just not by the orb being asked about.
+  // The catch-all below said "it can’t roll on this base", which is false for these three and sends
+  // the player looking for a different base instead of a different currency. Name the currency that
+  // can place it; that is the whole answer.
+  if (mod.source === 'desecrated') return 'only a Desecration can add it';
+  if (mod.source === 'perfect_essence') return 'only a Perfect Essence can add it';
+  if (mod.source === 'essence') return 'only an Essence can add it';
+  return 'it can’t roll on this base';
+}
+
+// ── Frontier / alternatives mapping ───────────────────────────────────────────
+
+/** Map an optimizer ParetoResult into the UI-shaped EngineResult (shared by from-white and from-item). */
+export function mapFrontier(data: PatchData, res: ParetoResult, poolAssumed = false): EngineResult {
+  const text = (id: string): string => data.mods.get(id)?.text ?? id;
+  const frontier: EnginePlan[] = res.frontier.map((plan) => {
+    // A throwaway names no mod, so the step that removes it is labelled by the side it was rolled on.
+    const throwaways = new Map(plan.steps.flatMap((s) =>
+      (s.currency === 'throwaway' ? [[s.throwaway.id, s.throwaway.side] as const] : [])));
+    const removed = (id: string): string => {
+      const side = throwaways.get(id);
+      return side === undefined ? text(id) : `the throwaway ${side}`;
+    };
+    return {
+    probability: plan.probability,
+    expected: plan.cost.expected,
+    perAttempt: plan.cost.perAttempt,
+    expectedAttempts: plan.cost.expectedAttempts,
+    steps: plan.steps.map((step, i): EngineStep => {
+      const sr = plan.result.steps[i]!;
+      const orb = 'tier' in step ? step.tier : undefined;
+      const essenceLevel = step.currency === 'essence' ? step.essenceLevel : undefined;
+      // A side-constrained exalt/chaos uses an Exaltation omen (Sinistral = prefix, Dextral = suffix);
+      // a perfect-essence step can carry a Sinistral/Dextral Crystallisation omen (constrains the removal).
+      const constrainTo = (step.currency === 'exalt' || step.currency === 'chaos' || step.currency === 'throwaway')
+        ? step.constrainTo : undefined;
+      const peOmen = step.currency === 'perfect-essence' ? step.omen : undefined;
+      // Omen of Whittling — a CHAOS omen: the orb removes the lowest-LEVEL modifier rather than a
+      // uniform one. Named in full because "+ Whittling" alone would not tell a player which orb it
+      // modifies, and this is the only omen here that changes a REMOVAL on an adding currency.
+      const whittling = step.currency === 'chaos' && step.omen === 'whittling';
+      // Omen of Greater Exaltation: the orb adds TWO modifiers. Not optional on this step — it IS the
+      // step — so it is derived from the currency rather than from a field, unlike every omen above.
+      const doubled = step.currency === 'greater-exalt';
+      // A desecration is constrained to its boss (the omen that targets the desecrated mod).
+      const boss = step.currency === 'desecrate' ? step.boss : undefined;
+      const omen = doubled ? ' + Omen of Greater Exaltation'
+        : whittling ? ' + Omen of Whittling'
+        : constrainTo ? (constrainTo === 'prefix' ? ' + Sinistral' : ' + Dextral')
+        : peOmen ? (peOmen === 'sinistral' ? ' + Sinistral' : ' + Dextral')
+        : boss ? ` + Omen of the ${BOSS_LABEL[boss]}` : '';
+      const namedMaterial = step.currency === 'essence' || step.currency === 'perfect-essence'
+        ? data.mods.get(step.add)?.tiers[step.currency === 'essence' ? step.essenceTier ?? 0 : 0]?.name : undefined;
+      const label = (namedMaterial ?? (CURRENCY_LABEL[step.currency === 'throwaway' ? step.orb : step.currency]
+        + (orb ? ORB_SUFFIX[orb] : '')
+        + (essenceLevel && essenceLevel !== 'normal' ? ` (${essenceLevel})` : '')))
+        + omen;
+      // Each step names what it acts on: alchemy supplies 4 mods, chaos swaps one for another, annul
+      // removes one, everything else adds one.
+      const target = step.currency === 'alchemy' ? step.adds.map(text).join(' + ')
+        : step.currency === 'greater-exalt' ? step.adds.map((a) => `+${text(a.modId)}`).join('  ')
+        : step.currency === 'chaos' ? `−${text(step.remove)}  +${text(step.add)}`
+        : step.currency === 'perfect-essence' ? `+${text(step.add)}  −${removed(step.remove)} (random)`
+        : step.currency === 'annul' ? `removes ${text(step.remove)}`
+        : step.currency === 'throwaway' ? `any ${step.throwaway.side} — a throwaway for the next step to remove`
+        : text(sr.target);
+      return { n: i + 1, currency: step.currency, orb, label, target, prob: sr.prob };
+    }),
+    };
+  });
+  // Does anything here depend on the ASSUMED desecrated spawn weight? Only an UNOMENED Desecration
+  // does: it draws by weight from the combined normal ∪ desecrated pool, and that weight is a
+  // judgement call (see the note in tools/refresh/apply_pools.mjs). A boss-omened Desecration is
+  // count-uniform and ignores weights entirely, so it stays exact. Computed here from the actual
+  // steps rather than "did the target mention a desecrated mod", so the caveat appears exactly when
+  // the numbers it qualifies are on screen.
+  // A socketed POOL rune makes the whole solve lean on an assumption, which is why it arrives as a
+  // flag rather than being looked for in the steps: its modifiers carry a weight nobody published, and
+  // weight sits in the DENOMINATOR of every weighted draw — so once one is in, every random add is
+  // affected, not only the steps that land one of its modifiers. See `usesAssumedPool` (runes.ts).
+  const desecrateAssumed = res.frontier.some((plan) =>
+    plan.steps.some((step) => step.currency === 'desecrate' && step.boss === undefined));
+  const assumedOdds = poolAssumed || desecrateAssumed;
+  const assumedFrom = assumedFromOf(poolAssumed, desecrateAssumed);
+  return {
+    frontier: paretoOnDisplayed(frontier), plansEvaluated: res.plansEvaluated, assumedOdds,
+    ...(assumedFrom ? { assumedFrom } : {}),
+    ...(res.truncated ? { truncated: true } : {}),
+  };
+}
+
+/**
+ * Keep only the plans that are non-dominated on the two figures a card actually SHOWS.
+ *
+ * The optimizer's `paretoFrontier` prunes on `(expected cost, probability)`, and it is right to: that
+ * is the frontier of the question it answers. But the cards no longer show expected cost — it is the
+ * cost of a policy forbidden to repair, which no player follows and the MDP already beats — so the
+ * pair on screen is `(what one run costs, chance per attempt)`, and a set that is non-dominated on one
+ * pair is not on the other.
+ *
+ * They come apart because `expected` is `Σ c_k·S_{k-1} / S_n`: a step is charged only by how often you
+ * REACH it, so a plan that saves its 1023ex Perfect Exalt for last, behind a chain it clears one time
+ * in ten thousand, is scored as though that orb were nearly free. Measured over 61 multi-plan
+ * frontiers, 51 had a per-run cost that FELL as the odds rose, and half of all cards (229 of 470) were
+ * beaten on both visible numbers by another card in the same list — a Helmet craft led with 25.2ex a
+ * run at 1 in 60,000 while its last card asked 4.0ex at 1 in 10,500. Worst case, 20 cards became 6.
+ *
+ * Same shape and same tolerance as `paretoFrontier`, and deliberately NOT a change to it: the budget
+ * search downstream still needs the expected-cost frontier, so this is a display filter and lives at
+ * the display boundary. It runs here rather than in the component so that the cards and the Lab's
+ * screen-reader announcement can never describe different lists.
+ */
+function paretoOnDisplayed(plans: readonly EnginePlan[]): EnginePlan[] {
+  const sorted = [...plans].sort((a, b) => a.perAttempt - b.perAttempt || b.probability - a.probability);
+  const kept: EnginePlan[] = [];
+  let surest = -Infinity;
+  for (const plan of sorted) {
+    if (plan.probability > surest + 1e-12) { kept.push(plan); surest = plan.probability; }
+  }
+  return kept;
+}
+
+/** Engine slot → UI slot: turns minTierIndex back into a 1-based display tier and a compact label. */
+function toEngineSlot(data: PatchData, slot: SlotChange): EngineSlot {
+  const text = (id: string): string => data.mods.get(id)?.text ?? id;
+  if (slot.kind === 'dropped') return { kind: 'dropped', text: text(slot.from), fromText: text(slot.from) };
+  const mod = resolveMod(data, slot.modId);
+  const n = mod.tiers.length;
+  const display = n - slot.minTierIndex;
+  const r = mod.tiers[slot.minTierIndex]?.ranges[0];
+  const range = r && r.length >= 2 ? `${r[0]}–${r[1]}` : '';
+  const label = `T${display}${display === n ? ' · any' : ''}${range ? ` · ${range}` : ''}`;
+  const kept = { kind: slot.kind, text: text(slot.modId), tierDisplay: display, tierLabel: label };
+  // Only a CHANGED slot carries "what you asked for"; a kept slot's own text already says it.
+  return slot.kind === 'swapped' ? { ...kept, fromText: text(slot.from) } : kept;
+}
+
+function actionLabel(data: PatchData, action: McAction): string {
+  if (action.currency === 'exalt') {
+    const sideLabel = action.side === 'prefix' ? 'Sinistral' : action.side === 'suffix' ? 'Dextral' : null;
+    const strengthLabel = action.strength === 'base' ? null : action.strength === 'greater' ? 'Greater' : 'Perfect';
+    if (sideLabel && strengthLabel) return `Exalt (${sideLabel}, ${strengthLabel})`;
+    if (sideLabel) return `Exalt (${sideLabel})`;
+    if (strengthLabel) return `Exalt (${strengthLabel})`;
+    return 'Exalt';
+  }
+  if (action.currency === 'annul') {
+    if (action.light) return 'Annul (Omen of Light)';
+    const sideLabel = action.side === 'prefix' ? 'Sinistral' : action.side === 'suffix' ? 'Dextral' : null;
+    return sideLabel ? `Annul (${sideLabel})` : 'Annul';
+  }
+  if (action.currency === 'desecrate') {
+    const sideLabel = action.side === 'prefix' ? 'Sinistral' : action.side === 'suffix' ? 'Dextral' : null;
+    // No boss omen — the untargeted draw over the whole pool. That is the only desecration available
+    // on armour, so this is the common label, not an edge case: don't name an omen that isn't used.
+    const boss = action.boss ? `Omen of the ${BOSS_LABEL[action.boss]}` : null;
+    // The bone's grade leads and the omens follow in the order they act — which pool, which side, then
+    // the reroll: "Desecrate (Ancient, Dextral, Omen of Abyssal Echoes)".
+    const grade = action.ancient ? 'Ancient' : null;
+    const echoes = action.echoes ? 'Omen of Abyssal Echoes' : null;
+    const parts = [grade, boss, sideLabel, echoes].filter((x): x is string => x !== null);
+    return parts.length > 0 ? `Desecrate (${parts.join(', ')})` : 'Desecrate';
+  }
+  if (action.currency === 'transmute' || action.currency === 'augment' || action.currency === 'regal') {
+    const name = action.currency === 'transmute' ? 'Transmute'
+      : action.currency === 'augment' ? 'Augment' : 'Regal';
+    const strength = action.strength === 'base' ? null : action.strength === 'greater' ? 'Greater' : 'Perfect';
+    return strength ? `${name} (${strength})` : name;
+  }
+  // Not a currency: abandoning the craft and buying another base. Named for what the player does, not
+  // for what it costs — "Restart" beside a 0ex price would read as a bug rather than as a free reroll.
+  if (action.currency === 'restart') return 'Start over with a new base';
+  if (action.currency === 'perfect-essence') {
+    const name = data.mods.get(action.target)?.tiers[0]?.name ?? 'Perfect Essence';
+    const omen = action.side === 'prefix' ? 'Omen of Sinistral Crystallisation' : action.side === 'suffix' ? 'Omen of Dextral Crystallisation' : undefined;
+    return omen ? `${name} + ${omen}` : name;
+  }
+  // A regular Essence is bought BY NAME, and the name is the tier: an essence mod's tiers are its
+  // levels, so `tiers[tierIndex].name` is literally "Greater Essence of Alacrity" — the thing the
+  // player puts in the trade search. Falling back to the level word keeps this honest if a data
+  // refresh ever drops the name, rather than printing a level the sheet did not price.
+  if (action.currency === 'essence') {
+    const name = data.mods.get(action.target)?.tiers[action.tierIndex]?.name;
+    return name ?? `${action.level === 'lesser' ? 'Lesser ' : action.level === 'greater' ? 'Greater ' : ''}Essence`;
+  }
+  return 'Chaos';
+}
+
+/** A filled position named: the texts of the ids that could be filling it, joined with "or". */
+const positionLabel = (data: PatchData, ids: readonly string[]): string =>
+  ids.map((id) => data.mods.get(id)?.text ?? id).join(' or ');
+
+/**
+ * The tier a target was asked at, as the picker spells it (1 = best), for one POSITION.
+ *
+ * Engine tiers run worst-first and `minTierIndex` is the worst acceptable index, so the display tier is
+ * `tiers.length − minTierIndex` — the same conversion `mapSlot` makes, and the reason this reads off
+ * the caller's UI targets rather than re-deriving it.
+ *
+ * Undefined when the members of a merged position disagree, because one number would then speak for
+ * two different asks. That is exactly the case `mixedTierAlternatives` puts a note under, so it is a
+ * real shape rather than a defensive branch.
+ */
+type TierOf = (ids: readonly string[]) => number | undefined;
+
+const askedTierOf = (targets: readonly TargetInput[]): TierOf => {
+  const by = new Map(targets.map((t) => [t.modId, t.tierDisplay]));
+  return (ids) => {
+    const tiers = ids.map((id) => by.get(id));
+    const first = tiers[0];
+    return first !== undefined && tiers.every((x) => x === first) ? first : undefined;
+  };
+};
+
+/**
+ * One state of a policy graph, named for the UI. Shared by the craft's own graph and by a route from a
+ * starting item (`mapRoute`), so the two can never label one state two ways.
+ */
+function mapNode(data: PatchData, nd: PolicyNode, tierOf: TierOf): EnginePolicyNode {
+  /**
+   * The solver hands back the ids that COULD be filling each position — several when the position is
+   * same-family alternatives merged into one bit, because at that point nothing downstream depends on
+   * which member landed and the state genuinely does not record it. "or" is therefore the honest word:
+   * the item holds exactly one of these, and the plan works either way.
+   */
+  const label = (ids: readonly string[]): string => positionLabel(data, ids);
+  /**
+   * Side comes off the DATA, not off the target list, so it is there even for a route mapped without
+   * one. Members of a position always share a side — `markovFromItem` refuses a slot that spans both,
+   * and a merge requires it — so the first id answers for the group.
+   */
+  const position = (ids: readonly string[]): PolicyMod => {
+    const tier = tierOf(ids);
+    return {
+      text: label(ids),
+      type: data.mods.get(ids[0]!)?.type ?? 'prefix',
+      ...(tier === undefined ? {} : { tier }),
+    };
+  };
+  return {
+    key: nd.key,
+    present: nd.present.map(position),
+    blocked: nd.blocked.map(position),
+    ...(nd.obstacles ? { obstacles: nd.obstacles.map(position) } : {}),
+    junkPrefixes: nd.junkPrefixes,
+    junkSuffixes: nd.junkSuffixes,
+    rarity: nd.rarity,
+    ...(nd.desecratedJunk ? { desecratedJunk: nd.desecratedJunk } : {}),
+    ...(nd.desecratedTarget ? { desecratedTarget: label(nd.desecratedTarget) } : {}),
+    isStart: nd.isStart,
+    isGoal: nd.isGoal,
+    ...(nd.isRestart ? { isRestart: true as const } : {}),
+    // Steps-to-goal, taken from the solver rather than recomputed here. This used to be a second copy
+    // of the same expression, and it silently went wrong the moment rarity joined the formula: a Magic
+    // item is at least a Regal and an Annulment away however good its mods are, and a UI that didn't
+    // know that would draw the solver's forward steps as steps backwards.
+    depth: nd.depth,
+    visitRate: nd.visitRate,
+    expectedCost: nd.expectedCost,
+    ...(nd.action ? { action: actionLabel(data, nd.action) } : {}),
+    ...(nd.actionCost !== undefined ? { actionCost: nd.actionCost } : {}),
+    ...(nd.action?.currency === 'desecrate' ? { keepsOne: true as const } : {}),
+    ...(nd.rerollAbove !== undefined ? { rerollAbove: nd.rerollAbove } : {}),
+  };
+}
+
+const mapEdge = (data: PatchData, e: PolicyEdge): EnginePolicyEdge =>
+  ({
+    from: e.from, to: e.to, action: actionLabel(data, e.action), prob: e.prob, regress: e.regress,
+    ...(e.finishes ? { finishes: e.finishes } : {}),
+  });
+
+/** Same rule as the frontier's: only an unomened Desecration leans on the assumed spawn weight. */
+const leansOnAssumedOdds = (actions: Iterable<McAction>): boolean =>
+  [...actions].some((a) => a.currency === 'desecrate' && a.boss === undefined);
+
+/** Which assumption a result rests on, for the note that has to name it. Both can apply at once. */
+const assumedFromOf = (pool: boolean, desecrate: boolean): EngineResult['assumedFrom'] =>
+  pool && desecrate ? 'both' : pool ? 'rune-pool' : desecrate ? 'desecration' : undefined;
+
+/** Map the from-item MDP result into UI shapes: mod-text node labels, human action names, layout depth. */
+export function mapMarkov(
+  data: PatchData, res: MarkovResult, poolAssumed = false,
+  /** The craft's targets, for the tier each position was asked at. Optional so a caller that has none
+   *  still gets every other label; the graph then shows sides without tiers. */
+  targets: readonly TargetInput[] = [],
+): EngineMarkovResult {
+  /**
+   * The positions of one holding, named — with the SIDE appended to any two that read alike.
+   *
+   * Eight base/text collisions exist in 0.5.0, all the `ItemFoundRarity` prefix/suffix pair, and they
+   * are two genuinely different modifiers an item can carry at once. A graph BOX shows one position
+   * at a time so it never had to care; a holding lists several on one line, where "Rarity + Rarity"
+   * reads as a rendering bug rather than as the two modifiers it is. Appended only on collision, so
+   * every other row stays as short as it was.
+   */
+  const bySide = (positions: readonly (readonly string[])[]): string[] => {
+    const labels = positions.map((ids) => positionLabel(data, ids));
+    const seen = new Map<string, number>();
+    for (const l of labels) seen.set(l, (seen.get(l) ?? 0) + 1);
+    return labels.map((l, i) => {
+      if ((seen.get(l) ?? 0) < 2) return l;
+      const side = data.mods.get(positions[i]![0]!)?.type;
+      return side ? `${l} (${side})` : l;
+    });
+  };
+  const desecrateAssumed = leansOnAssumedOdds(res.policy.values());
+  const assumedFrom = assumedFromOf(poolAssumed, desecrateAssumed);
+  return {
+    applicable: true, feasible: res.feasible, expectedCost: res.expectedCost,
+    converged: res.converged, bound: res.bound,
+    assumedOdds: poolAssumed || desecrateAssumed,
+    ...(assumedFrom ? { assumedFrom } : {}),
+    nodes: res.nodes.map((nd) => mapNode(data, nd, askedTierOf(targets))),
+    edges: res.edges.map((e) => mapEdge(data, e)),
+    ...(res.bareCost !== undefined ? { bareCost: res.bareCost } : {}),
+    // Same labels the graph's boxes use, so a merged same-family position reads "Fire or Cold" in
+    // both places rather than two spellings of one state — then disambiguated, because a holding puts
+    // several positions on ONE line and two of them can print identically.
+    ...(res.holdings ? {
+      holdings: res.holdings.map((h) => ({ present: bySide(h.present), positions: h.present, cost: h.cost, rarity: h.rarity, key: h.key })),
+    } : {}),
+    ...(res.restartCost !== undefined ? { restartCost: res.restartCost } : {}),
+    ...(res.routes ? { routes: res.routes } : {}),
+    // The replay, as plain numbers: the watch shares a caller asked for, and what the policy really
+    // costs. A declined replay carries its reason instead, so a panel can say why a column is empty.
+    ...(res.replay?.ok
+      ? { replay: {
+        runs: res.replay.runs, seen: res.replay.seen, meanCost: res.replay.meanCost, stdErr: res.replay.stdErr,
+        costPercentiles: res.replay.costPercentiles, movesPerCraft: res.replay.movesPerCraft,
+        spendByMove: res.replay.spendByMove.map((m) => ({ label: actionLabel(data, m.action), count: m.count, spent: m.spent })),
+        ...(res.replay.sales ? { sales: res.replay.sales } : {}),
+      } }
+      : {}),
+    ...(res.replay && !res.replay.ok ? { replayReason: res.replay.reason } : {}),
+    ...(res.reason ? { reason: res.reason } : {}),
+    ...(res.stoppedEarly ? { stoppedEarly: true as const } : {}),
+    ...(res.withoutBones ? { withoutBones: true as const } : {}),
+  };
+}
+
+/**
+ * A route from a starting item (`routeFrom`), in the shape the craft's own graph has — so the same
+ * `PolicyGraph` draws it. Its cost is the root's, which the walk visits first; the table, the holdings
+ * and the bare cost stay with the craft's result, since a route answers none of what they answer.
+ */
+export function mapRoute(
+  data: PatchData, route: { readonly nodes: readonly PolicyNode[]; readonly edges: readonly PolicyEdge[] },
+  from: EngineMarkovResult,
+): EngineMarkovResult {
+  const tierByText = new Map<string, number>();
+  for (const n of from.nodes) {
+    for (const p of [...n.present, ...n.blocked]) if (p.tier !== undefined) tierByText.set(p.text, p.tier);
+  }
+  return {
+    applicable: from.applicable, feasible: from.feasible, converged: from.converged, bound: from.bound,
+    expectedCost: route.nodes[0]!.expectedCost,
+    assumedOdds: leansOnAssumedOdds(route.nodes.flatMap((nd) => (nd.action ? [nd.action] : []))),
+    /**
+     * Labelled from the craft's OWN graph rather than from a target list this function was never given.
+     *
+     * A route walks states of the same craft, so every position it can name has already been named
+     * there, tier and all — reading it back is both cheaper than re-deriving and impossible to
+     * disagree with. A position the craft's drawn subset happens not to contain simply arrives with no
+     * tier, which is the same honest gap as a caller who passed no targets.
+     */
+    nodes: route.nodes.map((nd) => mapNode(data, nd, (ids) => tierByText.get(positionLabel(data, ids)))),
+    edges: route.edges.map((e) => mapEdge(data, e)),
+    ...(from.restartCost !== undefined ? { restartCost: from.restartCost } : {}),
+  };
+}
+
+export function mapAlternatives(data: PatchData, res: AlternativesResult): EngineAlternatives {
+  const rows = res.frontier.map((a: Alternative): EngineAlternative => {
+    const { dropped, swapped, valueRetained } = a.closeness;
+    return {
+      slots: a.slots.map((s) => toEngineSlot(data, s)),
+      isTarget: dropped === 0 && swapped === 0 && valueRetained >= 1 - 1e-9,
+      dropped, swapped, valueRetained,
+      inBudget: a.inBudget,
+      inBudgetMax: a.inBudgetMax,
+      exact: a.inBudgetMax - a.inBudget < 1e-9,
+      plan: mapFrontier(data, { frontier: [a.plan], plansEvaluated: 1 }).frontier[0]!,
+    };
+  });
+  return { rows, nodesEvaluated: res.nodesEvaluated, truncated: res.truncated };
+}

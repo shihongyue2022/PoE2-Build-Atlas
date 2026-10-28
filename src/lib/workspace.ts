@@ -1,0 +1,639 @@
+// The user's WORK — what they built, as opposed to what the engine computed from it.
+//
+// Nothing used to survive. A reload lost the base, level, targets, tiers, fractures, pins and budget;
+// worse, EngineLab renders the item tab as `mode === 'item' ? <ItemActions/> : (…)`, so switching tabs
+// unmounted ItemActions and wiped the item you had built — roughly 15 searches and clicks for a 6-mod
+// item, gone by accident.
+//
+// Holding that state HERE rather than in the components fixes both at once: unmounting a component no
+// longer destroys anything, and one encoding serves both localStorage ("come back later") and a URL
+// ("send this to someone"). Doing those separately would have meant writing the encoder twice.
+//
+// WHAT IS NOT HERE, deliberately: search boxes, the pre-add tier picker, and every RESULT (frontier,
+// alternatives, policy graph). Results are derived, and a stored one could outlive the inputs that
+// produced it — a plan on screen that no longer matches the item above it is worse than no plan.
+
+import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
+import type { PatchData } from '../../packages/engine/src/types.ts';
+import { isEssenceMod } from '../../packages/engine/src/probability.ts';
+import { RUNE_BY_ID } from '../../packages/engine/src/runes.ts';
+import type { Spare } from '../../packages/optimizer/src/slots.ts';
+import { NO_SPARE } from '../../packages/optimizer/src/slots.ts';
+import type { ItemModInput, TargetInput } from './engineTypes.ts';
+import { MAX_PER_SIDE } from './targetSlots.ts';
+import { PREFS_PREFIX } from './currencyPrefs';
+
+export interface LabState {
+  readonly baseId: string;
+  readonly level: number;
+  readonly targets: readonly TargetInput[];
+  /** Targets already fractured on the base — the craft starts from a Rare holding them. */
+  readonly fractured: ReadonlySet<string>;
+  /** Targets the budget search may never relax, swap or drop. */
+  readonly pinned: ReadonlySet<string>;
+  /** Kept as the raw input string: "" means no budget, and re-parsing a number would lose "0.". */
+  readonly budget: string;
+  /**
+   * What another white base costs the player, as a raw input string ("" = use the app's default).
+   *
+   * This is the MDP's `restartCost`, and it is the single number that decides whether "bin it and roll
+   * another" beats fixing the item in front of you. At 0 it beats almost everything — measured at
+   * 1,015 of 1,041 policy states choosing to start over — which is right if bases are free and wrong
+   * if they are not. Only the player knows which, so it is theirs to set rather than the app's to
+   * assume. See WHITE_BASE_COST in solve.ts for the fallback.
+   */
+  readonly baseCost: string;
+  /** Runes socketed on the item being crafted, by id (`packages/engine/src/runes.ts`). */
+  readonly runes: readonly string[];
+  /** Positions on the finished item the player doesn't care about, per side (`Spare`). */
+  readonly spare: Spare;
+}
+
+export interface ItemTabState {
+  readonly baseId: string;
+  readonly level: number;
+  readonly rarity: 'magic' | 'rare';
+  readonly prefixes: readonly ItemModInput[];
+  readonly suffixes: readonly ItemModInput[];
+  readonly subMode: 'check' | 'plan';
+  readonly target: readonly TargetInput[];
+  /** Runes socketed in the item you hold, by id (`packages/engine/src/runes.ts`). */
+  readonly runes: readonly string[];
+  /** Positions on the finished item the player doesn't care about, per side (`Spare`). */
+  readonly spare: Spare;
+}
+
+export interface Workspace {
+  readonly mode: Mode;
+  readonly lab: LabState;
+  readonly item: ItemTabState;
+}
+
+export function defaultWorkspace(): Workspace {
+  return {
+    mode: 'plan',
+    lab: {
+      baseId: '', level: 82, targets: [], fractured: new Set(), pinned: new Set(), budget: '', baseCost: '',
+      runes: [], spare: NO_SPARE,
+    },
+    item: {
+      baseId: '', level: 82, rarity: 'rare', prefixes: [], suffixes: [], subMode: 'check', target: [],
+      runes: [], spare: NO_SPARE,
+    },
+  };
+}
+
+// ── Wire format ───────────────────────────────────────────────────────────────
+// Short keys and, crucially, mod ids with their `<baseId>/` prefix stripped, since carrying it would
+// roughly double the payload for no information. `v` is a format version, so a future change is
+// REJECTED rather than mis-parsed into a workspace that looks plausible and isn't.
+//
+// It used to say every id in a base's pool starts with that prefix, verified across all 1297. That
+// stopped being true with the spell-element wand and staff variants (2026-09-03): `Wands_cold` reuses
+// its parent's `Wands/…` ids, so nothing is stripped and those links carry the full id. The round trip
+// is still exact — `strip` only shortens on a match, and `restore` returns any short form already
+// containing a slash unchanged — but it is exact by construction rather than by that invariant, and
+// `spellBases.test.ts` pins it so a "simplification" of either half cannot break sharing silently.
+
+/**
+ * The format a workspace is WRITTEN as. Not a constant, because two are current at once.
+ *
+ * `FORMAT_SLOTS` is emitted only when a target actually uses slot alternatives, and `FORMAT_BASE`
+ * otherwise. That is deliberate, and it is the opposite of what this file did for `baseCost`: an
+ * optional key that an old build ignores is harmless, but a SLOT changes what the craft means. An old
+ * reader dropping it would silently plan "Cold and Lightning and Chaos, all three" — an impossible
+ * item — where the link said "any one of them". Refusing the link is the far better failure, and `v`
+ * exists precisely so it can be refused.
+ *
+ * The cost of that choice is bounded to the crafts that opt in: every link ever shared, and every new
+ * link without alternatives, still reads as version 1 in every build that ever existed.
+ */
+const FORMAT_BASE = 1;
+const FORMAT_SLOTS = 2;
+/**
+ * A craft with a socketed rune, for the same reason `FORMAT_SLOTS` exists.
+ *
+ * A rune changes what the item may HOLD — a second crafted modifier, a fourth suffix — so an old
+ * reader dropping `ru` would not read the link wrongly in some detail: it would plan a craft the
+ * player never described, and quote a cost for it. Refusing the link is the better failure, and only
+ * links that actually name a rune pay for it.
+ */
+const FORMAT_RUNES = 3;
+/**
+ * A craft with a FREE SLOT, for the third time and the same reason.
+ *
+ * A free slot changes what "finished" means: the item may end up carrying a modifier nobody named. An
+ * old reader dropping `sp` would plan the strict craft instead and quote its cost — measured on the
+ * Sceptre this feature was built for, 366.84 ex against the 191.27 ex the link actually describes. A
+ * number that wrong is worse than no link at all, so links that use one are refused by builds that
+ * cannot read them, and only those links pay for it.
+ */
+const FORMAT_SPARE = 4;
+const READABLE: readonly number[] = [FORMAT_BASE, FORMAT_SLOTS, FORMAT_RUNES, FORMAT_SPARE];
+
+/**
+ * Which top-level tab is showing.
+ *
+ * `gear` browses a streamer's items and crafts none of its own — it hands what you pick to the `item`
+ * tab through `importToItem`. It rides in the share link like the other two; an OLDER deployed client
+ * decoding a `g` falls through to `plan` rather than breaking, which is why this needed no FORMAT
+ * bump (the same trade `bc` took).
+ */
+export type Mode = 'plan' | 'item' | 'gear' | 'tablets';
+type WireMode = 'p' | 'i' | 'g' | 't';
+
+const WIRE_MODE: Readonly<Record<Mode, WireMode>> = { plan: 'p', item: 'i', gear: 'g', tablets: 't' };
+const MODE_OF: Readonly<Record<WireMode, Mode>> = { p: 'plan', i: 'item', g: 'gear', t: 'tablets' };
+
+/** A stranger's `m`. Anything unrecognised opens the tab a first-time visitor gets, never throws. */
+const modeOf = (m: unknown): Mode =>
+  (typeof m === 'string' && m in MODE_OF ? MODE_OF[m as WireMode] : 'plan');
+
+/** `[modId, tierDisplay, slot?]`. The third element is present only on a target that has alternatives,
+ *  which is what keeps a slot-free workspace byte-identical to what version 1 always wrote. */
+type WireTarget = readonly [string, number, number?];
+/** `[prefixes, suffixes]` — free slots per side. Written only when one of them is non-zero. */
+type WireSpare = readonly [number, number];
+type WireItemMod = readonly [string, number, 1?];
+
+interface Wire {
+  readonly v: number;
+  readonly m: WireMode;
+  readonly l: {
+    readonly b: string; readonly lv: number; readonly t: readonly WireTarget[];
+    readonly f: readonly string[]; readonly p: readonly string[]; readonly bg: string;
+    /** Socketed runes, by id. Written only when the craft uses one — see `FORMAT_RUNES`. */
+    readonly ru?: readonly string[];
+    /** Free slots per side. Written only when the craft uses one — see `FORMAT_SPARE`. */
+    readonly sp?: WireSpare;
+    /** Added after FORMAT 1 shipped, so links written before it simply lack the key — the decoder
+     *  reads it as "" and the craft plans on the default. Bumping FORMAT would REJECT those links
+     *  instead, which is a far worse trade for one optional field. */
+    readonly bc?: string;
+  };
+  readonly i: {
+    readonly b: string; readonly lv: number; readonly r: 'm' | 'r';
+    readonly px: readonly WireItemMod[]; readonly sx: readonly WireItemMod[];
+    readonly sm: 'c' | 'p'; readonly t: readonly WireTarget[];
+    readonly ru?: readonly string[];
+    readonly sp?: WireSpare;
+  };
+}
+
+/**
+ * The DECODER's view of the same wire, with every leaf that reaches app state UNVALIDATED typed as
+ * `unknown` — because that is what it is. `parsed as WireIn` is a cast over a stranger's JSON, and a
+ * cast is not a check: it switches TypeScript off at the one boundary where the input is untrusted.
+ * `Wire` above stays strict, since the encoder really does produce those types.
+ *
+ * The point is enforcement, not documentation. `budget: wire.l.bg ?? ''` does not COMPILE against
+ * this type; it has to go through `clampText`. *Remembering* to validate is exactly what failed when
+ * `lv` was fixed and `bg`/`bc` — two lines below it — were not.
+ *
+ * Leaves left strict are the ones already safe by construction: `v` is rejected unless it equals
+ * FORMAT; `r`/`sm` are read through a `=== 'x'` ternary, `m` through `modeOf`; and a non-string mod id throws inside
+ * `restore`, which `decodeWorkspace`'s try/catch turns into a clean null. Widening those would add
+ * noise, not safety.
+ */
+type WireTargetIn = readonly [string, unknown, unknown?];
+type WireItemModIn = readonly [string, unknown, 1?];
+
+interface WireIn {
+  readonly v: number;
+  readonly m: unknown;
+  readonly l: {
+    readonly b: unknown; readonly lv: unknown; readonly t: readonly WireTargetIn[];
+    readonly f: readonly string[]; readonly p: readonly string[]; readonly bg: unknown;
+    readonly ru?: unknown;
+    readonly sp?: unknown;
+    readonly bc?: unknown;
+  };
+  readonly i: {
+    readonly b: unknown; readonly lv: unknown; readonly r: 'm' | 'r';
+    readonly px: readonly WireItemModIn[]; readonly sx: readonly WireItemModIn[];
+    readonly sm: 'c' | 'p'; readonly t: readonly WireTargetIn[];
+    readonly ru?: unknown;
+    readonly sp?: unknown;
+  };
+}
+
+/**
+ * Item level from a link, held to the same 1-100 the input control enforces.
+ *
+ * A link is not a form: nothing stops it carrying `1e308`, `-5`, or `"abc"`, and `?? default` only
+ * catches null and undefined. Those reach the engine's tier gating, which has no reason to expect
+ * them. Out-of-range and non-numeric both fall back to the default rather than being clamped to an
+ * edge, because a link claiming level 1e308 is corrupt, not a request for level 100.
+ */
+const clampLevel = (lv: unknown, fallback: number): number =>
+  (typeof lv === 'number' && Number.isInteger(lv) && lv >= 1 && lv <= 100 ? lv : fallback);
+
+/**
+ * A free-text numeric field from a link — `budget` and `baseCost` — held to the string its input
+ * control produces.
+ *
+ * These fail differently from a bad SHAPE, which is why `decodeWorkspace`'s try/catch cannot cover
+ * them: they decode cleanly, escape into app state as a number or an object, and throw LATER, at
+ * `budget.trim()` in EngineLab — on Compute, which is the one thing a shared link exists for. A
+ * non-string falls back to '' rather than String(v), on clampLevel's ruling that a link carrying the
+ * wrong type is corrupt, not a request. '' is already the "no opinion" value both fields are built
+ * around, so the craft simply plans on the default.
+ */
+const clampText = (v: unknown): string => (typeof v === 'string' ? v : '');
+
+/**
+ * A display tier from a link. `engineMap` already clamps the RANGE; what it cannot survive is a
+ * non-number — `n - tierDisplay` is NaN for "abc" or {}, and NaN passes straight through the
+ * Math.min/Math.max that clamp it, so the craft plans against a garbage tier index instead of
+ * failing. 1 is the tier `addTarget` defaults to, i.e. "best", the same as adding the mod by hand.
+ */
+const clampTier = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 1);
+
+/** A slot id is an opaque grouping key — only equality matters — so any non-integer is simply "no
+ *  slot", which degrades a shared alternative into an ordinary target rather than into a crash. */
+const clampSlot = (v: unknown): number | undefined =>
+  (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v < 64 ? v : undefined);
+
+const strip = (baseId: string, modId: string): string =>
+  modId.startsWith(`${baseId}/`) ? modId.slice(baseId.length + 1) : modId;
+const restore = (baseId: string, short: string): string =>
+  short.includes('/') ? short : `${baseId}/${short}`;
+
+function toBase64Url(s: string): string {
+  const bytes = new TextEncoder().encode(s);
+  let bin = '';
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function fromBase64Url(s: string): string {
+  const b64 = s.replace(/-/g, '+').replace(/_/g, '/');
+  const bin = atob(b64 + '='.repeat((4 - (b64.length % 4)) % 4));
+  const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+
+/**
+ * The shareable URL for a workspace — the link that reproduces someone's exact craft.
+ *
+ * Lives here, and is used by BOTH the Copy-link button and the problem report, because it is one
+ * mapping and two copies of one mapping is how the D8 pricing bug survived undetected. `origin +
+ * pathname` deliberately drops any existing query, so sharing a workspace you arrived at via `?s=`
+ * doesn't nest the old payload inside the new one.
+ */
+export function shareUrl(ws: Workspace = getWorkspace()): string {
+  return `${window.location.origin}${window.location.pathname}?s=${encodeWorkspace(ws)}`;
+}
+
+/** Encode a workspace into the opaque `?s=` payload. */
+export function encodeWorkspace(ws: Workspace): string {
+  const lb = ws.lab.baseId;
+  const ib = ws.item.baseId;
+  /*
+   * A slot id is written only where it MEANS something — where two or more targets share it.
+   *
+   * A slot of one is not a choice, and an id can be left behind on one: remove the second candidate
+   * from a pair and the survivor still carries the id. Writing it anyway would push the link to
+   * version 2 and lock it out of every older build, in exchange for a disjunction with one option.
+   * Deriving the answer from the list rather than trusting whoever built it keeps the encoding
+   * canonical — the same craft always produces the same bytes, however it was arrived at.
+   */
+  const realSlots = (list: readonly TargetInput[]): Set<number> => {
+    const seen = new Map<number, number>();
+    for (const x of list) if (x.slot !== undefined) seen.set(x.slot, (seen.get(x.slot) ?? 0) + 1);
+    return new Set([...seen].filter(([, n]) => n > 1).map(([id]) => id));
+  };
+  const labSlots = realSlots(ws.lab.targets);
+  const itemSlots = realSlots(ws.item.target);
+  const t = (base: string, list: readonly TargetInput[], real: ReadonlySet<number>): WireTarget[] =>
+    list.map((x) => (x.slot === undefined || !real.has(x.slot)
+      ? [strip(base, x.modId), x.tierDisplay]
+      : [strip(base, x.modId), x.tierDisplay, x.slot]));
+  const usesSlots = labSlots.size > 0 || itemSlots.size > 0;
+  const usesRunes = ws.lab.runes.length > 0 || ws.item.runes.length > 0;
+  // Derived from the counts, not from whether the field is set — `{0,0}` IS "no free slots", and
+  // writing it would push every link to version 4 for a craft that means what version 1 already said.
+  const sp = (s: Spare): WireSpare | undefined =>
+    (s.prefixes > 0 || s.suffixes > 0 ? [s.prefixes, s.suffixes] : undefined);
+  const labSpare = sp(ws.lab.spare);
+  const itemSpare = sp(ws.item.spare);
+  const im = (list: readonly ItemModInput[]): WireItemMod[] =>
+    list.map((x) => (x.fractured ? [strip(ib, x.modId), x.tierDisplay, 1] : [strip(ib, x.modId), x.tierDisplay]));
+
+  const wire: Wire = {
+    // Highest first: a craft using both a rune and a free slot must be refused by a reader that can
+    // read only one of them, so the version names the newest thing in the link rather than the first.
+    v: labSpare || itemSpare ? FORMAT_SPARE : usesRunes ? FORMAT_RUNES : usesSlots ? FORMAT_SLOTS : FORMAT_BASE,
+    m: WIRE_MODE[ws.mode],
+    l: {
+      b: lb, lv: ws.lab.level, t: t(lb, ws.lab.targets, labSlots),
+      f: [...ws.lab.fractured].map((id) => strip(lb, id)),
+      p: [...ws.lab.pinned].map((id) => strip(lb, id)),
+      bg: ws.lab.budget, bc: ws.lab.baseCost,
+      ...(ws.lab.runes.length ? { ru: [...ws.lab.runes] } : {}),
+      ...(labSpare ? { sp: labSpare } : {}),
+    },
+    i: {
+      b: ib, lv: ws.item.level, r: ws.item.rarity === 'magic' ? 'm' : 'r',
+      px: im(ws.item.prefixes), sx: im(ws.item.suffixes),
+      sm: ws.item.subMode === 'plan' ? 'p' : 'c', t: t(ib, ws.item.target, itemSlots),
+      ...(ws.item.runes.length ? { ru: [...ws.item.runes] } : {}),
+      ...(itemSpare ? { sp: itemSpare } : {}),
+    },
+  };
+  return toBase64Url(JSON.stringify(wire));
+}
+
+export interface DecodeResult {
+  readonly workspace: Workspace;
+  /** Ids the link named that this build no longer knows — MOD ids, and possibly a base id — dropped and
+   *  reported so we don't silently plan something different from what was shared. Empty ids are not
+   *  losses and never appear here; see `knownBase`. */
+  readonly dropped: readonly string[];
+}
+
+/**
+ * Decode a `?s=` payload, validated against the loaded patch data.
+ *
+ * Validation is not optional: a link can name a base or mod that a data refresh has since removed, and
+ * `resolveMod` THROWS on an unknown id — so an unvalidated link would crash the planner rather than
+ * degrade. Unknown ids are dropped and returned.
+ *
+ * Returns null when the payload isn't a workspace at all (truncated, tampered, or a newer format).
+ */
+export function decodeWorkspace(payload: string, data: PatchData): DecodeResult | null {
+  try {
+    return decodeOrThrow(payload, data);
+  } catch {
+    // The contract above is "null for anything that isn't a workspace", and only the JSON parse used
+    // to be guarded. But a payload can be valid base64 holding valid JSON and STILL be the wrong
+    // shape — `t` a string instead of an array, a null where a mod id belongs, `{}` where an
+    // [id, tier] pair belongs — and each of those threw from inside the mapping helpers below.
+    //
+    // That throw landed in EngineLab's link-loading `useEffect`, where React responds by unmounting
+    // the tree: one malformed shared link white-screened the app, on a URL anybody can paste. The
+    // call site has always handled null properly (it toasts "That link could not be read"), so
+    // honouring the contract is the whole fix. Fuzzed in workspace.test.ts.
+    return null;
+  }
+}
+
+function decodeOrThrow(payload: string, data: PatchData): DecodeResult | null {
+  let wire: WireIn;
+  try {
+    const parsed: unknown = JSON.parse(fromBase64Url(payload));
+    if (!parsed || typeof parsed !== 'object') return null;
+    wire = parsed as WireIn;
+  } catch {
+    return null;
+  }
+  if (!READABLE.includes(wire.v) || !wire.l || !wire.i) return null;
+
+  const dropped: string[] = [];
+  // An EMPTY base id means "none chosen yet", not "an id this build lost". Reporting it as dropped made
+  // a link shared from a fresh workspace announce "2 mods in the link no longer exist" — two counts, no
+  // mods, nothing missing. `dropped` drives a user-facing message, so only real losses belong in it.
+  const knownBase = (id: unknown): string => {
+    if (typeof id !== 'string' || !id) return '';
+    if (data.bases.has(id)) return id;
+    dropped.push(id);
+    return '';
+  };
+  const keep = (base: string, short: string): string | null => {
+    const full = restore(base, short);
+    if (data.mods.has(full)) return full;
+    dropped.push(full);
+    return null;
+  };
+  const targets = (base: string, list: readonly WireTargetIn[] | undefined): TargetInput[] =>
+    (list ?? []).flatMap(([id, tier, slot]) => {
+      const full = base ? keep(base, id) : null;
+      if (!full) return [];
+      const s = clampSlot(slot);
+      return [s === undefined
+        ? { modId: full, tierDisplay: clampTier(tier) }
+        : { modId: full, tierDisplay: clampTier(tier), slot: s }];
+    });
+  /**
+   * What the item builder can produce, and therefore what a link may claim you are HOLDING.
+   *
+   * `keep` checks a mod id exists, which is the right bar for a TARGET — a regular-essence mod is a
+   * perfectly good thing to ask for, and the MDP has planned one since 2026-08-28. It is the wrong bar
+   * for a mod already on the item: the builder's add columns offer normal and desecrated mods only
+   * (ItemActions), so an essence-source mod here could only have come from a hand-edited link.
+   *
+   * It matters because the model cannot represent it. A held essence mod lands in `jp`/`js` as bare
+   * junk with no marker, so nothing downstream can tell it from an ordinary roll and the one-essence
+   * rule goes unenforced — `markovFromItem` refuses such a craft rather than quoting a number the game
+   * would not allow. Dropping it here keeps the app on states its own UI can build; the underlying gap
+   * (there is no state axis for "this item holds an essence mod") is unchanged.
+   */
+  const itemMods = (base: string, list: readonly WireItemModIn[] | undefined): ItemModInput[] =>
+    (list ?? []).flatMap(([id, tier, frac]) => {
+      const full = base ? keep(base, id) : null;
+      if (!full) return [];
+      if (isEssenceMod(data.mods.get(full)!)) { dropped.push(full); return []; }
+      const t = clampTier(tier);
+      return [frac ? { modId: full, tierDisplay: t, fractured: true } : { modId: full, tierDisplay: t }];
+    });
+  /**
+   * The runes a link names, checked against the table.
+   *
+   * An id this build has never heard of is a real loss — the craft it describes allows something this
+   * one will not — so it is reported like an unknown mod rather than ignored. A link from a later patch
+   * naming a rune we lack therefore says so instead of quietly planning a stricter craft.
+   */
+  const runeIds = (list: unknown): string[] => {
+    if (!Array.isArray(list)) return [];
+    const out: string[] = [];
+    for (const id of list as unknown[]) {
+      if (typeof id !== 'string' || !id) continue;
+      if (RUNE_BY_ID.has(id)) out.push(id);
+      else dropped.push(id);
+    }
+    return out;
+  };
+  /**
+   * The free slots a link names, held to what an item could actually have.
+   *
+   * A link is not a form: nothing stops `sp` carrying `[99, -1]`, `["a", {}]` or a fraction. Anything
+   * out of range is read as zero rather than dropped-and-reported, because unlike a rune id this is not
+   * a feature the build lacks — it is a number that was never legal. Three a side is the game's cap and
+   * the most a free slot could ever be worth; `Serle's Triumph` raises it to four suffixes, and the
+   * clamp stays at the base cap because the solver treats an unusable free slot as inert either way.
+   */
+  const spareOf = (raw: unknown): Spare => {
+    if (!Array.isArray(raw)) return NO_SPARE;
+    const one = (v: unknown): number =>
+      (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= MAX_PER_SIDE ? v : 0);
+    return { prefixes: one((raw as unknown[])[0]), suffixes: one((raw as unknown[])[1]) };
+  };
+  const ids = (base: string, list: readonly string[] | undefined): Set<string> => {
+    const out = new Set<string>();
+    for (const short of list ?? []) {
+      const full = base ? keep(base, short) : null;
+      if (full) out.add(full);
+    }
+    return out;
+  };
+  /**
+   * An item holds ONE fractured modifier — the Fracturing Orb locks "a random modifier" and "cannot be
+   * used on Fractured items". Both pickers enforce that, so a link carrying two describes a state the
+   * app can no longer produce. It does not crash anything (every planner filters `!fractured` and
+   * copes with any number) — it quietly returns odds for an item that cannot exist, which is the same
+   * class of defect as the `bg`/`bc` clamps: a link is untrusted input, and `?? default` does not
+   * catch a value that is merely wrong.
+   */
+  const oneFractured = (set: ReadonlySet<string>): Set<string> => {
+    const first = [...set][0];
+    return first === undefined ? new Set() : new Set([first]);
+  };
+
+  const lb = knownBase(wire.l.b);
+  const ib = knownBase(wire.i.b);
+  const d = defaultWorkspace();
+  return {
+    workspace: {
+      mode: modeOf(wire.m),
+      lab: {
+        baseId: lb, level: clampLevel(wire.l.lv, d.lab.level), targets: targets(lb, wire.l.t),
+        fractured: oneFractured(ids(lb, wire.l.f)), pinned: ids(lb, wire.l.p), budget: clampText(wire.l.bg),
+        baseCost: clampText(wire.l.bc), runes: runeIds(wire.l.ru), spare: spareOf(wire.l.sp),
+      },
+      item: {
+        baseId: ib, level: clampLevel(wire.i.lv, d.item.level), rarity: wire.i.r === 'm' ? 'magic' : 'rare',
+        // Across BOTH sides, since the cap is per item and a link could put one on each.
+        ...(() => {
+          const seen = { any: false };
+          const cap = (l: ItemModInput[]): ItemModInput[] => l.map((m) => {
+            if (m.fractured !== true) return m;
+            if (seen.any) { const { fractured: _drop, ...rest } = m; return rest; }
+            seen.any = true;
+            return m;
+          });
+          return { prefixes: cap(itemMods(ib, wire.i.px)), suffixes: cap(itemMods(ib, wire.i.sx)) };
+        })(),
+        subMode: wire.i.sm === 'p' ? 'plan' : 'check', target: targets(ib, wire.i.t),
+        runes: runeIds(wire.i.ru), spare: spareOf(wire.i.sp),
+      },
+    },
+    dropped,
+  };
+}
+
+// ── Store ─────────────────────────────────────────────────────────────────────
+// Same shape as currencyPrefs: module-level rather than React context, because the two tabs are
+// separate trees that mount and unmount and must read ONE source. Sets live in memory and become
+// arrays only at this boundary, so component code keeps using them as Sets.
+
+export const STORAGE_KEY = `${PREFS_PREFIX}workspace.v1`;
+
+function persist(ws: Workspace): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      ...ws,
+      lab: { ...ws.lab, fractured: [...ws.lab.fractured], pinned: [...ws.lab.pinned] },
+    }));
+  } catch {
+    // Storage full or blocked (private mode) — the workspace still works for this session.
+  }
+}
+
+function load(): Workspace {
+  const d = defaultWorkspace();
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return d;
+    const p = JSON.parse(raw) as Workspace & { lab: { fractured: string[]; pinned: string[] } };
+    return {
+      ...d, ...p,
+      lab: { ...d.lab, ...p.lab, fractured: new Set(p.lab?.fractured ?? []), pinned: new Set(p.lab?.pinned ?? []) },
+      item: { ...d.item, ...p.item },
+    };
+  } catch {
+    return d; // a corrupt or half-written entry must not stop the app from starting
+  }
+}
+
+let current: Workspace = load();
+const listeners = new Set<() => void>();
+
+export const getWorkspace = (): Workspace => current;
+
+export function setWorkspace(next: Workspace): void {
+  current = next;
+  persist(next);
+  for (const l of listeners) l();
+}
+
+export function useWorkspace(): Workspace {
+  return useSyncExternalStore(
+    (onChange) => { listeners.add(onChange); return () => listeners.delete(onChange); },
+    getWorkspace,
+    getWorkspace,
+  );
+}
+
+const UNSET = Symbol('unset');
+
+/**
+ * Run `fn` when `value` changes, but never on mount.
+ *
+ * NOTHING CALLS THIS ANY MORE, and the reason is worth keeping. Both tabs used it to clear a craft
+ * when the base changed, and a value watcher cannot tell WHY a value moved: a base pick, a share
+ * link, and an import all move `baseId`, and the last two arrived carrying the very targets the
+ * clear then deleted. Both are handlers on the base picker now (`changeBase`).
+ *
+ * Kept because the hook itself is right — a bare `useEffect` with a dep array fires on mount and
+ * wipes restored state, which is the bug this was written for — and the next "reset when X changes"
+ * will want it. Reach for it only when the value has ONE cause; when it has several, the handler is
+ * the honest place for the reaction.
+ */
+export function useOnChange<T>(value: T, fn: () => void): void {
+  const prev = useRef<T | typeof UNSET>(UNSET);
+  useEffect(() => {
+    if (prev.current === UNSET) { prev.current = value; return; } // mount: adopt, don't react
+    if (Object.is(prev.current, value)) return;
+    prev.current = value;
+    fn();
+    // `fn` is deliberately not a dependency: it is redefined every render, and depending on it would
+    // fire this on every render — exactly what it exists to prevent.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+}
+
+/** The active tab. A top-level field rather than one of the two sections, so it gets its own hook. */
+export function useMode(): [Mode, (m: Mode) => void] {
+  const ws = useWorkspace();
+  return [ws.mode, (mode) => setWorkspace({ ...getWorkspace(), mode })];
+}
+
+/**
+ * One persisted field, with `useState`'s exact signature — functional updates included.
+ *
+ * That signature is the point: every call site in the components
+ * (`setFractured((f) => { const n = new Set(f); … })`) keeps working untouched, so moving state out of
+ * the components is a change to their `useState` lines and nothing else.
+ *
+ * The setter is `useCallback`'d, and that is load-bearing rather than a micro-optimisation. It used to
+ * be a fresh closure every render, which made it a LYING dependency: a caller that listed it in an
+ * effect's dep array — which is exactly what `react-hooks/exhaustive-deps` asks for — would re-run
+ * that effect on every render, and the effects holding it are the ones that load the engine. So every
+ * consumer was forced to omit it and suppress the rule. Memoising is safe here without qualification
+ * because the closure captures nothing render-scoped: it reads `getWorkspace()` live, precisely so two
+ * updates in one tick both land, so there is no snapshot to go stale.
+ */
+export function useField<S extends 'lab' | 'item', K extends keyof Workspace[S]>(
+  section: S, key: K,
+): [Workspace[S][K], (v: Workspace[S][K] | ((prev: Workspace[S][K]) => Workspace[S][K])) => void] {
+  const ws = useWorkspace();
+  const set = useCallback((v: Workspace[S][K] | ((prev: Workspace[S][K]) => Workspace[S][K])): void => {
+    // Read through the store, not the render-time snapshot: two updates in one tick (adding a target
+    // and clearing its pin, say) must both land rather than the second overwriting the first.
+    const live = getWorkspace();
+    const prev = live[section][key];
+    const nextValue = typeof v === 'function' ? (v as (p: Workspace[S][K]) => Workspace[S][K])(prev) : v;
+    setWorkspace({ ...live, [section]: { ...live[section], [key]: nextValue } });
+  }, [section, key]);
+  return [ws[section][key], set];
+}

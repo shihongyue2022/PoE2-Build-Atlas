@@ -1,0 +1,2140 @@
+{
+  "patch": "0.5.0",
+  "updated": "2026-09-16",
+  "source": "poe.ninja profiles",
+  "characters": [
+    {
+      "profile": "fubgun-1755",
+      "character": "Fubgun_Oil",
+      "className": "Gemling Legionnaire",
+      "level": 98,
+      "league": "Forbidden Rites",
+      "items": [
+        {
+          "slot": "Ring2",
+          "name": "Miracle Twirl",
+          "baseName": "Gold Ring",
+          "baseId": "Rings",
+          "level": 80,
+          "mods": [
+            {
+              "modId": "Rings/FireResistance",
+              "tierDisplay": 3,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Rings/ItemFoundRarityIncreasePrefix",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Rings/AllResistances",
+              "tierDisplay": 3,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Rings/FireDamagePercentage",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Rings/Essence_ItemFoundRarityIncrease",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Rings/IncreasedLife",
+              "tierDisplay": 2,
+              "fractured": false,
+              "desecrated": true,
+              "sanctified": false
+            }
+          ],
+          "unresolved": [],
+          "familyConflict": [],
+          "runes": [],
+          "corrupted": false
+        },
+        {
+          "slot": "Gloves",
+          "name": "Torment Caress",
+          "baseName": "Massive Mitts",
+          "baseId": "Gloves_str",
+          "level": 82,
+          "mods": [
+            {
+              "modId": "Gloves_str/IncreasedLife",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Gloves_str/LocalPhysicalDamageReductionRatingPercent",
+              "tierDisplay": 2,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Gloves_str/LocalPhysicalDamageReductionRating",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Gloves_str/ChaosResistance",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Gloves_str/ItemFoundRarityIncrease",
+              "tierDisplay": 1,
+              "fractured": true,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Gloves_str/ArmourAppliesToElementalDamage",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": true,
+              "sanctified": false
+            }
+          ],
+          "unresolved": [],
+          "familyConflict": [],
+          "runes": [],
+          "corrupted": false
+        },
+        {
+          "slot": "Amulet",
+          "name": "Pain Collar",
+          "baseName": "Gold Amulet",
+          "baseId": "Amulets",
+          "level": 78,
+          "mods": [
+            {
+              "modId": "Amulets/BaseSpirit",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Amulets/IncreasedLife",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Amulets/ItemFoundRarityIncrease",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Amulets/GlobalIncreaseSpellSkillGemLevel",
+              "tierDisplay": 1,
+              "fractured": true,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Amulets/PerfectEssence_AllDefences",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Amulets/Desecrated_GlobalSkillGemQuality",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": true,
+              "sanctified": false
+            }
+          ],
+          "unresolved": [],
+          "familyConflict": [],
+          "runes": [],
+          "corrupted": false
+        },
+        {
+          "slot": "Weapon",
+          "name": "Brood Pole",
+          "baseName": "Chiming Staff",
+          "baseId": "Staves",
+          "level": 81,
+          "mods": [
+            {
+              "modId": "Staves/WeaponSpellDamage",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Staves/DamageGainedAsFire",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Staves/GlobalIncreaseFireSpellSkillGemLevelWeapon",
+              "tierDisplay": 1,
+              "fractured": true,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Staves/PerfectEssence_IncreasedCastSpeed",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Staves/FireDamageWeaponPrefix",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": true,
+              "sanctified": true
+            }
+          ],
+          "unresolved": [
+            "explicit: DestructionInfluenceFireModifierEffect"
+          ],
+          "familyConflict": [],
+          "runes": [
+            "thruds-might"
+          ],
+          "corrupted": false
+        },
+        {
+          "slot": "Weapon2",
+          "name": "Phoenix Core",
+          "baseName": "Cannonade Crossbow",
+          "baseId": "Crossbows",
+          "level": 64,
+          "mods": [
+            {
+              "modId": "Crossbows/LocalColdDamage",
+              "tierDisplay": 9,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Crossbows/GlobalIncreaseProjectileSkillGemLevelWeapon",
+              "tierDisplay": 3,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Crossbows/LocalIncreasedAttackSpeed",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Crossbows/Dexterity",
+              "tierDisplay": 4,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Crossbows/LocalIncreasedPhysicalDamagePercentAndAccuracyRating",
+              "tierDisplay": 7,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            }
+          ],
+          "unresolved": [
+            "desecrated: Grenade Skills have +1 Cooldown Use"
+          ],
+          "familyConflict": [],
+          "runes": [],
+          "corrupted": false
+        },
+        {
+          "slot": "Boots",
+          "name": "Cataclysm Urge",
+          "baseName": "Tasalian Greaves",
+          "baseId": "Boots_str",
+          "level": 83,
+          "mods": [
+            {
+              "modId": "Boots_str/LocalPhysicalDamageReductionRatingPercent",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Boots_str/MovementVelocity",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Boots_str/LocalPhysicalDamageReductionRating",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Boots_str/ChaosResistance",
+              "tierDisplay": 1,
+              "fractured": true,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Boots_str/Essence_ItemFoundRarityIncrease",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Boots_str/ArmourAppliesToElementalDamage",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": true,
+              "sanctified": false
+            }
+          ],
+          "unresolved": [],
+          "familyConflict": [],
+          "runes": [],
+          "corrupted": false
+        },
+        {
+          "slot": "Ring",
+          "name": "Damnation Circle",
+          "baseName": "Gold Ring",
+          "baseId": "Rings",
+          "level": 76,
+          "mods": [
+            {
+              "modId": "Rings/ItemFoundRarityIncreasePrefix",
+              "tierDisplay": 2,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Rings/AllResistances",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Rings/ChaosResistance",
+              "tierDisplay": 3,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Rings/IncreasedLife",
+              "tierDisplay": 2,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Rings/FireDamagePercentage",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Rings/Essence_ItemFoundRarityIncrease",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            }
+          ],
+          "unresolved": [],
+          "familyConflict": [],
+          "runes": [],
+          "corrupted": false
+        },
+        {
+          "slot": "Helm",
+          "name": "Pandemonium Star",
+          "baseName": "Imperial Greathelm",
+          "baseId": "Helmets_str",
+          "level": 82,
+          "mods": [
+            {
+              "modId": "Helmets_str/LocalPhysicalDamageReductionRating",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Helmets_str/ItemFoundRarityIncreasePrefix",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Helmets_str/LocalPhysicalDamageReductionRatingPercent",
+              "tierDisplay": 2,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Helmets_str/ItemFoundRarityIncrease",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Helmets_str/ArmourAppliesToElementalDamage",
+              "tierDisplay": 1,
+              "fractured": true,
+              "desecrated": false,
+              "sanctified": false
+            }
+          ],
+          "unresolved": [
+            "desecrated: +31% of Armour also applies to Chaos Damage"
+          ],
+          "familyConflict": [],
+          "runes": [],
+          "corrupted": false
+        },
+        {
+          "slot": "BodyArmour",
+          "name": "Dusk Skin",
+          "baseName": "Warlord Cuirass",
+          "baseId": "Body_Armours_str",
+          "level": 82,
+          "mods": [
+            {
+              "modId": "Body_Armours_str/ArmourAppliesToElementalDamage",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Body_Armours_str/LocalPhysicalDamageReductionRating",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Body_Armours_str/LightningResistance",
+              "tierDisplay": 2,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Body_Armours_str/ColdResistance",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Body_Armours_str/LocalPhysicalDamageReductionRatingPercent",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Body_Armours_str/LocalPhysicalDamageReductionRating",
+              "tierDisplay": 8,
+              "fractured": false,
+              "desecrated": true,
+              "sanctified": false
+            },
+            {
+              "modId": "Body_Armours_str/LocalPhysicalDamageReductionRatingPercent",
+              "tierDisplay": 7,
+              "fractured": false,
+              "desecrated": true,
+              "sanctified": false
+            }
+          ],
+          "unresolved": [],
+          "familyConflict": [
+            "Body_Armours_str/LocalPhysicalDamageReductionRating",
+            "Body_Armours_str/LocalPhysicalDamageReductionRatingPercent"
+          ],
+          "runes": [],
+          "corrupted": false
+        }
+      ],
+      "skipped": [
+        {
+          "name": "Mageblood",
+          "slot": "Belt",
+          "rarity": "Unique",
+          "reason": "Unique — only a Rare is craftable here"
+        }
+      ]
+    },
+    {
+      "profile": "Zizaran-6796",
+      "character": "ZizaranMonkBrothers",
+      "className": "Invoker",
+      "level": 94,
+      "league": "HC Forbidden Rites",
+      "items": [
+        {
+          "slot": "Ring",
+          "name": "Armageddon Twirl",
+          "baseName": "Topaz Ring",
+          "baseId": "Rings",
+          "level": 79,
+          "mods": [
+            {
+              "modId": "Rings/ManaRegeneration",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Rings/EvasionRating",
+              "tierDisplay": 3,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Rings/ColdResistance",
+              "tierDisplay": 3,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Rings/LightningResistance",
+              "tierDisplay": 3,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Rings/PerfectEssence_MaximumManaIncreasePercent",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Rings/IncreasedMana",
+              "tierDisplay": 2,
+              "fractured": false,
+              "desecrated": true,
+              "sanctified": false
+            }
+          ],
+          "unresolved": [],
+          "familyConflict": [],
+          "runes": [],
+          "corrupted": false
+        },
+        {
+          "slot": "Ring2",
+          "name": "Maelström Twirl",
+          "baseName": "Pearl Ring",
+          "baseId": "Rings",
+          "level": 79,
+          "mods": [
+            {
+              "modId": "Rings/IncreasedCastSpeed",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Rings/IncreasedLife",
+              "tierDisplay": 2,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Rings/ColdDamagePercentage",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Rings/IncreasedMana",
+              "tierDisplay": 7,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Rings/Essence_FireResistance",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Rings/Desecrated_LightningAndChaosDamageResistance",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": true,
+              "sanctified": false
+            }
+          ],
+          "unresolved": [],
+          "familyConflict": [],
+          "runes": [],
+          "corrupted": false
+        },
+        {
+          "slot": "Boots",
+          "name": "Rage Sole",
+          "baseName": "Sekhema Sandals",
+          "baseId": "Boots_int",
+          "level": 81,
+          "mods": [
+            {
+              "modId": "Boots_int/FireResistance",
+              "tierDisplay": 5,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Boots_int/ReducedFreezeDuration",
+              "tierDisplay": 2,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Boots_int/LocalEnergyShield",
+              "tierDisplay": 3,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Boots_int/MovementVelocity",
+              "tierDisplay": 2,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Boots_int/ColdResistance",
+              "tierDisplay": 2,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Boots_int/LocalEnergyShieldPercent",
+              "tierDisplay": 3,
+              "fractured": false,
+              "desecrated": true,
+              "sanctified": false
+            }
+          ],
+          "unresolved": [],
+          "familyConflict": [],
+          "runes": [],
+          "corrupted": false
+        },
+        {
+          "slot": "Offhand",
+          "name": "Tempest Song",
+          "baseName": "Omen Sceptre",
+          "baseId": "Sceptres",
+          "level": 70,
+          "mods": [
+            {
+              "modId": "Sceptres/AlliesInPresenceIncreasedAttackSpeed",
+              "tierDisplay": 3,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Sceptres/LocalIncreasedSpiritPercent",
+              "tierDisplay": 4,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Sceptres/LocalIncreasedSpiritAndMana",
+              "tierDisplay": 2,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Sceptres/Intelligence",
+              "tierDisplay": 6,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Sceptres/IncreasedMana",
+              "tierDisplay": 11,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            }
+          ],
+          "unresolved": [],
+          "familyConflict": [],
+          "runes": [],
+          "corrupted": false
+        },
+        {
+          "slot": "BodyArmour",
+          "name": "Doom Keep",
+          "baseName": "Vile Robe",
+          "baseId": "Body_Armours_int",
+          "level": 80,
+          "mods": [
+            {
+              "modId": "Body_Armours_int/ColdResistance",
+              "tierDisplay": 4,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Body_Armours_int/LocalIncreasedEnergyShieldAndBase",
+              "tierDisplay": 2,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Body_Armours_int/LocalEnergyShieldPercent",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Body_Armours_int/LightningResistance",
+              "tierDisplay": 3,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Body_Armours_int/PerfectEssence_ReducedCriticalStrikeDamageTaken",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Body_Armours_int/LocalEnergyShield",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": true,
+              "sanctified": false
+            }
+          ],
+          "unresolved": [],
+          "familyConflict": [],
+          "runes": [],
+          "corrupted": false
+        },
+        {
+          "slot": "Amulet",
+          "name": "Brood Braid",
+          "baseName": "Amber Amulet",
+          "baseId": "Amulets",
+          "level": 80,
+          "mods": [
+            {
+              "modId": "Amulets/Strength",
+              "tierDisplay": 2,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Amulets/Intelligence",
+              "tierDisplay": 4,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Amulets/GlobalIncreaseSpellSkillGemLevel",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Amulets/IncreasedMana",
+              "tierDisplay": 3,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Amulets/PerfectEssence_AllDefences",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Amulets/Desecrated_MaximumEnergyShieldFromBodyArmour",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": true,
+              "sanctified": false
+            }
+          ],
+          "unresolved": [],
+          "familyConflict": [],
+          "runes": [],
+          "corrupted": false
+        },
+        {
+          "slot": "Belt",
+          "name": "Maelström Twine",
+          "baseName": "Plate Belt",
+          "baseId": "Belts",
+          "level": 81,
+          "mods": [
+            {
+              "modId": "Belts/LightningResistance",
+              "tierDisplay": 5,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Belts/IncreasedMana",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Belts/BeltIncreasedCharmChargesGained",
+              "tierDisplay": 3,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Belts/IncreasedLife",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Belts/BeltFlaskManaRecoveryRate",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Belts/Essence_ColdResistance",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            }
+          ],
+          "unresolved": [],
+          "familyConflict": [],
+          "runes": [],
+          "corrupted": false
+        },
+        {
+          "slot": "Helm",
+          "name": "Spirit Peak",
+          "baseName": "Sorcerous Tiara",
+          "baseId": "Helmets_int",
+          "level": 81,
+          "mods": [
+            {
+              "modId": "Helmets_int/LocalEnergyShieldPercent",
+              "tierDisplay": 3,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Helmets_int/LocalEnergyShield",
+              "tierDisplay": 2,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Helmets_int/IncreasedMana",
+              "tierDisplay": 4,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Helmets_int/CriticalStrikeChance",
+              "tierDisplay": 2,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Helmets_int/LightningResistance",
+              "tierDisplay": 5,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Helmets_int/PerfectEssence_SpellAreaOfEffect",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            }
+          ],
+          "unresolved": [],
+          "familyConflict": [],
+          "runes": [],
+          "corrupted": false
+        },
+        {
+          "slot": "Gloves",
+          "name": "Behemoth Palm",
+          "baseName": "Sirenscale Gloves",
+          "baseId": "Gloves_int",
+          "level": 81,
+          "mods": [
+            {
+              "modId": "Gloves_int/ColdResistance",
+              "tierDisplay": 3,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Gloves_int/LocalEnergyShield",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Gloves_int/EnergyShieldRegeneration",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Gloves_int/Intelligence",
+              "tierDisplay": 3,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Gloves_int/Essence_DefencesPercent",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Gloves_int/LocalIncreasedEnergyShieldAndLife",
+              "tierDisplay": 3,
+              "fractured": false,
+              "desecrated": true,
+              "sanctified": false
+            }
+          ],
+          "unresolved": [],
+          "familyConflict": [],
+          "runes": [],
+          "corrupted": false
+        },
+        {
+          "slot": "Weapon",
+          "name": "Morbid Bane",
+          "baseName": "Attuned Wand",
+          "baseId": "Wands",
+          "level": 81,
+          "mods": [
+            {
+              "modId": "Wands/GlobalIncreaseColdSpellSkillGemLevelWeapon",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Wands/IncreasedMana",
+              "tierDisplay": 2,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Wands/WeaponSpellDamageAndMana",
+              "tierDisplay": 3,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Wands/Intelligence",
+              "tierDisplay": 2,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Wands/Essence_WeaponCasterDamagePrefix",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Wands/Desecrated_HinderedEnemyTakeIncreasedDamage_3",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": true,
+              "sanctified": false
+            }
+          ],
+          "unresolved": [],
+          "familyConflict": [],
+          "runes": [],
+          "corrupted": false
+        }
+      ],
+      "skipped": []
+    },
+    {
+      "profile": "Steelmage-5874",
+      "character": "SteelMonkBrothers",
+      "className": "Martial Artist",
+      "level": 96,
+      "league": "HC BroSF Forbidden Rites (PL86530)",
+      "items": [
+        {
+          "slot": "Amulet",
+          "name": "Sol Noose",
+          "baseName": "Solar Amulet",
+          "baseId": "Amulets",
+          "level": 80,
+          "mods": [
+            {
+              "modId": "Amulets/GlobalIncreaseMeleeSkillGemLevel",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Amulets/ColdResistance",
+              "tierDisplay": 5,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Amulets/IncreasedMana",
+              "tierDisplay": 7,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Amulets/AllAttributes",
+              "tierDisplay": 3,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Amulets/PerfectEssence_AllDefences",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Amulets/BaseSpirit",
+              "tierDisplay": 3,
+              "fractured": false,
+              "desecrated": true,
+              "sanctified": false
+            }
+          ],
+          "unresolved": [],
+          "familyConflict": [],
+          "runes": [],
+          "corrupted": false
+        },
+        {
+          "slot": "Helm",
+          "name": "Pandemonium Cowl",
+          "baseName": "Ancestral Tiara",
+          "baseId": "Helmets_int",
+          "level": 80,
+          "mods": [
+            {
+              "modId": "Helmets_int/LocalEnergyShield",
+              "tierDisplay": 6,
+              "fractured": false,
+              "desecrated": true,
+              "sanctified": false
+            },
+            {
+              "modId": "Helmets_int/LocalIncreasedEnergyShieldAndMana",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": true,
+              "sanctified": true
+            },
+            {
+              "modId": "Helmets_int/GlobalIncreaseMinionSpellSkillGemLevel",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": true,
+              "sanctified": false
+            },
+            {
+              "modId": "Helmets_int/CriticalStrikeChance",
+              "tierDisplay": 3,
+              "fractured": false,
+              "desecrated": true,
+              "sanctified": false
+            },
+            {
+              "modId": "Helmets_int/Intelligence",
+              "tierDisplay": 4,
+              "fractured": false,
+              "desecrated": true,
+              "sanctified": false
+            }
+          ],
+          "unresolved": [],
+          "familyConflict": [],
+          "runes": [],
+          "corrupted": true
+        },
+        {
+          "slot": "Weapon",
+          "name": "Demon Roar",
+          "baseName": "Skullcrusher Quarterstaff",
+          "baseId": "Quarterstaves",
+          "level": 81,
+          "mods": [
+            {
+              "modId": "Quarterstaves/LocalIncreasedAttackSpeed",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Quarterstaves/ManaLeechLocalPermyriad",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Quarterstaves/LocalLightningDamage",
+              "tierDisplay": 2,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Quarterstaves/LocalPhysicalDamagePercent",
+              "tierDisplay": 3,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Quarterstaves/PerfectEssence_IncreaseSocketedGemLevel",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            }
+          ],
+          "unresolved": [
+            "desecrated: Adds 29 to 43 Physical Damage"
+          ],
+          "familyConflict": [],
+          "runes": [],
+          "corrupted": false
+        },
+        {
+          "slot": "Ring2",
+          "name": "Spirit Spiral",
+          "baseName": "Sapphire Ring",
+          "baseId": "Rings",
+          "level": 81,
+          "mods": [
+            {
+              "modId": "Rings/ColdResistance",
+              "tierDisplay": 4,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Rings/FireResistance",
+              "tierDisplay": 5,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Rings/IncreasedMana",
+              "tierDisplay": 2,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Rings/Essence_LightningResistance",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Rings/FireDamage",
+              "tierDisplay": 4,
+              "fractured": false,
+              "desecrated": true,
+              "sanctified": false
+            }
+          ],
+          "unresolved": [
+            "explicit: AddedPhysicalDamage7"
+          ],
+          "familyConflict": [],
+          "runes": [],
+          "corrupted": false
+        },
+        {
+          "slot": "BodyArmour",
+          "name": "Entropy Curtain",
+          "baseName": "Sleek Jacket",
+          "baseId": "Body_Armours_dex_int",
+          "level": 80,
+          "mods": [
+            {
+              "modId": "Body_Armours_dex_int/LocalIncreasedEvasionAndEnergyShieldAndBase",
+              "tierDisplay": 2,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Body_Armours_dex_int/LightningResistance",
+              "tierDisplay": 4,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Body_Armours_dex_int/LocalBaseEvasionRatingAndEnergyShield",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Body_Armours_dex_int/LocalEvasionAndEnergyShield",
+              "tierDisplay": 2,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Body_Armours_dex_int/Essence_LightningResistance",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Body_Armours_dex_int/EvasionAppliesToDeflection",
+              "tierDisplay": 2,
+              "fractured": false,
+              "desecrated": true,
+              "sanctified": false
+            }
+          ],
+          "unresolved": [],
+          "familyConflict": [],
+          "runes": [],
+          "corrupted": false
+        },
+        {
+          "slot": "Boots",
+          "name": "Vortex Slippers",
+          "baseName": "Sekhema Sandals",
+          "baseId": "Boots_int",
+          "level": 80,
+          "mods": [
+            {
+              "modId": "Boots_int/LocalEnergyShieldPercent",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Boots_int/FireResistance",
+              "tierDisplay": 2,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Boots_int/LocalAttributeRequirements",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Boots_int/LocalEnergyShield",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Boots_int/Essence_FireResistance",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Boots_int/MovementVelocity",
+              "tierDisplay": 2,
+              "fractured": false,
+              "desecrated": true,
+              "sanctified": false
+            }
+          ],
+          "unresolved": [],
+          "familyConflict": [],
+          "runes": [],
+          "corrupted": false
+        }
+      ],
+      "skipped": [
+        {
+          "name": "Kalandra's Touch",
+          "slot": "Ring",
+          "rarity": "Unique",
+          "reason": "Unique — only a Rare is craftable here"
+        },
+        {
+          "name": "Amor Mandragora",
+          "slot": "Weapon2",
+          "rarity": "Unique",
+          "reason": "Unique — only a Rare is craftable here"
+        },
+        {
+          "name": "Headhunter",
+          "slot": "Belt",
+          "rarity": "Unique",
+          "reason": "Unique — only a Rare is craftable here"
+        },
+        {
+          "name": "Lochtonial Caress",
+          "slot": "Gloves",
+          "rarity": "Unique",
+          "reason": "Unique — only a Rare is craftable here"
+        }
+      ]
+    },
+    {
+      "profile": "xthefarmerx-5994",
+      "character": "xthefarmerxMILKED",
+      "className": "Gemling Legionnaire",
+      "level": 96,
+      "league": "Forbidden Rites",
+      "items": [
+        {
+          "slot": "Belt",
+          "name": "Nemesis Leash",
+          "baseName": "Fine Belt",
+          "baseId": "Belts",
+          "level": 81,
+          "mods": [
+            {
+              "modId": "Belts/ColdResistance",
+              "tierDisplay": 2,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Belts/IncreasedLife",
+              "tierDisplay": 2,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Belts/PhysicalDamageReductionRating",
+              "tierDisplay": 4,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Belts/IncreasedMana",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Belts/Essence_LightningResistance",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Belts/Desecrated_LightningAndChaosDamageResistance",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": true,
+              "sanctified": false
+            }
+          ],
+          "unresolved": [],
+          "familyConflict": [],
+          "runes": [],
+          "corrupted": false
+        },
+        {
+          "slot": "Weapon2",
+          "name": "Dusk Edge",
+          "baseName": "Akoyan Spear",
+          "baseId": "Spears",
+          "level": 81,
+          "mods": [
+            {
+              "modId": "Spears/LocalAttributeRequirements",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Spears/LocalLightningDamage",
+              "tierDisplay": 2,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Spears/IncreasedWeaponElementalDamagePercent",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Spears/GlobalIncreaseProjectileSkillGemLevelWeapon",
+              "tierDisplay": 3,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Spears/LocalBaseCriticalStrikeChance",
+              "tierDisplay": 3,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Spears/LocalFireDamage",
+              "tierDisplay": 3,
+              "fractured": false,
+              "desecrated": true,
+              "sanctified": false
+            }
+          ],
+          "unresolved": [],
+          "familyConflict": [],
+          "runes": [],
+          "corrupted": false
+        },
+        {
+          "slot": "Ring",
+          "name": "Onslaught Eye",
+          "baseName": "Prismatic Ring",
+          "baseId": "Rings",
+          "level": 77,
+          "mods": [
+            {
+              "modId": "Rings/FireResistance",
+              "tierDisplay": 3,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Rings/ColdDamage",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Rings/PhysicalDamage",
+              "tierDisplay": 3,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Rings/ItemFoundRarityIncreasePrefix",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Rings/Essence_ItemFoundRarityIncrease",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Rings/Desecrated_LightningAndChaosDamageResistance",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": true,
+              "sanctified": false
+            }
+          ],
+          "unresolved": [],
+          "familyConflict": [],
+          "runes": [],
+          "corrupted": false
+        },
+        {
+          "slot": "BodyArmour",
+          "name": "Pandemonium Sanctuary",
+          "baseName": "Sleek Jacket",
+          "baseId": "Body_Armours_dex_int",
+          "level": 79,
+          "mods": [
+            {
+              "modId": "Body_Armours_dex_int/EvasionAppliesToDeflection",
+              "tierDisplay": 5,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Body_Armours_dex_int/LocalBaseEvasionRatingAndEnergyShield",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Body_Armours_dex_int/LifeRegeneration",
+              "tierDisplay": 4,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Body_Armours_dex_int/ReducedPoisonDuration",
+              "tierDisplay": 3,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Body_Armours_dex_int/Essence_DefencesPercent",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Body_Armours_dex_int/LocalBaseEvasionRatingAndEnergyShield",
+              "tierDisplay": 7,
+              "fractured": false,
+              "desecrated": true,
+              "sanctified": false
+            },
+            {
+              "modId": "Body_Armours_dex_int/LocalEvasionAndEnergyShield",
+              "tierDisplay": 7,
+              "fractured": false,
+              "desecrated": true,
+              "sanctified": false
+            }
+          ],
+          "unresolved": [],
+          "familyConflict": [
+            "Body_Armours_dex_int/LocalBaseEvasionRatingAndEnergyShield"
+          ],
+          "runes": [],
+          "corrupted": false
+        },
+        {
+          "slot": "Amulet",
+          "name": "Doom Pendant",
+          "baseName": "Gold Amulet",
+          "baseId": "Amulets",
+          "level": 81,
+          "mods": [
+            {
+              "modId": "Amulets/SpellDamage",
+              "tierDisplay": 2,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Amulets/GlobalIncreaseProjectileSkillGemLevel",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Amulets/LifeRegeneration",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Amulets/IncreasedMana",
+              "tierDisplay": 5,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Amulets/Essence_ItemFoundRarityIncrease",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            }
+          ],
+          "unresolved": [
+            "desecrated: 17% increased Rarity of Items found"
+          ],
+          "familyConflict": [],
+          "runes": [],
+          "corrupted": false
+        },
+        {
+          "slot": "Helm",
+          "name": "Horror Dome",
+          "baseName": "Ancestral Tiara",
+          "baseId": "Helmets_int",
+          "level": 81,
+          "mods": [
+            {
+              "modId": "Helmets_int/LightningResistance",
+              "tierDisplay": 2,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Helmets_int/ItemFoundRarityIncreasePrefix",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Helmets_int/ColdResistance",
+              "tierDisplay": 4,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Helmets_int/LocalEnergyShieldPercent",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Helmets_int/Essence_ItemFoundRarityIncrease",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Helmets_int/LocalEnergyShield",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": true,
+              "sanctified": false
+            }
+          ],
+          "unresolved": [],
+          "familyConflict": [],
+          "runes": [],
+          "corrupted": false
+        },
+        {
+          "slot": "Boots",
+          "name": "Torment Spur",
+          "baseName": "Daggerfoot Shoes",
+          "baseId": "Boots_dex_int",
+          "level": 80,
+          "mods": [
+            {
+              "modId": "Boots_dex_int/EvasionAppliesToDeflection",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Boots_dex_int/LocalEvasionAndEnergyShield",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Boots_dex_int/ReducedChillDuration",
+              "tierDisplay": 4,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Boots_dex_int/LocalBaseEvasionRatingAndEnergyShield",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Boots_dex_int/Essence_ItemFoundRarityIncrease",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Boots_dex_int/MovementVelocity",
+              "tierDisplay": 3,
+              "fractured": false,
+              "desecrated": true,
+              "sanctified": false
+            }
+          ],
+          "unresolved": [],
+          "familyConflict": [],
+          "runes": [],
+          "corrupted": false
+        },
+        {
+          "slot": "Gloves",
+          "name": "Kraken Touch",
+          "baseName": "Runeforged Secured Wraps",
+          "baseId": "Gloves_dex_int",
+          "level": 82,
+          "mods": [
+            {
+              "modId": "Gloves_dex_int/Dexterity",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Gloves_dex_int/FireDamage",
+              "tierDisplay": 2,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Gloves_dex_int/LightningDamage",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Gloves_dex_int/FireResistance",
+              "tierDisplay": 4,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Gloves_dex_int/PerfectEssence_CriticalStrikeMultiplier",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            }
+          ],
+          "unresolved": [
+            "desecrated: Adds 9 to 14 Physical Damage to Attacks"
+          ],
+          "familyConflict": [],
+          "runes": [],
+          "corrupted": false
+        }
+      ],
+      "skipped": [
+        {
+          "name": "Sacred Flame",
+          "slot": "Offhand2",
+          "rarity": "Unique",
+          "reason": "Unique — only a Rare is craftable here"
+        },
+        {
+          "name": "Skysliver",
+          "slot": "Weapon",
+          "rarity": "Unique",
+          "reason": "Unique — only a Rare is craftable here"
+        },
+        {
+          "name": "The Taming",
+          "slot": "Ring2",
+          "rarity": "Unique",
+          "reason": "Unique — only a Rare is craftable here"
+        }
+      ]
+    },
+    {
+      "profile": "TwitchTVSpicysushi-7614",
+      "character": "SushiToppingFub",
+      "className": "Spirit Walker",
+      "level": 97,
+      "league": "Forbidden Rites",
+      "items": [
+        {
+          "slot": "Boots",
+          "name": "Doom Spur",
+          "baseName": "Quickslip Shoes",
+          "baseId": "Boots_dex_int",
+          "level": 81,
+          "mods": [
+            {
+              "modId": "Boots_dex_int/LocalEvasionAndEnergyShield",
+              "tierDisplay": 2,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Boots_dex_int/Intelligence",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Boots_dex_int/ColdResistance",
+              "tierDisplay": 3,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Boots_dex_int/FireResistance",
+              "tierDisplay": 2,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Boots_dex_int/LocalBaseEvasionRatingAndEnergyShield",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Boots_dex_int/MovementVelocity",
+              "tierDisplay": 2,
+              "fractured": false,
+              "desecrated": true,
+              "sanctified": false
+            }
+          ],
+          "unresolved": [],
+          "familyConflict": [],
+          "runes": [],
+          "corrupted": true
+        },
+        {
+          "slot": "Ring",
+          "name": "Empyrean Gyre",
+          "baseName": "Prismatic Ring",
+          "baseId": "Rings",
+          "level": 82,
+          "mods": [
+            {
+              "modId": "Rings/Dexterity",
+              "tierDisplay": 2,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Rings/ColdDamage",
+              "tierDisplay": 4,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Rings/EvasionRating",
+              "tierDisplay": 5,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Rings/IncreasedLife",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Rings/FireResistance",
+              "tierDisplay": 5,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            }
+          ],
+          "unresolved": [
+            "crafted: GenesisTreeRingMinionCooldownRecoveryCrafted"
+          ],
+          "familyConflict": [],
+          "runes": [],
+          "corrupted": false
+        },
+        {
+          "slot": "Amulet",
+          "name": "Honour Idol",
+          "baseName": "Portent Amulet",
+          "baseId": "Amulets",
+          "level": 81,
+          "mods": [
+            {
+              "modId": "Amulets/GlobalIncreaseMinionSpellSkillGemLevel",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Amulets/GlobalEnergyShieldPercent",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Amulets/EnergyShield",
+              "tierDisplay": 1,
+              "fractured": true,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Amulets/PerfectEssence_AllDefences",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Amulets/Desecrated_GlobalItemAttributeRequirements",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": true,
+              "sanctified": false
+            }
+          ],
+          "unresolved": [],
+          "familyConflict": [],
+          "runes": [],
+          "corrupted": false
+        },
+        {
+          "slot": "Helm",
+          "name": "Storm Dome",
+          "baseName": "Ancestral Tiara",
+          "baseId": "Helmets_int",
+          "level": 80,
+          "mods": [
+            {
+              "modId": "Helmets_int/GlobalIncreaseMinionSpellSkillGemLevel",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Helmets_int/Intelligence",
+              "tierDisplay": 3,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Helmets_int/IncreasedLife",
+              "tierDisplay": 2,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Helmets_int/LocalEnergyShieldPercent",
+              "tierDisplay": 1,
+              "fractured": true,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Helmets_int/Essence_ItemFoundRarityIncrease",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": false,
+              "sanctified": false
+            },
+            {
+              "modId": "Helmets_int/LocalEnergyShield",
+              "tierDisplay": 1,
+              "fractured": false,
+              "desecrated": true,
+              "sanctified": false
+            }
+          ],
+          "unresolved": [],
+          "familyConflict": [],
+          "runes": [],
+          "corrupted": false
+        }
+      ],
+      "skipped": [
+        {
+          "name": "Forgotten Warden",
+          "slot": "BodyArmour",
+          "rarity": "Unique",
+          "reason": "Unique — only a Rare is craftable here"
+        },
+        {
+          "name": "Horror's Flight",
+          "slot": "Gloves",
+          "rarity": "Unique",
+          "reason": "Unique — only a Rare is craftable here"
+        },
+        {
+          "name": "Kalandra's Touch",
+          "slot": "Ring2",
+          "rarity": "Unique",
+          "reason": "Unique — only a Rare is craftable here"
+        },
+        {
+          "name": "Mageblood",
+          "slot": "Belt",
+          "rarity": "Unique",
+          "reason": "Unique — only a Rare is craftable here"
+        },
+        {
+          "name": "Sylvan's Effigy",
+          "slot": "Offhand",
+          "rarity": "Unique",
+          "reason": "Unique — only a Rare is craftable here"
+        },
+        {
+          "name": "Chober Chaber",
+          "slot": "Weapon",
+          "rarity": "Unique",
+          "reason": "Unique — only a Rare is craftable here"
+        }
+      ]
+    }
+  ]
+}

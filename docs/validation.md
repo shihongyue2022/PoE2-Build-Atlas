@@ -1,0 +1,4819 @@
+# Engine validation & divergences
+
+Log of where the TS engine (`packages/engine`) deliberately diverges from the golden-reference Java
+engine, and where both are cross-checked against external sources (craftofexile.com/?game=poe2).
+Per CLAUDE.md: **divergence = investigate, don't average.** Every entry below is an investigated,
+intentional decision — not an averaged fudge.
+
+## Differential status (TS vs Java, patch 0.5 baseline)
+
+Each mechanic is checked to 12 decimal places against a Java probe that reads the same JSON data.
+Regenerate every fixture with `npm run fixtures:java`.
+
+| Mechanic | Java routine | Probe | Status |
+|---|---|---|---|
+| transmute | `ExaltAndRegalProbability.NormalCompute` | `TransmuteProbe` | ✅ green |
+| augment / regal / exalt | same (shared add-affix math) | `AddAffixProbe` | ✅ green |
+| add-affix currency floors (base/greater/perfect) | `NormalCompute` + floor | `AddAffixProbe` | ✅ green |
+| add-affix omen constraint (Sinistral/Dextral) | `NormalCompute` + constrainTo | `AddAffixProbe` | ✅ green |
+| annul (none/sinistral/dextral) | `AnnulProbability.ComputePercentageAnnul` | `AnnulProbe` | ✅ green |
+| perfect essence remove-and-add | `EssenceProbability.ComputePercentageEssence` | `EssenceProbe` | ✅ green |
+| desecration boss omens (Blackblooded/Liege/Sovereign) | `DesProbability.ComputePercentageDesecrated_currency` | `DesecrationProbe` | ✅ green |
+| plan evaluator (state threading + Π composition) | `NormalCompute` / `ComputePercentageAnnul` + `calculateTotalProbability` | `PlanProbe` | ⚠️ retired (see D6) |
+| plan w/ perfect essence (remove-and-add) | `ComputePercentageEssence` in-sequence | `PlanProbe` | ⚠️ retired (see D6) |
+
+**Java-parity anchors that remain green:** the transmute + add-affix differentials call
+`addAffixProbability` **without** the correctness options (`occupiedFamilies`, `slotLimit`), so they
+still validate that the core `NormalCompute` weight-pool math is a faithful port. The currency
+wrappers (`addNormalAffixProbability`) and everything above them now default to the **game-correct**
+model (D6 + D2), which deliberately diverges from Java — so the plan Java-differential was retired and
+replaced by a real-mechanic Monte-Carlo (see the optimizer section) plus hand-computed tests.
+
+## Accuracy pass — resolved divergences (TS is now game-correct, not Java-parity)
+
+### D6 — family exclusion in the denominator ✅ RESOLVED (2026-07-05)
+The real game can't roll a mod whose family is already on the item, so the denominator shrinks as the
+item fills. `addAffixProbability` now accepts `occupiedFamilies` (set by the currency wrappers from the
+item); `poolTotalWeight` drops those families. **Consequence:** ordering matters even for both-open
+targets (like drawing without replacement — roll high-weight families first to shrink the pool for the
+rest). Validated by the optimizer's real-mechanic Monte-Carlo. Java (and the raw `addAffixProbability`
+primitive with no `occupiedFamilies`) does NOT exclude — that's the retained parity anchor.
+
+### D2 — magic = 1 prefix + 1 suffix ✅ RESOLVED (2026-07-05)
+Java treats every rarity as 3+3; the game caps Magic at 1 prefix + 1 suffix. `addAffixProbability` now
+takes `slotLimit` (magic 1, rare 3); the wrappers set it from the currency's **result** rarity
+(`RESULT_SLOT_LIMIT`: transmute/augment→1, regal/exalt→3), since regal/exalt/essence convert to Rare
+as they add. **Consequence:** augment on a 1-prefix Magic item can only add a suffix; a regular essence
+(Magic-only) *spends* the Magic→Rare transition, forcing later mods to Exalts — so the optimizer places
+a guaranteed mod **last** when it can, and an essence isn't always worth it even when cheap. Default
+`slotLimit` is 3 (Java-parity) for the raw primitive / differential anchor.
+
+## Deliberate divergences (TS is intentionally NOT identical to Java)
+
+### D1 — numerator / denominator floor consistency → ✅ RESOLVED (verified 2026-07-05)
+Java's `NormalCompute` sums **all** tiers of a *non-desired* mod (ignoring the currency floor) while
+its denominator floors by ilvl — an inconsistency that can produce a probability > 1. The TS engine
+never had it: `addAffixProbability` uses a single `[floor, cap]` window for both the numerator
+(`modTierWeight(mod, floor, cap, minIndex)`) and the denominator (`poolTotalWeight(…, floor, cap)`).
+Was previously only tested at level 100 (where the floor difference is masked); now proven by
+`itemlevel.test.ts` — e.g. a greater orb (floor 35) on a level-55 item gives 1.0, where the Java
+inconsistency (unfloored numerator 60 / floored denom 20) would give an impossible 3.0.
+
+### D2 — magic items treated as 3+3 slots → ✅ RESOLVED (see "Accuracy pass" above)
+
+### D3 — desecration boss omens are count-uniform (weights ignored)
+`ComputePercentageDesecrated_currency` returns `1 / (count of that boss's desecrated mods of the
+added mod's slot)` — it counts mods and **ignores their weights**. The 0.5 baseline boss pools mix
+weights (1, 3, 1000), all counted as one. `desecrationBossProbability` mirrors this exactly (count-
+based) so the differential is green. **Action:** when poe2db real weights are adopted (0.5.0 / Phase
+3), switch to weight/Σweight within the boss pool.
+
+### D4 — default (no-boss-omen) desecration: combined normal ∪ desecrated pool
+Java models **no** default desecration — `Desecrated_currency.Omen` has no `None`, so a plain
+desecration bone has no probability path in Java (a genuine gap). Per the user's domain ruling
+("desecrated modifiers are meddled with the classic ones; denominator = normal + desecrated"),
+`desecrationProbability` draws from the **combined normal ∪ desecrated pool** for the mod's slot,
+by weight:
+
+    P(mod) = weight(mod eligible tiers) / Σ weights of (normal ∪ desecrated) of the slot
+
+On a uniform pool this reduces to the user's `1 / (normal + desecrated count)` shorthand, but it
+honours real weights where they differ. **Not differential-tested** (no Java counterpart);
+hand-computed unit tests only. Sinistral/Dextral Necromancy map to the `constrainTo` side
+restriction.
+
+**Denominator confirmed by the user, 2026-08-23**: normal mods DO enter the bone pool, so the combined
+normal ∪ desecrated shape stands.
+
+**The WEIGHT is not in the data (2026-08-23).** poe2db publishes no spawn weight for desecrated rows —
+it reports `1` for every one of them — and `apply_pools.mjs` copied that through. Against normal
+weights of several thousand it made a bone produce a desecrated mod about **1 time in 121,510** on a
+Body Armour, which cannot be right for an item whose purpose is to add one. It was replaced with an
+assumed 1000, chosen for plausibility, and flagged as the single largest unverified number in the app.
+
+**MEASURED IN GAME 2026-08-24 — the assumption is retired.** The observation, from the user: **40 bones
+on empty Rare `Helmets_dex_int`. A bone offers three modifiers, so 120 were shown, of which 22 were
+"carved by the Abyss"** — 18.3% per draw. `scripts/desecrate-weight.mts` inverts that through the
+engine's own pool maths:
+
+| | |
+|---|---|
+| maximum likelihood | **2,512** (predicts 17.65% per draw) |
+| plausible range | **1,995 – 3,981** |
+| previous assumption | 1,000 — predicts **7.6%**, outside the interval |
+| **shipped** | **2,500** (predicts 17.58% per draw) |
+
+Rounded to 2,500: a 120-draw sample does not support four significant figures, and every value in the
+interval reads the same evidence.
+
+**Count MODIFIERS, not offers — this sample was misread once.** It was first recorded as "22 of 40
+offers held a carved mod", fitted at 3,981, and shipped at 4,000 before the reporter corrected it: the
+22 was the total carved *modifiers* across all 120 shown. The offer reading overstates the weight by
+~50%, because "at least one of three" is a much higher bar than "one draw". Modifiers are also the
+better statistic — 3N Bernoulli trials instead of N for the same bones spent — which is why this
+interval is *narrower* than the offer-based one despite fitting a lower number. The script now takes
+modifier counts and says so in its usage.
+
+**The three-draw model was checked independently.** The observer reported several offers holding *two*
+carved mods and none holding three. At the fitted weight the model predicts 3.3 two-carved offers in 40
+and a **78% chance of seeing no three-carved offer at all** — so the count distribution corroborates
+the shape, not just the headline rate. That matters, because the inversion assumes three independent
+draws, and it held under both readings of the sample.
+
+**What it changed.** A heavier carved pool makes a bone *worse* at fishing for ordinary mods, so crafts
+that want normal mods got dearer. Held Rare, 3 normal targets, no restart:
+
+| base | at 1,000 | at 2,500 | bone excluded |
+|---|---|---|---|
+| Wands | 2,181.3 ex | **2,493.7 ex** | 4,073.8 ex |
+| Body_Armours_str | 1,358.5 ex | **1,396.4 ex** | 2,967.6 ex |
+| Amulets | 52,738.7 ex | 52,738.7 ex | 52,738.7 ex (price gate closed) |
+
+A bone is still clearly worth playing where the gate opens — 39% off on Wands, 53% on Body Armour —
+just less of a bargain than the app used to claim.
+
+The older comparison, for reference:
+
+| base | weight 1 | weight 1000 |
+|---|---|---|
+| Body_Armours_dex_int | 1 in 121,510 | 1 in 132 |
+| Wands | 1 in 114,415 | 1 in 129 |
+| Amulets | 1 in 173,681 | 1 in 205 |
+
+The weights are still not published anywhere, so the app keeps saying so: `EngineResult.assumedOdds` /
+`EngineMarkovResult.assumedOdds` are set when a plan contains an unomened Desecration, and
+`PriceBasisNote` then drops its "the odds are exact" claim and names the assumption. The boss-omen path
+is count-uniform (D3) and ignores weights, so it is untouched and keeps the exact claim.
+`shipped-pools.test.ts` asserts the constant so a refresh cannot silently restore the 1.
+
+**Action: CLOSED 2026-08-24** by the in-game sample above. Worth re-running `desecrate-weight.mts` on a
+second base if anyone gathers another forty offers — one base cannot rule out a per-category weight,
+which is the assumption this measurement replaces one level up.
+
+### D5.1 — pool not capped by item level → ✅ RESOLVED (verified 2026-07-05)
+Java's `get_Base_Affixes_Total_Weight_By_Tier(pool, ilvl)` sums tiers with `tier.level >= ilvl` (the
+currency floor) with **no upper cap by item level**, so a low-level item's denominator wrongly
+includes tiers it can't roll. TS caps the pool at `item.level` (the `cap` in `addAffixProbability`).
+Was only exercised at level 100 before (where max mod ilvl < 100 masks it); now proven at sub-100
+levels by `itemlevel.test.ts` (hand-computed) and end-to-end by a real-mechanic Monte-Carlo at level
+55 in the optimizer self-check.
+
+### D5.2 — per-step "best currency tier" (orb strength) selection → ✅ RESOLVED (2026-07-05)
+Built as `optimizePareto` (packages/optimizer). Targets are now **tier-specific** (`TierTarget =
+{modId, minTierIndex}`; 0 = any tier, higher = that tier or better). Plan add-steps carry `tier`
+(base/greater/perfect orb) and `minTierIndex`; the wrappers already do the correct floored math. The
+optimizer explores mod ordering × essence config × **per-step orb strength**, scores each with
+evaluatePlan + the restart cost model, and returns the **(expected cost ↔ success probability) Pareto
+frontier** — cheapest path, surest path, and the non-dominated trade-offs between (a greater orb
+shrinks the pool → higher P at higher cost). Orb strengths are constrained to those whose floor ≤ the
+target tier's ilvl (an "any-tier" mod → base only). The orb-tier search is **throttled and reported**
+(`currencyDepth: full | base+strongest | strongest-only`) for very large targets — never silently
+capped. Prices gained greater/perfect orb variants in `prices.json`.
+
+**Known simplification:** an essence-guaranteed mod is scored as P=1 at its target tier. Real essence
+tier availability (which essence grants which tier of which mod) is a data question — a reverse index
+from `essences.json` would let the optimizer respect it. Tracked, not yet built.
+
+### D6 — add-affix denominator doesn't exclude on-item families → ✅ RESOLVED (see "Accuracy pass" above)
+
+## Analytic optimizer (packages/optimizer)
+`optimizeAddChain` enumerates all K! orderings of the desired mods (K ≤ 6 → ≤ 720), fixes the currency
+by position (transmute→augment→regal→exalt), scores each with `evaluatePlan`, and returns them
+best-first — an **exact** optimum, not a beam-search approximation. Validation: (1) optimality is by
+construction (full enumeration); (2) `simulatePerStepRates` Monte-Carlo (200k runs) confirms each
+analytic per-step probability matches sampling. Result probabilities intentionally use the base-floor
+model (D5), so they are NOT expected to equal Java's beam-search reported numbers.
+
+`optimizePlan` extends this with **essence-guaranteed mods**: mods passed in `opts.essences` become
+P=1 forced-essence steps, the rest are rolled with a state-driven currency picker (transmute→augment→
+regal→exalt, correct even when essences jump the item to rare mid-sequence). Without a cost model,
+essences are strictly better on probability, so *which* mods to guarantee is the caller's cost-driven
+choice; the optimizer finds the best ordering around them. `optimizeAddChain` is the no-essence case.
+
+### Essence rules (user-confirmed, 2026-07-05)
+The PoE2 essence mechanic, confirmed by the user and enforced in the engine:
+- **Regular essences (Lesser/Normal/Greater)** apply ONLY to a **Magic** item — never white, never Rare.
+  They add their guaranteed mod (deterministic, P=1) and convert the item to **Rare**. Enforced in
+  `essenceForcedProbability` (returns 0 unless `rarity === 'magic'`). Consequence: at most ONE regular
+  essence per craft (only one Magic→Rare transition), and it must follow a Transmute — the optimizer
+  validates `≤1` essence and `≥1` rolled mod, and illegal orderings self-score 0.
+- **Perfect essences** apply to any **Rare** item (0–6 mods). They add their guaranteed (perfect-only)
+  mod and **remove one uniformly-random existing mod** (`1/total`, side-constrained by Sinistral/
+  Dextral Crystallisation). At **0 mods** they just add (P=1, no removal). They're blocked if the
+  guaranteed mod's **family is already present**. The removal math is `perfectEssenceProbability`
+  (differential-matched to Java); the rare-gate / family-block / 0-mod-add live in the plan-step
+  wrapper so the differential stays exact.
+
+## Cost model (packages/optimizer/cost.ts)
+`optimizeCost` ranks plans by **expected cost** in Exalted-Orb equivalents
+(`data/patches/<patch>/prices.json`), turning "guarantee with an essence (dear, P=1) vs roll it (cheap,
+retry)" into a real decision instead of a trivial win for essences.
+
+Retry model: **restart-on-first-failure** — run the sequence, and the instant a step gives the wrong
+outcome, scrap the item and start over from white. Closed form for per-step probs `p_k` / costs `c_k`:
+
+    E = ( Σ_k c_k · S_{k-1} ) / S_n ,   S_k = Π_{j≤k} p_j ,  S_0 = 1
+
+Cheap early steps are paid on every attempt; dear late steps only once the earlier ones land — so the
+optimizer naturally schedules an expensive guaranteed step **late**. `optimizeCost` explores every mod
+ordering × every essence config (none, or any single `essenceCandidate` guaranteed) and returns them
+cheapest-first. Verified: the essence-vs-roll winner **flips** with the essence price (cheap → guarantee,
+dear → roll), and the analytic per-step probs are Monte-Carlo–checked upstream.
+
+**Assumptions / deferred:** (1) restart-from-scratch is the baseline; a smarter **annul-and-reroll**
+strategy (clear the junk mod, keep the good ones) costs less and is a future refinement — but annul is
+random (can hit good mods), so it's a real model, not a tweak. (2) Prices are **mostly live** — see
+"Price sheet" below; desecration and essence levels remain hand-authored. (3) `essenceCandidates` are
+caller-supplied; a reverse index from
+`essences.json` (which mods a real essence can grant, at which tier/price) would let the optimizer infer
+them — not yet built.
+
+### Price sheet — poe.ninja refresh (2026-08-22)
+
+`npm run update-prices` (`tools/refresh/prices.mjs`) now pulls currency from poe.ninja's PoE2 economy
+API for the current league. **This was not cosmetic: the previous hand-authored sheet was inverted.**
+It priced a Chaos Orb at 0.2ex and an Exalt at 1.0 — an Exalt worth 5 Chaos — where the market says a
+Chaos is worth ~33 **Exalts**. Annulment 1.5 → 157.9; Perfect Exalted 20 → 770. Because the optimizer
+ranks plans BY cost, chaos- and annul-heavy routes had been recommended as *cheap* while being the
+dearest available.
+
+Measured effect on a 2-mod Wand from-item craft: MDP expected cost 25.91ex → 1489.33ex, and the policy
+**dropped the Dextral Annulment omen** (3313ex against a 157.9ex orb) while **keeping** Sinistral
+Exaltation (8.41ex on a 1ex Exalt). Flat seed prices could not make that distinction at all.
+
+**Omens are quoted, not fetched.** poe.ninja's API has no `type` serving them — `type=Omens` returns
+byte-identical output to `type=NonsenseXYZ` (empty core, no rates), i.e. an *invalid* type rather than
+an empty valid one, while Currency/Essences/Fragments/Runes/Abyss all work; the Omens web page is
+client-rendered, so it can't be scraped with a plain fetch. So `prices.json` carries hand-transcribed
+`omenQuotes` **in the unit the market quotes them in** (divine or chaos), re-converted to exalts on
+every refresh. Storing them pre-converted would silently desync from currency on the next run, and
+since an omen is an *additive* surcharge on the orb it modifies, a drifted omen:orb ratio changes which
+plans get recommended. Four independent cross-checks validate the transcription against the page's own
+exalt quotes: Blackblooded 42.6 vs 41, Sinistral Exaltation 8.4 vs 8.5, Liege 0.497 vs 0.5, Dextral
+Necromancy 1.21 vs 1.2.
+
+**Still hand-authored, deliberately** (the script's `KEEP` list, checked against the live spread of the
+items each key stands for on every run):
+
+- `desecrate` — the Abyss feed prices *bones* (jawbone/rib/collarbone/cranium × gnawed/preserved/
+  ancient/altered) from 0.36ex to 3368ex. The engine has one generic desecration step; which bone it
+  means is a game-knowledge call. The held 0.5 sits in the cheap-bone range, so it is not mis-scaled.
+- `essence*` — the engine has one price per essence **level**, but the market has no coherent level
+  ladder. Restricted to the six essence types quoted at all four levels, the medians run lesser 17.97,
+  normal 107.2, greater 0.807, perfect 1.705 — Essence of Abrasion alone goes 116 → 107 → 0.807 → 9.18.
+  Collapsing that to one number per level would invent precision. **The range check does flag
+  `essence_lesser` at 0.3 as below the live minimum of 0.998** — a real (if small) known-wrong value.
+
+Consequence for the budget CDF: real 4-significant-figure prices spanning 0.06–770ex admit no quantum
+coarser than 1e-5, so `planCostCdf` usually takes its bracket fallback rather than the exact path
+(6 of 16 rows still resolve exactly at a 30ex budget, where a plan's own costs happen to share one).
+The bracket is tight — worst measured 0.73pp, ~1% relative — far below the day-to-day drift in the
+prices themselves. Prices were **not** rounded to restore exactness: distorting data to flatter an
+optimisation would trade a real error for a hidden one.
+
+## Monte-Carlo validation of the corrected mechanics (2026-07-05)
+
+The analytic engine deliberately **diverges from Java** on family exclusion (D6), magic 1+1 slots (D2),
+orb floors + item-level cap (D5.1), tier targeting, and omen side-constraints — so Java can't be the
+oracle for those. Instead `packages/optimizer/src/validate.ts` samples the **real game mechanic at
+(mod, tier) granularity** (open sides only, on-item families removed, tier ilvl in `[floor, cap]`,
+optional side constraint) and confirms MC → analytic by the law of large numbers. `validate.test.ts`
+asserts agreement within ~4 standard errors (seeded, reproducible). Representative results
+(200k samples/step, patch 0.5 data):
+
+| base | scenario | analytic | MC | \|Δ\| |
+|---|---|--:|--:|--:|
+| Wands | transmute MANA, base orb, any tier | 9.615% | 9.655% | 0.040 pp |
+| Wands | transmute MANA, **greater** orb (floor 35) | 12.848% | 12.927% | 0.079 pp |
+| Wands | transmute MANA, **perfect** orb (floor 50) | 14.134% | 14.186% | 0.052 pp |
+| Wands | transmute MANA **T1** (tier target) | 3.534% | 3.547% | 0.013 pp |
+| Wands | transmute MANA at **item level 45** (cap) | 7.380% | 7.391% | 0.011 pp |
+| Wands | exalt CAST after a 3-mod chain (D2/D6 threading) | 7.344% | 7.336% | 0.008 pp |
+| Wands | exalt CAST **+ Dextral omen** (suffix-only) | 8.846% | 8.867% | 0.021 pp |
+| Rings | regal STRENGTH after transmute+augment | 5.312% | 5.272% | 0.040 pp |
+| Amulets | transmute (greater orb) | 5.456% | 5.483% | 0.028 pp |
+
+Orb floors correctly **raise** probability (smaller pool), tier targeting **lowers** it, the item-level
+cap shifts it, and the omen constrains to one side — all matching MC to <0.08 pp.
+
+**Restart-cost formula, end-to-end** (`mcPlanCost` simulates restart-on-first-failure and averages total
+spend): analytic `E = (Σ c_k·S_{k-1})/S_n` matches empirical mean cost within **<1%**:
+
+| plan | analytic P | MC P | analytic E[cost] | MC mean | Δ |
+|---|--:|--:|--:|--:|--:|
+| transmute MANA (1 step) | 9.615% | 9.657% | 0.02 ex | 0.02 ex | 0.4% |
+| transmute → augment (2 step) | 1.054% | 1.061% | 0.28 ex | 0.28 ex | 0.7% |
+
+**What this proves vs. doesn't:** it proves the analytic **math** (pool weights, floor/cap windows,
+family/slot handling, composition Π, and the cost formula) correctly implements the **modeled** mechanic
+— no arithmetic/composition bugs. It does **not** prove the modeled mechanic matches the **real game**
+(both MC and analytic derive from the same data + rules understanding). Confirming the model itself is
+what external cross-validation vs the game / Craft of Exile adds — still the open Phase-3 gate.
+
+## External cross-validation vs Craft of Exile — Wands (2026-07-05, first pass)
+
+First real cross-check against an independent implementation (CoE poe2, hand-verified against poe2db).
+
+**Weights: exact match.** CoE and the engine agree to the last unit across the whole wand pool —
+prefix total **41,400**, suffix total **73,000**, pool **114,400**, and every individual mod (Mana 11k,
+Int 8k, Spell Damage 4,350, Cast Speed 5,750, …). Since P = mod_weight / pool_total, matching two mod
+probabilities to 3 dp (9.615% Mana, 6.993% Int) already pins the entire denominator. (Note: our weights
+were hand-ported from poe2db and CoE also derives from poe2db, so this mainly confirms the transcription;
+the independent part is the model — CoE computing the *same probability* from those weights confirms the
+add-affix mechanic itself.)
+
+**D7 — Wands damage-type family bug FOUND & FIXED.** CoE (and the mods' own tags, and the Foci/Staves
+entries) show the five Wands damage-type prefixes (Fire/Cold/Lightning/Chaos/Physical "increased Damage")
+belong to family **`WeaponDamageTypePrefix`**, mutually exclusive with each other but SEPARATE from the
+generic "increased Spell Damage" (`WeaponCasterDamagePrefix`). The Java-derived `data/patches/0.5` had all
+five mis-filed under `WeaponCasterDamagePrefix` (a Wands-only data-entry slip — Foci/Staves were already
+correct). Effect: the engine wrongly excluded generic Spell Damage from any elemental damage mod.
+**Fixed** (surgical family edit in mods.json); the damage-type mods still exclude each other, so earlier
+"Physical + Chaos impossible" verdicts remain correct. Verified by test.
+
+## Data-integrity guardrail (2026-07-05)
+
+Since D7 was a *silent data error* (only luck + CoE caught it), added a standing audit
+`packages/engine/src/dataIntegrity.test.ts` that runs on every snapshot — the invariants Monte-Carlo
+can't see. It immediately paid off, surfacing five issues in the Java-derived `0.5` data:
+
+- **FIXED — 5 corrupted tier ilvls.** `STRENGTH` on Crossbows/OneHand_Maces/Sceptres/Spears/TwoHandMaces
+  had tier-1 `ilvl` overwritten with a weight value (500/1000/250 — impossible ilvls that stopped that
+  tier rolling). Corrected to 11 (matches every clean STRENGTH mod).
+- **FIXED — 3 duplicate pool entries** (Foci prefix, Bows/Spears desecrated suffix) — a repeated id
+  double-counts its weight in the denominator. Deduped.
+- **FIXED — empty-family fragility.** 4 `BASE_SPIRIT` mods have an empty `family`; the engine now treats
+  an empty family as "no exclusion group" (`itemFamilies`/`familyAvailable` skip it) so blank-family mods
+  can never wrongly collide. (Only 1 per base today, so no live bug — this hardens against future data.)
+- **BASELINED (pending domain call) — 16 type/pool mis-slots.** Mods whose `type` disagrees with the pool
+  side they're listed in (3 normal: `INCREASED_SHIELD_BLOCK_CHANCE` on shields/bucklers — is block a
+  prefix or a suffix?; 13 in desecrated/essence pools). The engine uses `type` for the numerator side but
+  the pool for the denominator, so a mismatch skews the math. Needs a ruling on which field is right;
+  the test ratchets against any NEW ones.
+- **BASELINED — 4 same-base mixed-affix families** (`CompanionDamage` on Bows/Spears,
+  `IncreaseSocketedGemLevel` on Helmets) — a family holding both a prefix and a suffix is unusual; review.
+
+## Orb of Alchemy — engine + optimizer (2026-07-11)
+
+Alchemy (white → Rare with 4 random mods) and Chaos (remove-one/add-one on a Rare) are absent from the
+Java engine, so both are validated by **Monte-Carlo against the modelled mechanic**, not differentially.
+`alchemyProbability` (exact recursion over the 4 weighted draws) matches an independent simulation to
+<0.1 pp on varied-weight synthetic pools (`alchemy.test.ts`); `chaosProbability` = uniform removal ×
+weighted add composes two already-validated functions, checked by hand (`chaos.test.ts`).
+
+Alchemy is now wired into the optimizer as an **opener**: a `{currency:'alchemy', adds}` plan step that
+slams 4 target mods at once, then exalts any 5th/6th. It fires only when the plan uses no essence and
+**≥4 targets are "any tier"** — alchemy has no tier control, so a tier-pinned target can't be sourced
+from it. Three tests tie the optimizer's alchemy plan back to the MC-validated `alchemyProbability`.
+
+- **GOTCHA (fixed).** The cost model treats an **unpriced currency as free** (`prices.currency[key] ?? 0`).
+  A test fixture whose price sheet omitted `alchemy` therefore made the alchemy plan cost 0 and dominate
+  the entire Pareto frontier (it wiped the side-omen exalt the omen test expected). Real `prices.json` has
+  `alchemy: 0.1`; the fix was to add it to the fixture too. Watch for this whenever a new currency lands:
+  a missing price silently reads as "free and optimal".
+- **Deferred:** tier-targeting *inside* the 4-slam (any-tier only today); alchemy/chaos omens; Chaos in
+  the optimizer (its natural home is the not-yet-built craft-from-existing-item flow).
+
+## From-existing-item planner + cost model (2026-07-11)
+
+`optimizeFromItem` plans the sequence to turn an item you already hold into a target. Two things to be
+honest about:
+
+- **Cost model — reset to YOUR item, not to white.** `planExpectedCost` uses the same restart-on-first-
+  failure closed form, but S₀ is the starting item, so the plan never "throws away" the good mods you
+  began with. This is the standard theorycrafting model (Craft of Exile does the same) and it assumes
+  you can *reproduce* the starting item on a reset. It is **not** a full Markov model of chaos-spamming
+  one irreplaceable item — that's a deliberate, documented approximation (surfaced in the UI too).
+- **Exactly-the-target semantics.** Every current mod not in the target is junk to remove; every target
+  mod not present is added. `transformSequences` only ever emits *complete* transforms, so "all steps
+  succeed" ⟺ the item equals the target — the per-step product is a true success probability (note that
+  `evaluatePlanFrom` itself does not check the final item, so this invariant lives in the generator).
+
+Validated by hand-computed synthetic cases (the surest route to swap a suffix uses annul-first + a free
+Sinistral exalt = ½, beating exalt-first-then-annul = ⅓) and real-data smoke tests. Eyeball on a full
+rare wand: the planner recommends **Chaos** (one-orb swap, ~1.2%/orb) over annul-then-exalt — correct,
+since Chaos is what you use when a slot must be freed. v1 is Rare-only at base orb strength; Magic
+starts, the greater/perfect orb lever, chaos/annul omens, and "keep extra good mods" are deferred.
+
+## External cross-check, round 2 — Amulets / Bows / Body Armour (2026-07-11)
+
+Broadened the CoE cross-check past wands (user read the numbers by hand). The headline: **the data the
+app ships (`data/patches/0.5`, Java-extracted) is STALE for several bases, while `data/patches/0.5.0`
+(the poe2db refresh) matches CoE.** Wands matched on `0.5` only by luck (that base was already current).
+
+- **Amulets.** `0.5` diverges hard from CoE — wrong ES prefix (`increased Energy Shield` vs
+  `increased maximum Energy Shield`), wrong crit suffix (attack-specific vs generic), `+max Life`/`+max
+  Mana`/`Rarity` weights off, and two prefixes missing. `0.5.0` **prefixes match CoE exactly** (12 mods,
+  Σ 72200) and suffixes match except one glitch (below).
+- **Body Armour (STR).** `0.5` splits the three ailment-duration mods into three families
+  (`ReducedBleedingDuration`/`…Poison…`/`…Ignite…`); CoE groups them as one `ReducedAilmentDuration`
+  (mutually exclusive). `0.5.0` **has the shared family correct.**
+- **Bows.** `0.5` prefixes match CoE (Σ 44755) but suffixes are off by 50 (stale Attack Speed / Projectile
+  weights + an old "additional Arrows" mod). Consistent with `0.5` being stale, `0.5.0` current.
+- **Confirmations on `0.5.0`:** Wands totals are an **exact** CoE match (41400 / 73000 / 114400), and the
+  ailment family is correct — so `0.5.0` is the right current data.
+
+**`0.5.0` parse quirk — 6 mods, characterised.** Exactly 6 of 933 normal-pool mods have summed weight ==
+tier count (each tier weight 1): Cast Speed on Amulets & Rings, ES Recharge Rate on three body-armour
+bases, and Surpassing-Arrow on Quivers. **Root cause: poe2db itself lists `DropChance:1` for these** (a
+source placeholder), so the join couldn't recover a real weight. CoE has the true values (amulet Cast
+Speed = 800/tier = 4800). Fix = patch these 6 from CoE, not from poe2db.
+
+**Conclusion — DONE (2026-07-11).** Migrated the app's data source `0.5` → `0.5.0`. The 6 placeholder
+weights were patched from CoE (Amulets Cast Speed 800/tier, Rings Cast Speed 1000/tier, ES Recharge
+1000/tier on the three ES body armours, Quiver Arrow 375/tier) — after which `0.5.0` matches CoE
+**exactly** on Wands, Amulets, Rings, Body Armour (int), and Quivers, prefix and suffix. `prices.json`
+copied into `0.5.0`; `src/lib/engine.ts` repointed. The Java differential fixtures + facade tests stay on
+`0.5` (the engine-vs-Java anchor). Verified: type-check + 501 tests + build green, dev server serving the
+patched data. Follow-ups: run the data-integrity guardrail on `0.5.0` and re-baseline; migrate the facade
+tests/fixtures off `0.5` when Java is finally retired.
+
+## Essence + desecrated pools added to 0.5.0 (2026-07-13)
+
+Built the essence and desecrated pools for the shipped `0.5.0` snapshot straight from the cached poe2db
+per-class pages (the parser already extracted them; only the pipeline dropped them). New step
+`tools/refresh/apply_pools.mjs` (wired into `run.sh` after `apply_weights.mjs`) merges them into
+`mods.json` + `base_items.json` and emits `essences.json`.
+
+- **Desecrated:** one mod per poe2db row (ilvl 65, weight 1), boss tags preserved
+  (amanamu 175 / ulaman 188 / kurgal 164). Same family may span distinct prefix+suffix mods, so rows are
+  NOT grouped. Lights up `desecrationProbability` (weight-based combined pool) and
+  `desecrationBossProbability` (count-uniform, 1/count).
+- **Essence:** rows grouped by (type, family, essence, stat-text) into a mod whose tiers are the
+  Lesser/Normal/Greater levels (weight 0, deterministic). Armour pages embed the table once per
+  attribute variant — filtered to the base's own attribute tag (mirrors `pickVariant`) to avoid the
+  6×-duplication that first showed up. **19 essences**, 317 essence mods; `essences.json` maps
+  essence → level → forced mod ids. **Perfect essences deferred** (poe2db carries none; engine still
+  anchored on 0.5).
+- **Counts:** `0.5.0` now normal 933 / desecrated 527 / essence 317 (vs Java 0.5: 635 / 373 / 264 +
+  79 perfect). The one mixed-family finding (`CompanionDamage on Bows`/`Spears` — a real desecrated
+  prefix+suffix sharing a family, identical to 0.5) is baselined in the guardrail.
+- **Validation:** data-integrity guardrail green on 0.5.0; new `shipped-pools.test.ts` exercises
+  essence-forced + plain/boss desecration on the real data; facade test reaches a 0.5.0 essence via a
+  P=1 essence step. Full suite 513 + 1 todo, type-check clean.
+
+## Perfect essences added to 0.5.0 + wired into the from-item planner (2026-07-13)
+
+Extended the essence work with the **perfect-essence** pool and the remove-and-add-on-rare flow.
+
+- **Data:** poe2db embeds a separate `"perfect_essence":[` array (missed the first pass — the parser
+  read only normal/desecrated/essence). Taught `poe2db.mjs` to read it and `apply_pools.mjs` to build
+  **363 single-tier `perfect_essence` mods** into the essence pool (deterministic, weight 0), incl. the
+  perfect-only essences (the Alloys, Delirium, Horror, Hysteria, "the Abyss", "the Breach"). `essences.json`
+  gained a PERFECT level (37 essences total). "Mark of the Abyssal Lord" (family EssenceAbyss), which
+  poe2db lists as both a prefix and a suffix, is deduped to one mod. Guardrail baseline gained 8 more
+  legit cross-source mixed families (a desecrated mod + a perfect-essence mod sharing a stat family on
+  different sides: AdditionalBallistaTotem, ElementalInfusion, ManaCostEfficiency×6).
+- **Planner:** `optimizeFromItem` now handles perfect-essence targets — a perfect mod can only be placed
+  by a Perfect Essence, which removes one uniformly-random mod as it adds, so each perfect target is
+  paired with a distinct **junk** to sacrifice (throws if there aren't enough junk mods). The
+  **Sinistral/Dextral Crystallisation** omen (constrains the removal to a side) is explored as a
+  cost↔probability lever alongside the exalt omens. Facade `listPerfectEssences` surfaces them (source
+  'perfect') for the from-item target picker only; `mapFrontier` renders "+add −removed (random)".
+- **Eyeballed (real 0.5.0):** rare wand [Mana | Intelligence] → keep Mana, add "Perfect Essence of the
+  Abyss": raw essence P=50%/30ex (removes 1 of 2 uniformly); with Dextral Crystallisation the removal is
+  confined to the lone suffix (Intelligence) → **P=100%/25ex**, which dominates. Cost checks out
+  (perfect_essence 15 + omen 10). Validated by hand-computed optimizer tests (uniform ½, omen→1,
+  no-junk rejection), facade tests, and `shipped-pools.test.ts`. **519 tests + 1 todo, type-check + build green.**
+
+## Cross-check of the new pools vs the independent Java extraction (2026-07-13)
+
+The CoE JS calculator can't be scraped, so the fully-automatable cross-check for the new
+essence/desecrated/perfect pools is **0.5.0 (poe2db, current) vs 0.5 (Java, hardcoded ~0.2-era)** — two
+independent extractions of the same mechanic that (verified) share the family namespace and stat text.
+`scripts/coe-newpools-check.mts` runs it. **Result: all invariants pass.**
+
+- **Essence coverage:** all **21** Java essences survive into 0.5.0; the 16 extras are exactly the new
+  perfect-only essences (the Alloys, Delirium, the Abyss, the Breach) — a plausible newer-patch addition,
+  not a loss.
+- **Forced-mod (family, text) agreement:** 18/21 shared essences match exactly. The 3 that differ are
+  confirmed **current-patch reworks**, not build bugs (families still line up, so exclusion is correct):
+  *Enhancement* is now one combined "Armour, Evasion and Energy Shield" (was 6 separate defence mods);
+  *the Infinite* uses the combined "+# to Str, Dex or Int" text across its 3 attribute families (Java
+  split the text); *Electricity* gained an "Adds 1 to # Lightning" variant (same LightningDamage family).
+- **Internal consistency (0.5.0):** every essence mod's tier ilvls ascend and per-level min values are
+  non-decreasing (Lesser ≤ Normal ≤ Greater); all desecrated mods carry weight > 0 with balanced boss
+  tags (amanamu 175 / ulaman 188 / kurgal 164); all perfect essences are single-tier, deterministic (w0).
+- **Human spot-check (DONE 2026-07-13):** the script writes `/tmp/coe-newpools-worksheet.md` — per-base
+  essence / perfect / desecrated **values** for a hand-check against CoE. User confirmed the essence value
+  ranges match CoE across the sampled set (Amulets max Life 20–29/70–84/85–99, Fire Res 11–15/21–25/31–35,
+  max Mana 25–34/80–89/90–104; Wands Spell Damage 35–44/55–64/75–89, Cast Speed 13–16/17–20/25–28) — level
+  scaling and range parsing verified correct. (CoE and our data both derive from poe2db, so this confirms
+  the extraction, not an independent value source; the 0.5-vs-0.5.0 diff above is the independent check.)
+
+*Compound-mod text (FIXED 2026-08-08):* poe2db compound mods concatenated their two stat lines without
+a separator ("…Spell DamageMinions deal…"). Root cause: `stripHtml` in `tools/refresh/poe2db.mjs`
+stripped the `<br>` between stat lines to nothing (the RePoE path kept `\n`; this one didn't), and
+`apply_pools.mjs`'s `cleanText` then collapsed all whitespace. Fixed both to map `<br>`→`\n` and preserve
+newlines, then re-ran `apply_pools.mjs` against the cached poe2db pages: 32 desecrated/perfect_essence
+text fields regained the separator, IDs identical, 0 weight changes (the 6 CoE weight patches on normal
+mods survive — apply_pools keeps the normal pool verbatim). Re-parsing from source caught all 32 `<br>`
+boundaries, more than a display-side regex heuristic (~21) would have. Display-only; no probability impact.
+
+## Budget-constrained alternatives + cost distribution (2026-07-17)
+
+**`planCostCdf` (cost.ts) — P(finish within budget), not just the mean.** Same restart-on-first-failure
+model as `planExpectedCost`, solved for its distribution instead of its expectation:
+
+    g(x) = S_n·1[C ≤ x] + Σ_k S_{k-1}(1−p_k)·g(x − A_k)
+
+Conditioning on the first attempt folds in *every* restart count implicitly — no geometric tail to
+iterate (at S_n ≈ 1e-4 an explicit convolution would need ~276k terms for the same answer).
+
+- **The quantum is chosen to divide the prices, not the budget** — the one decision that makes this
+  exact. A fixed grid (h = B/G) rounds each atom by up to h and the error COMPOUNDS once per restart:
+  a plan restarting B/c_min times drifts by (B/c_min)·h, which for a 200ex budget with 0.2ex chaos orbs
+  at G=4096 is a **~49ex drift on a 200ex budget** (bracket ≈ [0,1] — useless). Dividing the prices
+  instead puts every atom on a cell boundary: nothing to round, nothing to compound. Real sheets
+  (0.2/1/1.5/15) ⇒ a 0.1 quantum ⇒ ~2000 cells for 200ex.
+- **Bounds are honest, never hidden.** `exact: true` ⇒ `lower === upper`. Incommensurable prices fall
+  back to a uniform grid and return a real bracket. `exactQuantum` uses an ABSOLUTE 1e-6 tolerance
+  deliberately — a relative one grows with scale and by d=6 "accepts" π as 3141593/10⁶, claiming an
+  exactness it hasn't earned.
+- **Validated:** hand-computed closed forms (1-step ⇒ 1−2⁻ᵏ exactly; 2-step ⇒ g(3)=¼, g(4)=⅜, g(5)=7/16)
+  **plus 100k-run Monte Carlo** of the same wallet at 5 budgets (`costCdf.test.ts`). simulate.ts's own
+  harness checks per-step probabilities, not cost accumulation across restarts, so the MC is new — it
+  reuses that module's deterministic `mulberry32` so the check can't go flaky.
+
+**`alternatives.ts` — the (closeness ↔ P(in budget)) Pareto frontier.** Relax per slot (tier slide,
+same-family swap, or drop; ≤1 slot swapped-or-dropped; pinned and fractured slots frozen), rank
+lexicographically (dropped ↑, swapped ↑, value-retained ↓ — constant-free, so no arbitrary "one tier
+step = X% of a mod" exchange rate).
+
+- **Tag-similarity swaps rejected on evidence, not taste.** Tag-Jaccard over 0.5.0 scores
+  "#% increased Light Radius" at **1.00** against "+# to maximum Mana" — both carry exactly
+  `['resource','mana']`. The bad row would rank *first* (it's cheap). Same-family siblings are a
+  declared exclusion group, not an inferred similarity. Revisit only via `tiers[].stats`
+  (`base_maximum_mana` vs `mana_regeneration_rate_+%`), which covers 77% of tiers.
+- **Useless swaps need no special case.** All 5 `WeaponDamageTypePrefix` siblings share weight 2550, so
+  Fire→Cold lands the same P at worse closeness ⇒ dominated ⇒ off the frontier automatically. Whereas
+  `IncreaseSocketedGemLevel` runs 500 ("all Spell Skills") vs 2600 ("Fire Spell Skills") — a 5.2× swing
+  that surfaces on its own merits.
+- **Exploration is decoupled from output order** (regression-tested). The dominance rule only needs the
+  evaluated set sorted by closeness at the *end*. Letting visit order = closeness order starves the edit
+  classes: every tier relaxation is closer than any swap, and a 3-mod Wand target already has 4×11×8 =
+  352 tier combos, so a global best-first walk never reaches a swap. Observed: a 30ex budget reported
+  "20.8% is your best" while dropping one mod sat at ~99%. Now each edit class explores its own tier
+  lattice on its own node budget (half to your exact item's neighbourhood, half shared), anchored at its
+  loosest node. Same target now reads 0.1% (exact) → 98.4% (drop Spell Damage, T2/T3 rest).
+- **Caps are reported, never silent:** `nodesEvaluated`, `truncated` (node cap only — stopping on a
+  P≈1 find is a proof, not a truncation), `currencyDepth` (coarsest any node fell back to).
+- *Known limits:* the shipped sheet's 0.002 transmute forces a 0.002 quantum, so budgets past ~400ex
+  exceed `DEFAULT_COST_CELLS` and return a bracket (`exact: false`) rather than a point. `truncated` is
+  the norm for 3+ mod targets at 200 nodes — the frontier's ends are solid, its middle is sampled.
+  A missing price key costs 0 (`stepCost`), which under the CDF reads as *certainty* — a caller hazard
+  kept as-is because existing tests deliberately use sparse sheets to make omens free.
+
+## Desecrated mods surfaced on the item + Omen of Light (2026-07-17)
+
+Desecrated mods were invisible to the UI though the engine fully models them. The facade never set
+`ItemState.desecrated` nor surfaced the desecrated pool, so two mechanics were unreachable:
+
+- **Slot occupancy** — a desecrated mod eats a prefix/suffix slot and claims a family exactly like any
+  other mod, which shifts every other currency's odds. This needed **no new code**: the engine's
+  family-exclusion + slot-count math already handles it the moment the mod is on the item.
+- **Omen of Light** — a targeted annul. `annulProbability(..., {omen:'light'})` already returns **1**
+  when `item.desecrated === true` and the target's `source === 'desecrated'`; it was just never wired.
+
+(This first pass modelled desecrated mods only as slot occupants + the Light lever. Targeting/crafting
+a specific desecrated mod was added next — see "Crafting desecrated mods" below.)
+
+Changes (facade + UI + one validator tweak; engine untouched):
+- `buildItemState` sets `desecrated: true` whenever a placed mod is desecrated (gates Omen of Light).
+- `listDesecrated(baseId)` surfaces the pool (source 'desecrated', single-tier), kept OUT of `listMods`
+  (from-white) and `listPerfectEssences` — you can only MODEL one on an item you already hold.
+- `currencyActions` offers **Annulment + Omen of Light** (P=1) beside the plain random annul (1/N) when
+  the sacrifice is a desecrated mod on a desecrated item — verified 100% @ 11.5ex vs 50% @ 1.5ex on a
+  2-mod Wand.
+- `validateFromItemTarget` accepts a desecrated mod as a target **only if it's already on the start
+  item** (the planner keeps it; it can't craft one). An absent desecrated target is rejected with a
+  clear message rather than silently scoring 0.
+- UI (`ItemActions`): desecrated mods are selectable in the item builder (rose "desecrated" badge),
+  excluded from the quick-check "mod to add" (no currency adds them), and a hint explains the Light
+  lever. Currency cards key by label (Annulment now appears twice).
+
+Tests: 5 facade (0.5.0) + 2 optimizer synthetic (keep-present, reject-absent). **591 tests + 1 todo,
+type-check + build green; differential fixtures untouched.**
+
+DEFERRED (Stage 2): teach `optimizeFromItem` to use Omen of Light to remove a desecrated JUNK mod for
+certain (a real cost↔certainty lever on the frontier) — engine-ready, just needs the optimizer to emit
+the annul-with-light variant. Today a desecrated junk mod is removed by a random annul in a plan.
+
+## Crafting desecrated mods (choose + target them) (2026-07-17)
+
+Desecrated mods are unique modifiers obtainable only by the Desecration mechanic, so they're now
+first-class *targets*: you can choose one and the planner crafts it, from an item OR from white.
+
+**Weight approximation — count-uniform via boss omen (decided; the honest option).** Every desecrated
+mod in 0.5.0 is a placeholder (weight 1, ilvl 65) carrying exactly ONE boss tag (kurgal/amanamu/ulaman,
+split 164/175/188). To target a specific desecrated mod you Desecrate with its boss omen
+(Blackblooded/Liege/Sovereign), and the engine's existing `desecrationBossProbability` scores it
+**count-uniform: P = 1/N** over that boss's slot pool (N = 1–8 per base, so genuinely craftable). No
+weight is read or invented — a guessed weight scale would poison every number downstream, and mixing
+real normal weights (100s) with placeholder desecrated 1s in the combined pool makes desecrated mods
+un-hittable anyway. `desecrationOmenForMod(mod)` is the tag→omen inverse the optimizer uses.
+
+**The "Ancient" omen (min mod level 40) is NOT wired — and that's honest, not lazy.** Per the user, an
+Ancient omen sets a minimum modifier level of 40 on the desecration, pruning *normal* tiers below ilvl
+40 from the roll. It does nothing to desecrated mods (all ilvl 65 ≥ 40), and our targeting route uses
+the boss omen — which already excludes normal mods entirely — so the Ancient floor changes *none* of
+the odds we compute for a desecrated target on this data. A live toggle that alters no number would be
+misleading; revisit when desecrated mods carry real per-mod ilvls / weights and the combined-pool roll
+is modelled.
+
+**Engine:** the `desecrate` plan step now enforces legality at the plan layer (RARE item, open slot,
+free family) — the boss-omen primitive is count-uniform and gates none of these (it mirrors Java's
+narrow model), so `stepProbability` guards them like the perfect-essence case. `desecrationOmenForMod`
+added + exported. No differential fixture touched (the primitives are unchanged; guards live in the
+plan layer, which the desecration differential doesn't exercise).
+
+**Optimizer — both flows:**
+- `optimizeFromItem`: a desecrated *missing* target becomes a `desecrate` step (its boss omen) into an
+  open slot — like an exalt but from the desecrated pool, removing nothing. Verified on a real Wand:
+  keep a prefix, add a desecrated suffix → `annul(junk) → desecrate+liege` at 16.7% = ½ · ⅓.
+- `optimizePareto` (from white): a desecrated target is added by a `desecrate` step AFTER the add-chain
+  reaches Rare (the regal). `buildParetoSteps` emits it; orderings that desecrate before Rare score 0
+  and drop. Alchemy opener disabled when a desecrated target is present. Honest limitation: with fewer
+  than 3 rollable mods the add-chain never reaches Rare, so the frontier is empty (the UI hints this).
+  `validateTargetShape` gained an `allowDesecrated` flag so the older add-chain-only planners
+  (`optimizePlan`/`optimizeCost`, whose `buildSteps` can't desecrate) still reject desecrated targets.
+
+**Facade + UI:** `listDesecrated` mods are now selectable targets in both EngineLab (Plan from scratch,
+rose "desec" badge + a hint that from-white needs ≥3 rollables) and ItemActions (Full plan target,
+"· Desecrated" option). `mapFrontier` renders the step as "Desecration + Omen of the Sovereign".
+
+**Validated:** engine 97 (plan/desecration) + optimizer synthetic (from-item ½·1 hand-computed, from-
+white regal-then-desecrate ordering, no-boss-omen reject, unreachable-Rare empty) + 3 facade (0.5.0:
+from-item craft, from-white craft, step label). **595 tests + 1 todo, type-check + build green;
+differential fixtures untouched.** No `weights_overrides.json` entry: the model reads no weights, so an
+override would falsely imply the placeholder 1s matter — this note is the record instead.
+
+## From-item MDP: the true expected cost + optimal-policy graph (2026-08-08)
+
+The linear from-item planner's cost model assumes **restart-to-your-item, free** on any miss — two
+fictions: (1) reproducing an expensive item isn't free, and (2) a real annul removes a UNIFORMLY-RANDOM
+mod, so a miss leaves you in a WORSE state you recover from in place, not a teleport back to the start.
+`markovFromItem` (packages/optimizer) models the actual process as a **Markov Decision Process** and
+solves it for the minimum expected cost + optimal policy.
+
+- **State abstraction** (tractability): track only `(target mods present, #junk prefixes, #junk suffixes)`
+  — ~2^|target|×slots ≈ a few hundred states — with every transition probability read from the pool
+  weights the engine already computes. `optimizeItemMarkov` reads NO weights the engine doesn't already.
+- **Push-forward, no restart** (user's call): the policy digs out of a bricked state. It discovers real
+  tactics — e.g. a Sinistral/Dextral annul to strip junk from ONE side without risking the target mods on
+  the other — that the fixed-sequence linear model can't express.
+- **Solver:** standard stochastic-shortest-path value iteration, **0-initialised** and climbing to the
+  fixed point. (An ∞-init + "skip any action with an ∞ outcome" scheme DEADLOCKS on the recovery cycles
+  — `{both targets + junk}` ↔ `{one target + junk}` each need the other finite first — so neither ever
+  bootstraps. Every target is gettable by the time VI runs, so the goal is reachable from every state and
+  VI converges.) Each action solves its own self-loop via `÷(1 − pStay)`.
+- **v1 scope:** rollable normal targets; exalt / annul / (sinistral|dextral) annul / chaos at base orb.
+  Documented approximations: junk families assumed distinct from target families (junk never blocks a
+  target's family in the denominator); a below-tier target roll is treated as generic junk. Perfect-
+  essence / desecrate / essence targets and orb-strength / add-side omens stay on the linear planner
+  (`optimizeItemMarkov` returns `applicable:false`; the UI falls back to the frontier).
+- **Validated:** hand-computed cases (already-target 0; empty→one exalt; a recovery E=2 pinning VI +
+  self-loop; infeasible/ungettable; non-rollable rejected) + a **100k-run Monte-Carlo** that plays the
+  policy and matches V (synthetic tight; real Wands within 3%). This is the honest fidelity check the old
+  cost MC couldn't be — that one validated the restart approximation against itself.
+- **Result:** on a real keep-Mana / swap-Int→Spell-Damage craft the MDP reads **~26ex** vs the linear
+  model's optimistic **~9.5ex** cheapest — the free-restart correction, quantified.
+- **UI:** the "I have an item → Full plan" flow now leads with the MDP's true expected cost + a
+  `PolicyGraph` (inline SVG): each square is an item state laid out left→right by distance to the target,
+  solid arrows are progress, dashed amber arrows are the **bricks** (a bad roll sending you back a step).
+  The linear frontier stays below as the per-plan view. Component tests render the graph from real MDP
+  output. **621 tests + 1 todo, type-check + build green; differential fixtures untouched.**
+
+## From-item MDP v2: family-aware tiered states + orb-strength / side-exalt levers (2026-08-09)
+
+Two refinements over the v1 MDP, chosen together because they compose into the real endgame decision —
+"cheap base exalt that might roll below-tier and block the family, vs. an expensive Perfect Exalt that
+lands high-tier." The state key grew `present:jp:js` → **`present:blocked:jp:js`**.
+
+- **v2a — family-aware tiered states.** Each target is now `absent | present (at ≥ its tier) | BLOCKED`.
+  A **blocked** target is one whose family is occupied by an off-tier roll (the mod landed below its
+  wanted tier): the family is taken but the goal is unmet, so you must annul the off-tier mod before
+  re-adding. The add-distribution splits a family's weight into success (→ present), below-tier
+  (→ blocked), and foreign junk (→ jp/js); junk is now *provably* only ever non-target-family weight, so
+  it can never silently block a target — the blocked bits carry every family collision that matters.
+  **[Corrected 2026-09-21: true only while a family is ONE mod. A family holding different mods — a
+  Wand's damage-type prefixes, a tablet's Essence pair — put its other members in the junk bucket. See
+  "A different mod of a target's family blocks it".]** The START item is classified the same way (a
+  target already on the item but at too low a tier starts BLOCKED, not satisfied). **Reduces exactly
+  to v1 when every target is untiered** (no below-tier band).
+- **v2b — richer action set.** Exalted Orb at **base / Greater / Perfect** strength (ilvl floor 0 / 35 /
+  50 — a Perfect Exalt can't roll the low tiers, so it *skips the off-tier trap* v2a introduced), and
+  **side-constrained exalts** (Omen of Sinistral/Dextral Exaltation = add a prefix / suffix only, so the
+  policy can avoid rolling junk on a side it doesn't need). Strengths/side-omens are offered **only when
+  the price sheet lists them** — a missing price can't mint a free super-orb. `mcActionCosts(prices)` is
+  the single source of per-action pricing, shared by the solver and the MC validator.
+- **Validated:** the v1 cases still pass, plus new hand-computed ones — an off-tier recovery **E = 3**
+  (below-tier hit blocks the family → annul → retry, pinning the blocked-state + self-loop math); a
+  **Perfect Exalt chosen to skip the trap** when priced at 2.5 (and correctly *not* chosen at the real
+  20ex, falling back to base-exalt-and-recover, E = 3); a **Sinistral Exaltation** chosen to add a prefix
+  when the suffix pool is all junk (E = 4). A new **100k-run MC** on a *tiered* real-Wands target
+  (Spell Damage ≥ ilvl-60 tier) plays the full v2 action set and matches V within 3%.
+- **Real-data readout (Wands, ilvl 82):** untiered keep-Mana/swap-Int→Spell reads **25.9ex** (≈ the v1
+  ~26ex — reduces-to-v1, a hair cheaper now that the levers exist); demanding Spell at a **top-3 tier**
+  jumps to **137ex** with off-tier states on the graph, and the **single best tier** to **800ex** —
+  the honest cost of a specific-tier target that v1 structurally under-counted.
+- **UI:** `EnginePolicyNode` gained `blocked[]`; the `PolicyGraph` shows off-tier squares ("N off-tier")
+  and names them in the hover tooltip; brick edges now cover both a miss AND a below-tier roll. New
+  action labels (Exalt (Perfect), Exalt (Sinistral), …) surface in the graph so the user SEES the policy
+  buy a Perfect Exalt. A component test renders the off-tier states from real MDP output.
+- **626 tests + 1 todo, type-check + build green; differential fixtures untouched.**
+
+DEFERRED (MDP v3): Omen of Whittling (a Chaos omen that changes the lowest-TIER mod) — needs the
+mod-tier ordering the state abstraction discards; extend beyond rollable targets (essence/desecrate as MDP actions); a from-white
+MDP (its restart-to-white is already a defensible near-optimal strategy, so lower priority). (Omen of
+Homogenising Exaltation was a candidate but has been REMOVED from the game — see docs/CHANGELOG.md — so it is
+not a v3 item.)
+
+## MDP v3a — Desecration, Omen of Light and Perfect Essence as MDP actions (2026-08-21)
+
+Took the second of the three v3 items above: the MDP now covers **desecrated** and **perfect-essence**
+targets instead of handing them to the linear planner, so the honest push-forward cost model applies to
+them too. Whittling stays deferred (see below).
+
+**Preparatory split** (behaviour-neutral, its own commit): `markovFromItem.ts` (456 lines) became
+`markovState.ts` (what a state IS: the present/blocked/junk abstraction, `StateKey` encode/decode, slot
+accounting, lattice enumeration, `classifyStart`), `markovActions.ts` (what you can DO: `McAction`,
+`actionCostOf`, the distribution builders, price-gated assembly) and `markovFromItem.ts` (orchestration:
+resolve targets, value-iterate, walk the policy into a graph). `markovFromItem.ts` keeps the public
+surface and re-exports the action types, so every caller and test imports exactly as before — the same
+pattern used when `engine.ts` was split. All 13 MDP tests passed **unedited**, which was the oracle.
+
+**State:** one new axis, `desJunk` ∈ {none, prefix, suffix} — where the item's single unwanted
+desecrated mod sits. A desecrated *target* is already in the present/blocked masks, so the axis only
+records the miss. It's gated by `desecratable`, true only when a desecrated mod is genuinely in play, so
+a craft that never touches desecration enumerates exactly the state space it did before (verified on
+real Wands: **95 policy states either way**; 239 with desecration in play, solving in 82 ms).
+
+**D8 — how a Desecration splits across sides (new ruling; previously unmodelled).** The engine's
+`desecrationBossProbability` returns `1/N` counting only that boss's mods **on the added mod's own
+slot** (see D3). That's well-defined for the linear planner, which only ever asks "P that *this* mod
+lands", but an MDP needs a distribution summing to 1, which forces the question the port never answered.
+On Wands + Blackblooded the pool is 1 prefix / 2 suffixes, so a prefix target reads 1/1 = **100%**
+per-slot but 1/3 = **33%** if the draw spans both sides — the same craft, 3× apart. **Ruling (user):
+model both.** An unconstrained boss desecration draws across BOTH sides of that boss's pool; a
+Sinistral/Dextral **Necromancy** omen narrows it to one side and thereby recovers exactly the engine's
+`1/N`. So the existing per-slot number is the *side-omen* case, not the unconstrained one. Candidates
+whose family is already on the item, or whose side is full, are dropped from the draw rather than
+wasting it — the same way `poolTotalWeight` excludes occupied families from a normal add.
+→ **RESOLVED 2026-08-21** (see "Both planners honour D8" below): the linear planner was taking the
+constrained `1/N` without paying for a Necromancy omen. It now dispatches on the omen like the MDP.
+
+**Omen of Light** is now an MDP action too: it removes the item's desecrated mod outright (P=1) instead
+of rolling the uniform 1/N. Without it the model would overstate the cost of every desecrate-based plan,
+since the real recovery from a bricked desecration wouldn't exist. Offered only when priced.
+
+**Perfect Essence** reuses machinery rather than adding math: its removal half is *exactly* the uniform
+draw `removeOutcomes` already computes (`perfectEssenceProbability`'s `1/(pf+sf)`, `1/pf`, `1/sf`
+branches are the same formulas), and its add half is deterministic. Empty item ⇒ no removal, P=1 add,
+matching `plan.ts`. Sinistral/Dextral **Crystallisation** omens constrain which mod gets eaten.
+*Side-slot legality:* the add only fits if the target's side has room; when that side is full the add
+depends on the removal landing there, guaranteed only under a matching omen — so in the ambiguous case
+the action simply isn't offered rather than inventing a rule.
+→ **RESOLVED 2026-08-21** (see below): `plan.ts`'s `'perfect-essence'` branch checked rarity and family
+but NOT the target-side slot count, unlike its `'desecrate'` branch. Now fixed.
+
+**Regular essences stay out, structurally.** `essenceForcedProbability` requires a **Magic** item and
+this planner starts from the Rare you already hold; there is no legal Rare→Magic transition, so there is
+no sequence in which a from-item MDP could use one. They keep falling back to the from-white linear
+planner, now with a reason that says *why* rather than the old generic "not rollable".
+
+**Bug found while building it:** `addOutcomes` counted a desecrated target's own tier weight in the
+numerator although it is absent from `poolTotalWeight`'s denominator — an Exalt could conjure a
+desecrated mod and the distribution wouldn't sum to 1. Adds are now restricted to normal-pool mods.
+A second one was caught by its own test: `distanceToGoal` ignored the new axis, so a desecrate miss
+didn't register as a regression (no brick arrow). Desecrated junk now counts toward distance, rides on
+`PolicyNode`, and the graph labels it separately from ordinary junk since it also blocks re-desecrating.
+
+**Validation** — 11 hand-computed cases in `markovEssenceDesecrate.test.ts` (analytic first; these are
+small enough to pin exactly, so no MC was needed): unconstrained draw **E = 3**, Necromancy omen
+**E = 1.5** and taken, the same omen priced dear **declined** at E = 3, Light **E = 1.3** and preferred
+over both random and side annuls, Light absent when unpriced, Crystallisation-certain essence
+**E = 15**, the raw essence's uniform ½ split pinned edge-by-edge with only the junk-eating branch
+reaching goal, the full-side essence declined without an omen and offered with one, plus four reject
+cases. Real data: Wands + desecrated Spell-AoE suffix ⇒ **33.58ex**, policy buys Liege + Dextral;
+Wands + Perfect Essence of the Abyss ⇒ **25.00ex**, policy buys Dextral Crystallisation to eat the
+unwanted Intelligence.
+
+**UI:** `optimizeItemMarkov` no longer refuses desecrated/perfect-essence targets (only regular
+essences); `EnginePolicyNode` gained `desecratedJunk`; the graph labels "+1 desecrated" and the new
+actions ("Desecrate (Omen of the Liege, Dextral)", "Perfect Essence (Sinistral)", "Annul (Omen of
+Light)"). **640 tests + 1 todo, type-check + build green; differential fixtures untouched.**
+
+## Both planners honour D8, and a perfect-essence slot bug (2026-08-21)
+
+The two follow-ups left open by v3a, both wrong numbers users could see.
+
+**The linear planner now honours D8.** `plan.ts`'s `'desecrate'` branch called
+`desecrationBossProbability` whenever a boss omen was set — the per-slot `1/N`, i.e. the
+*side-constrained* odds — and ignored `constrainTo` entirely, while `cost.ts` charged only the boss
+omen. So a desecrate craft got side-locked odds for free. Now: with `constrainTo` it uses the per-slot
+figure (and 0 if the omen points at the wrong side); without it, the new
+`desecrationBossAnySideProbability` — count-uniform across BOTH sides of that boss's pool, filtered to
+candidates that are actually legal (family free, side not full). The filtering is required rather than
+a nicety: `markovActions.ts`'s `desecrateOutcomes` already filters this way, so an unfiltered
+denominator would put the two planners back into disagreement, which is what D8 existed to settle.
+
+`desecrationBossProbability` and its **frozen Java fixture are untouched** — under D8 that function
+*is* the side-constrained case, so the anchor keeps its meaning and every existing assertion passes
+unedited. The new path is a sibling, and is not differential-tested because Java models no
+unconstrained desecration to compare against.
+
+Two supporting changes: `cost.ts`'s `stepOmenId` became `stepOmenIds` (a list) because a Desecration
+can now invoke two omens at once — a boss omen *and* a Necromancy side omen — which single-omen
+pricing could not express; and `withOmenVariants` fans out boss-desecrate steps so the planner
+explores "pay for the side-lock vs take the wider draw" and `paretoFrontier` picks, exactly as every
+other omen lever works here.
+
+*Real-data impact* (Wands ilvl 82, keep Mana + craft the desecrated Spell-AoE suffix): the cheapest
+plan goes **16.50ex → 28.50ex**, against the MDP's 33.58ex for the same craft — the linear model stays
+optimistic by design (free restart) but no longer by an extra 73% from unpaid omens. Tests pin both
+regimes on a synthetic base whose boss pool spans both sides: with a dear omen the wide draw (P=½,
+E=6) and the lock (P=1, E=8) are both non-dominated; with a cheap one the lock strictly dominates and
+the frontier collapses to it. Engine-level cases pin 1/10 unconstrained vs 1/4 and 1/6 constrained on
+real Amulets data, plus an occupied family shrinking the denominator to 1/9.
+
+**Perfect essence could add to a full side.** `stepProbability`'s `'perfect-essence'` branch checked
+rarity and family but never whether the *added* mod's side had room. The essence removes before it
+adds, so the removal only makes room if it came off the add's own side — eating a suffix does nothing
+for a third prefix. It scored adding a 4th prefix to a 3-prefix item as a normal `1/(pf+sf)`. Now
+rejects when the add's side is still full once `step.remove` is gone; two tests pin that the guard
+rejects only the illegal case (sacrifice the suffix ⇒ 0) and not the legal twin (sacrifice a prefix ⇒
+1/4). While there, the `'desecrate'` branch's hardcoded `>= 3` literals became the canonical
+`prefixesFull`/`suffixesFull`.
+
+**647 tests + 1 todo, type-check + build green; differential fixtures untouched.**
+
+## MDP solver performance: the lattice is now compiled to typed arrays (2026-08-21)
+
+Went looking for whether Whittling was tractable and found something worse: **the solver was already
+unusable on large targets in shipped code.** Real 0.5.0 Wands, value iteration to default tolerance:
+n=3 342ms, n=4 860ms, n=5 2.9s, **n=6 over 100 seconds**. A six-mod target was a minute-plus wait.
+
+**Cause: the representation, not the algorithm.** Every hot operation in the VI loop was a
+string-keyed `Map` lookup (`actionCache.get`, `dist.get`, `V.get`/`V.set`) against keys like
+`"63:0:0:0:0"`. At n=6 that is ~2,915 states × ~15 actions × ~8 outcomes × ~10,000 sweeps ≈ **3.5
+billion string hashes**, and ~15ns each accounts for the entire runtime. The loop was doing
+arithmetic through a hash table.
+
+**Fix:** compile the lattice once into integer indices and typed arrays — `V` as a `Float64Array`,
+each action as `{cost, selfProb, to: Int32Array, prob: Float64Array}` with the self-loop hoisted out
+and divided through as before. Entry order is preserved exactly as the `Map`s iterated, so the
+floating-point sums — and therefore every expected cost — are **bit-identical**. `markovState.ts` and
+`markovActions.ts` are untouched; the numeric form is an implementation detail of the solver.
+
+| n | states | before | after |
+|---|---|---|---|
+| 3 | 239 | 342 ms | **114 ms** |
+| 4 | 575 | 860 ms | **181 ms** |
+| 5 | 1,295 | 2.86 s | **430 ms** |
+| 6 | 2,915 | >100 s | **~13 s** |
+
+(The "51s" figure that circulated for n=6 was capped at 10k sweeps and had *not* converged — it read
+E=827.2976 against the true E=827.302627.)
+
+**Two hypotheses tested and rejected — recorded because both were plausible:**
+
+1. **Loosening the tolerance.** The 1e-9 tolerance is absolute, and E≈827 needs ~1e-12 relative, so
+   this looked like the obvious lever. Measured at n=6: `1e-5` → 50 s (0.0004% error), `1e-3` → 29 s
+   (0.1%), `1e-2` → 20 s (1%), `1e-1` → 11 s (**10%** error). It buys nothing until the answer is
+   visibly wrong. The contraction factor is genuinely near 1 — a property of the long recovery cycles
+   this model exists to capture.
+2. **Sweeping in distance-to-goal order.** This is Gauss-Seidel (V is written in place), so a
+   goal-outward order should propagate values faster than the bitmask order `enumerateStates` emits.
+   Implemented and measured: **no effect** — within the ~15% run-to-run noise. Reverted. The reason is
+   structural: the transition graph has strong cycles (brick → recover), so there is no topological
+   order to exploit and values must circulate regardless of where a sweep starts.
+
+   **Re-tested 2026-08-24 against a deterministic metric**, because "within the noise" is an invitation
+   to try it a third time. Wall time cannot resolve a 10% effect under ~40% spread, but SWEEPS TO
+   CONVERGENCE is exact — it depends only on the order, not the machine. From-white Wand, `restartCost: 0`:
+
+   | targets | phase | enumeration | goal-first | goal-LAST |
+   |---|---|---|---|---|
+   | 2 | A / B | 170 / 3,156 | 169 / **2,923** | 162 / 3,142 |
+   | 3 | A / B | 783 / 4,417 | 782 / **3,925** | 716 / 4,349 |
+   | 4 | A / B | 1,225 / 24,838 | 1,225 / **21,605** | 1,147 / 24,298 |
+
+   So goal-first is real but small: **7–13% fewer phase-B sweeps**, growing with target count. It does
+   not survive the trip to wall time. Phase A is the clean control — the two orders need the SAME sweep
+   count there (1,225 both, at n=4), so any time difference is pure memory-access cost, and at n=3 the
+   permuted order measured **15% slower per sweep** (0.345 vs 0.299 ms) for visiting `compiled[]` and
+   `V[]` out of allocation order. Net at n=3: ~10% slower. Net at n=4, where the cache penalty happens
+   to vanish: ~11% faster. An effect whose SIGN depends on the craft is not a speedup.
+
+   The reverse-order control is what actually kills the theory. If values really propagated backward
+   from the goal, goal-LAST would be catastrophic — instead it is within 2% of enumeration order, and
+   *better* than either in phase A. Values here circulate around cycles; they do not flow down a DAG.
+
+   Also measured and rejected the same day: **the free restart is a zero-cost self-loop at the start
+   state** (`restart.dist` is `{startKey: 1}`, cost 0), which is exactly the condition that breaks SSP
+   contraction — a tempting explanation for phase B needing 20x phase A's sweeps. Excluding that one
+   action changes the sweep count by **zero** (4,417 and 24,838, identical). It never fires: it ties
+   `V(start)` rather than beating it, and `bestAction` breaks ties with a strict `<`.
+
+   What remains true is the n=6 conclusion below: closing this gap needs a different algorithm
+   (policy iteration), not a better sweep order.
+
+3. **A free lower bound extrapolated from the residual's own decay** (2026-08-24). VI's residual
+   shrinks geometrically, so two samples should give a rate and the remaining descent a closed form —
+   a range instead of a bare ceiling, for no extra sweeps. Rejected: the decay rate is not constant,
+   it creeps toward 1 as the solve grinds (per-sweep 9.60e-6 → 8.14e-6 between 40k and 98k sweeps on a
+   6xT1 body armour), so a geometric fit systematically UNDERSTATES what is left to fall. Measured on
+   a 4-target Wand truncated at 5,000 sweeps: the projected range was [695.87, 1193.70] against a true
+   425.43 — it missed low, which in a lower bound is the direction that misinforms. Extrapolating the
+   max residual `delta` instead of V(start) is worse still: it is a max over the whole lattice, so it
+   claims a descent the displayed figure never makes (3-target Wand at 3,000 sweeps, ceiling 2% high,
+   projection 17% low). A real lower bound needs a real climbing solve; there is no free version.
+
+**What this unblocks.** Whittling was previously projected as viable only at n≤2. With the solver
+7× faster and the cheaper *junk-only* banding (targets largely reuse the `present`/`blocked` bit they
+already carry; only junk needs a new tier band), the projection is now ~0.7 s at n=3, ~1 s at n=4 and
+~2 s at n=5 — so the endgame case that motivates the omen (five mods already good, spend it fixing the
+last one) becomes reachable. **n=6 remains impractical** at ~57 s projected; getting there would need
+a different algorithm (policy iteration), which is not attempted here.
+
+NOT DOING (MDP v3b): **Omen of Whittling** — evaluated 2026-08-21 and **dropped by the user**, not
+merely deferred. Recorded here so it isn't re-proposed.
+
+It is a **Chaos** omen: the orb changes the item's **lowest-tier** modifier instead of a
+uniformly-random one, where "tier" is the per-mod T-number (T5 is lower than T1), **not** the mod's
+ilvl, and ties resolve uniformly with fractured mods excluded (all confirmed by the user). Junk
+carries no tier information at all (just a count) and present targets only know "≥ wanted tier", so
+which mod is lowest isn't answerable from the current state — this is the only v3 item that needs a
+state-abstraction change rather than new actions.
+
+Why it was dropped rather than built: the tractable version bands the tier rank into coarse windows,
+which costs a real approximation (within a band the omen can't tell two mods apart, so ties resolve
+uniformly when the truth is deterministic) on top of a state-space multiplier. Even after the 7×
+solver speedup above it projects to ~2 s at n=5 and ~57 s at n=6, so the full six-target craft stays
+out of reach. And `OmenofWhittling` is **not** in `data/patches/*/prices.json`, so under the "only
+offer what's priced" rule the whole feature would ship dormant regardless. The cost/benefit didn't
+land. If it is ever revisited, the junk-only banding sketch (targets reuse the `present`/`blocked`
+bit they already carry; only junk needs a new tier band) is the cheapest known design, and the
+mechanic assumptions above should be re-confirmed against the game first.
+
+Still genuinely deferred (not dropped): a from-white MDP; policy iteration, if n=6 ever needs to be
+practical.
+
+## D9 — multi-family mods: exclusion groups beyond the first were being dropped (2026-08-21)
+
+Auditing the long-parked "baselined data findings" dissolved most of them and uncovered a real bug
+underneath.
+
+**What the old findings actually were.** The shipped `0.5.0` has **zero** type/pool mis-slots — every
+remaining one is in `0.5`, which no user ever loads (`src/lib/engine.ts` imports `0.5.0` only) and
+which exists solely as the differential anchor. "Fixing" those would *break* the anchor, since the
+frozen `__fixtures__/*-java.json` were generated from that very data. **Closed as won't-fix, by
+design.** Of the 10 baselined `0.5.0` mixed families, 8 are legitimate (a desecrated mod and a
+perfect-essence mod sharing a stat family on opposite sides).
+
+**The bug.** poe2db gives some mods several exclusion groups:
+
+```
+Amanamu's (prefix) → ModFamilyList: ["CompanionDamage"]
+of Ulaman (suffix) → ModFamilyList: ["CompanionDamage", "IncreasedAttackSpeed"]
+```
+
+`tools/refresh/poe2db.mjs:47` kept `ModFamilyList[0]` and dropped the rest (line 48 already parsed the
+full list; nothing consumed it). Since `family` **is** the exclusion group, every dropped entry was a
+lost exclusion — **109 shipped desecrated mods**, 93 of them two-attribute rolls (`+Str +Int` and
+friends). The engine would happily place a pure Intelligence mod beside a Str/Int desecrated mod —
+illegal in game — and, worse for the numbers, kept counting Intelligence mods as still-available in
+every add denominator.
+
+**Measured impact** (real 0.5.0, ilvl 82): on **62 of 109** the denominator genuinely moved —
+**median 3.47%, max 8.76%** too large. So P(any specific target) was understated by that much whenever
+one of these mods sat on the item. Well outside a project that cross-checks *exact* against Craft of
+Exile, and the legality error is a wrong answer rather than a skewed one.
+
+**The fix, in three parts.**
+1. *Centralise first* (its own commit, behaviour-neutral). Exclusion was hand-rolled at a dozen sites,
+   each doing `occupied.has(mod.family)`. All of them now go through `familiesOf(mod)` / `excluded(mod,
+   occupied)` in `pool.ts`, plus `modFamilies()` for the UI. Every mod still had one family at that
+   point, so all 647 tests passed **unedited** — the oracle that the change moved code, not semantics.
+2. *Widen the model.* `Mod.families?` carries the full set; `family` stays the primary because it keys
+   the poe2db weight join (`apply_weights.mjs` joins on `"type:family:ilvl"`) and labels the mod in the
+   UI. Emitted only when there IS more than one, so the data diff is 109 mods rather than all 2140, and
+   the legacy single-`family` shape still loads untouched — `0.5` is byte-for-byte unchanged.
+3. *Emit it.* `apply_pools.mjs` writes `families` on both the desecrated and essence paths;
+   `refresh.mjs:139` had the identical `groups[0]` truncation and is hardened too, though **no shipped
+   normal mod is affected** — RePoE's 58 multi-group mods are all Unique/Map/Crafted. Regenerated from
+   the local poe2db cache, so offline and reproducible.
+
+**Deliberately NOT widened:** `alternatives.ts`'s `siblingsOf` still matches on the primary family
+only. That is a *similarity* test, not an exclusion test — matching any shared family would make a
+multi-family mod a "near-miss" swap for every mod in each of its groups, which isn't what the user
+asked to approximate.
+
+**Validation.** New `multiFamily.test.ts` (11 cases): a spanning mod occupies all its groups, is
+blocked by *either*, blocks both single-family mods, and shrinks the denominator to 0 in the synthetic
+case where the old behaviour left 20 — plus real-data assertions and a check that `0.5`'s legacy shape
+still resolves to exactly one group. **Verified by reverting the fix: 6 of the 11 fail without it.** A
+new data-integrity invariant pins `families[0] === family` and rejects redundant 1-entry arrays.
+**660 tests + 1 todo, type-check + build green; differential fixtures untouched.**
+
+→ **CONFIRMED (same day):** the CoE cross-check was re-run after the change — `coe-verify.mts` reports
+**MATCH on prefixes and suffixes for Rings, Body_Armours_int and Quivers**, and
+`coe-newpools-check.mts` passes all structural checks (boss-tag counts 175/188/164, every desecrated
+mod positively weighted, every perfect-essence mod single-tier and deterministic). So the normal-pool
+numbers are unmoved, as predicted — the affected mods are desecrated and don't enter those pools. The
+prediction is now measured rather than reasoned.
+
+## Desecration, essences and convergence — five mechanic changes (2026-08-22 → 08-23)
+
+Recorded after the fact: these shipped over two days and existed only in commit messages, which is not
+where a claim about a game mechanic belongs. **Evidence quality is stated per item, because it varies
+sharply** — two rest on user domain rulings and one on an outright assumption.
+
+### 1. Boss omens are "Weapon or Jewellery" only ✅ VERIFIED (item text)
+
+The Omens of the Sovereign / Liege / Blackblooded read *"your next **Weapon or Jewellery** Desecration
+attempt will guarantee a random Ulaman/Amanamu/Kurgal modifier"*. Nothing gated on that, so both
+planners offered boss-targeted desecration on ARMOUR — and **342 of the 527 shipped desecrated mods sit
+on armour bases**, so roughly two thirds of desecrated crafts were planned around a step the game
+refuses. On a targeted draw the planner claimed **0.25** where the real untargeted draw was **9.2e-6**.
+
+`bossOmenAllowed` / `desecrationBoneFor` (`probability.ts`) gate it; "Weapon or Jewellery" is exactly
+"not armour", i.e. the jawbone and collarbone groups. An unmapped category falls back to `rib`
+(armour), deliberately: claiming a plan works when the game would refuse it is the worse failure.
+
+**Evidence:** the in-game item text, supplied verbatim by the user. Direct and unambiguous.
+
+### 2. Armour can desecrate — the MDP had only boss-omened actions ✅ FIXED, model per D4
+
+Gating the omen was right; stopping there was not. Every desecrate action the MDP modelled carried a
+boss omen, so on armour it had **no desecrate action at all** and reported `feasible: false` for a
+craft the game performs happily — for a day, for the majority of desecrated mods.
+
+`markovActions.ts` now offers the untargeted draw on **every** base (`desecrateAnyOutcomes`), weighted
+over the combined normal ∪ desecrated pool, mirroring `desecrationProbability` so the two planners
+agree — the D8 lesson. Boss variants layer on top only where legal. Two consequences beyond armour:
+a player who had excluded every omen previously lost desecration on weapons too, and a desecrated mod
+carrying no boss tag is now reachable rather than rejected (no such mod exists in 0.5.0; the rejection
+was wrong in principle).
+
+**Evidence:** hand-computed unit tests, plus mutation checks — restoring the old condition fails seven
+tests. The *model* it uses is D4, whose denominator the user confirmed and whose **weight is an
+assumption** (see D4).
+
+### 3. One essence modifier per item — regular and perfect counted TOGETHER ✅ VERIFIED (user ruling)
+
+> "You cannot apply a Perfect Essence after using a regular Essence on the same item. Each piece of
+> equipment can only carry one essence modifier at a time." — user, 2026-08-23
+
+Nothing enforced this. `fromItem.ts` built one `perfect-essence` op per perfect target, the MDP gave
+each its own action, and `optimize.ts` capped only `source: 'essence'` — half the mods the rule covers.
+All three would have planned an item the game cannot hold. `isEssenceMod` (`probability.ts`) is now the
+single predicate all of them count with.
+
+The two kinds draw from **disjoint pools** — 317 `essence` mods vs 363 `perfect_essence`, zero id
+overlap — so a Perfect Essence can never supply a second regular-essence mod. (An earlier audit claimed
+the opposite and was wrong; see the correction note in `docs/copy-audit.md`.)
+
+**Evidence:** user ruling for the cap; the disjointness is measured directly from the shipped data.
+
+### 4. Perfect essences from white, and the item-level gate that was missing ✅ FIXED
+
+The Lab could not target a perfect-essence mod at all (`toEngineMod` filtered them out). It now can:
+since every mod on a from-white item is one you asked for, the essence necessarily eats a target, so
+the plan re-adds it with an Exalt and the search chooses which to sacrifice. Needs ≥3 rollable targets
+to reach Rare; below that it reports a planner limit rather than an impossibility.
+
+Found while implementing: the `perfect-essence` branch in `plan.ts` checked rarity, family and slots
+but **never the item level**, though `essenceForcedProbability` gates regular essences on
+`tier.ilvl > item.level`. Every perfect-essence mod is ilvl 72, so below that the planner costed a step
+the game refuses. Gate added.
+
+**Evidence:** hand-computed tests on a synthetic pool (removal probability 1/(pf+sf) unconstrained,
+1/sf under a Crystallisation omen), plus a real-data smoke test. The 1/pf, 1/sf and 1/(pf+sf) formulas
+themselves are the differential-tested `perfectEssenceProbability` port, unchanged.
+
+### 5. Value iteration can fail to converge, and now says so ✅ FIXED
+
+VI bails at `maxIters`, and because it 0-initialises and climbs, the value it returns then is a strict
+**lower bound** — not an estimate. Nothing recorded that: `expectedCost` came back looking like an
+answer and the UI printed **8,219,067 ex**, precise to the exalt and not converged. Found by
+instrumenting the progress stream — 100,001 solve reports on an armour desecration, i.e. every sweep of
+the cap. It also explains why loosening `tolerance` changed nothing: it never reached any tolerance.
+
+`MarkovResult.converged` now carries through to the UI, which renders "≥ x". A rejected target reports
+`converged: true` — it never ran VI, and calling that a floor would imply a number that isn't there.
+
+The **desecrated weight change (D4) largely dissolved the trigger**: the same armour solve went from
+6014ms unconverged to **159ms converged**. The reporting stays, because the condition is general — any
+sufficiently long-odds craft reaches it — and `maxMillis` (the user's Search effort setting) can now
+induce it deliberately.
+
+### Not a mechanic, but it changes what users get: Search effort (2026-08-23)
+
+Three solver caps were hard-coded: VI's sweeps, the budget search's nodes, the orb search's plans. One
+user setting drives all three. Measured on 6 targets at tier display 3, Wands, ilvl 82:
+
+| preset | orb depth | plans evaluated |
+|---|---|---|
+| Quick | strongest-only | 5,760 |
+| **Standard** (= the old hard-coded default) | strongest-only | 5,760 |
+| Thorough | base+strongest | 184,320 |
+| Patient | full | 622,080 |
+
+Worth recording because of what it exposes: **on a craft that size the default only ever searched the
+strongest orbs**, and every result before this was that shallow. The budget search is ~70ms/node,
+linear (100 nodes 7.0s, 200 nodes 14.1s).
+
+---
+
+## The from-item panel, measured against a real user report (2026-08-23)
+
+A five-target craft was run in the live app and reported back: an unreadable policy graph, a
+`267.5B div` step cost, an Exalt placed before two Annuls, and a wait "like +15 minutes". Every claim
+below is reproduced in node against `data/patches/0.5.0`, not inferred.
+
+**Both screens reproduce exactly.** Rare Wand ilvl 82 holding Chaos Damage + Cast Speed as junk;
+targets Crit Spell Damage Bonus, Crit Hit Chance for Spells, Mana Regen, Spell Damage, Cold Damage.
+
+| target tier | MDP nodes | MDP E | shown as | step frontier |
+|---|---|---|---|---|
+| T1 | 14 | 1.052e7 ex | 28.9K div | 1 plan |
+| T2 | 262 | 5.420e6 ex | 14.9K div | 10 plans |
+
+Both match the user's screens (they quoted "14 item states" / "262 item states" and both div figures).
+
+### 1. The wait was a progress flood, not slow maths ✅ FIXED
+
+Totals in node were **26s (T1) and 28s (T2)**, and `maxMillis` can only shorten that. The difference
+in the browser: value iteration called `report(...)` **once per sweep**, and a non-converging craft
+runs `maxIters = 100_000`, so the worker fired ~100,001 `postMessage` calls, each waking a React
+re-render of the progress bar. `engine.worker.ts` licensed this in a comment — "that is fine precisely
+because this is a worker: the message queue drains on the main thread, which is free". True at 100
+messages; catastrophic at 100,000. The `actions` and `compile` phases were already strided; `solve`
+was missed.
+
+Fixed by emitting only when the number the UI would *display* changes (permille), which caps it at
+1001 by construction. **Measured: 100,001 → 992 reports.** Pinned by asserting no two consecutive
+reports carry the same value — reverting the throttle produces 2,001 duplicates out of 3,000 sweeps.
+
+### 2. An unconverged policy graph does not reach the target ✅ FIXED (disclosure)
+
+The graph is the closure of states reachable under whatever policy VI had arrived at when it stopped.
+Stop it early and that policy is provisional. Measured at the Standard effort (15s): **14 states
+spanning depths 7 down to 4, with the goal (depth 0) absent entirely.** The panel drew that as
+"Optimal policy" — a dead end presented as advice, and the direct cause of "I do not understand".
+
+The effort ladder resolves it, which is the loop the setting exists for:
+
+| effort | MDP nodes | goal reachable | route |
+|---|---|---|---|
+| Standard (15s) | 14 | **no** | — |
+| Thorough (60s) | 262 | yes | 6 steps |
+| Patient (300s) | 262 | yes | 6 steps |
+
+Patient is indistinguishable from Thorough here: VI hits `maxIters` (100k sweeps, ~50s) before the
+time budget, so above Thorough the sweep cap binds, not the clock. The panel now says "No route to
+show yet … raise Search effort" rather than drawing the dead end, and leads with the route when there
+is one — `Annul → Chaos → Exalt (Dextral, Greater) → Exalt (Dextral, Perfect) → Exalt (Perfect) →
+Exalt (Perfect)`, six steps in place of 262 squares.
+
+### 3. Exalt-before-Annul is the cost model, not an ordering bug ✅ FIXED (presentation)
+
+`transformSequences` enumerates every order and `annulProbability` returns `1/(pf+sf)`, so annulling
+to zero mods is legal and **was scored** — the user's route was searched and rejected. It lost on
+price: **an Annul is 158.7 ex and an Exalt is 1 ex**. Under `E = Σ c_k·S_{k-1} / S_n`, burying the
+Annuls behind a 0.1% gate you rarely pass costs ~65x less. The model is right; its premise is not,
+because it hands you a **free replacement of your item on every miss**.
+
+Confirmed on the T2 frontier: plan 0 (shown first) P=1.77e-5%, plan 9 P=1.36e-4% — the annuls-first
+route is **7.7x likelier** and 16.7x dearer under free-restart. It was on the frontier the whole time,
+last in a list the user had no reason to scroll. `FrontierView` now takes `freeRestart`, and a held
+item leads with the likeliest route, captions the cost "if restarts were free", and labels the other
+end "cheapest on paper".
+
+`267.5B div` itself is arithmetically correct: numerator ≈ 1.21 ex over `S_n ≈ 9.3e-15`. The
+per-attempt figure checks out too — 5 Exalts + 2 Annuls + 4 side omens = 357 ex.
+
+### 4. Three smaller things the same screen exposed ✅ FIXED
+
+- **"tried every orb strength" was false.** `optimizeFromItem` hardcoded `currencyDepth: 'full'`, but
+  `baseTransforms` never sets `tier` on an add — that planner only ever uses base-strength orbs. New
+  `base-only` depth says so. It is part of why its costs sit so far above the MDP's, which does weigh
+  Greater and Perfect Exalts.
+- **The effort control was unreachable in Item mode.** It sat in EngineLab's *else* branch while
+  `ItemActions` obeyed `limitsFor(effort)` — a setting binding on a tab that could not show it.
+- **`357 ex` rendered as `0.98 div`.** One unit per view took its max across *different quantities*;
+  units are now per column.
+- **The two-cost-models note promised the wrong ordering** ("expect [the true cost] to be the higher").
+  Here the step plan was ~9,000,000x higher. A step plan is one fixed sequence where every slam must
+  hit a named mod, so on a long shot it reads far *above* the adaptive policy. Copy now says the two
+  can differ in either direction, and why.
+
+### Still open from this sweep
+
+- The from-item planner does not search orb strengths at all (`base-only`). Fixing it multiplies the
+  search by `3^k`; the badge tells the truth in the meantime. See TODO.
+- Above Thorough the MDP's `maxIters` binds before `maxMillis`, so Patient buys nothing on crafts like
+  this one. The preset hint is not wrong, but the cap is not currently a user-facing lever.
+
+## Decomposing the two-model gap, and what the route was hiding (2026-08-23)
+
+Follow-up to the sweep above, from the same craft (Rare Wand ilvl 82, Chaos Damage + Cast Speed junk,
+five T2 targets). Three things were reported about the new route view; all three are measured.
+
+### The step routes read in billions of divine — how much is fixable?
+
+Scoring the annuls-first route at each orb strength, everything else held constant:
+
+| orb strength | success / attempt | cost if restarts were free |
+|---|---|---|
+| base (all this planner uses) | 1.53e-10% | 428B div |
+| greater | 1.38e-8% | 4.77B div |
+| perfect | 1.71e-7% | 1.01B div |
+
+So the missing orb-strength search is worth **1,116x** — real, and TODO item 2. But the MDP puts this
+craft at **14.9K div**, so even a Perfect-orb step plan is still **~68,000x** out. That remainder is
+not a gap to close: a step plan is one fixed sequence in which every slam must hit a **named** mod,
+where the policy takes whatever lands and recovers in place. Implementing orb strength would make the
+step routes less wrong without making them useful here.
+
+Acted on accordingly: once the MDP has answered, the step routes collapse behind a disclosure that
+says why they read higher. They stay open when it has not (a Magic item, an essence target), where
+they are the only view there is. One predicate — `trueCostAnswered` in `ItemActions` — drives both
+that and the "No true expected cost" card, so the two cannot disagree.
+
+### The route named currencies but not mods
+
+`Exalt (Dextral, Greater): 1 mod → 2 mods` says how many you gain and not which. Both states were
+already in hand (`MainLineStep` carries `node` and `next`), so it was a diff nobody was taking. The
+same craft now reads:
+
+    1. Annul                      clears a junk mod
+    2. Chaos                      clears a junk mod · most likely lands Mana Regeneration Rate
+    3. Exalt (Dextral, Greater)   most likely lands Critical Spell Damage Bonus
+    4. Exalt (Dextral, Perfect)   most likely lands Critical Hit Chance for Spells
+    5. Exalt (Perfect)            most likely lands Spell Damage
+    6. Exalt (Perfect)            most likely lands Cold Damage
+
+**"Most likely lands", never "add".** The policy chooses the orb, never the outcome — an Exalt is a
+slam. The mod named is whatever sits on the step's highest-probability edge, which is the edge the
+route follows by construction. An imperative would tell the player to do something the game gives them
+no way to do; the odds render beside it, which is what keeps the phrasing honest.
+
+### The full graph repeated itself
+
+`2 mods · 1 off-tier / Annul / 14.9K div` appeared many times in one column. Those are distinct states
+— they differ in *which* mods are present — but the label discards that, so the picture showed the
+same box repeatedly. Grouping by exactly what a box displays collapses **262 nodes to 79 groups**,
+largest ×20, and the screen-reader list uses the same grouping so it stops being a 262-item dump.
+
+Two rules the grouping obeys: the start and goal are never merged (folding "your item" into a ×17 box
+would misreport where the player is standing), and **edges aggregate to existence, not to a
+probability** — member probabilities differ, so no summed or averaged number is shown; probability
+drives stroke opacity only.
+
+### Clicking a state highlights the route through it
+
+Requested after the grouping landed. Clicking a box lights everything that can reach it plus
+everything it can reach, and dims the rest.
+
+**Bricks are excluded from that closure, and the reason is measurable.** Regress edges make the graph
+strongly connected — with them in, almost every state reaches almost every other and the "highlight"
+lights the whole picture, which is the wall it exists to cut through. Restricted to progress edges
+(strictly decreasing distance-to-goal), route sizes over the 80 groups of the reported craft come out:
+
+| min | p25 | median | p75 | max |
+|---|---|---|---|---|
+| 6 | 11 | **16** | 26 | 80 |
+
+So a median click highlights ~20% and dims ~80%. The max of 80 is the start state, whose descendants
+are by definition the whole reachable graph.
+
+That distribution is a fact about this craft's data, not an invariant of the code, so it is recorded
+here rather than asserted in a test; the suite pins the property instead — a forked graph where
+clicking into one branch must not light the other. Progress-only also makes the walk terminate without
+a cycle guard, since depth strictly decreases; a test builds a brick cycle to pin that.
+
+Clicking also opens a full description of the state, which is the part a 148x54 box cannot carry:
+which target mods are held, which are stuck below tier (and that they need annulling before the mod
+can be re-rolled), the junk broken down by side, and — outcome by outcome — what the recommended orb
+actually does from there, with each outcome's probability and whether it is a step backwards. The
+outcomes are the representative state's own edges, so they are exact for it; when the box stands for
+several states the panel says so rather than implying they all behave alike.
+
+### The free-restart total is gone from held-item cards
+
+Reported as "i do not like the Step-by-step routes, the costs are astronomical". They were: `78.9B div`
+on the collapsed button, and the same figure inside. Dividing a real per-run cost by a ~7e-13 chance
+is arithmetically correct and is not a budget — nobody runs a sequence 1e14 times, they abandon it.
+
+So on a held item the card now drops `expected` and `expectedAttempts` entirely and shows the two
+figures that survive contact with reality: **chance per attempt**, and **what one run costs** (356 ex
+on this craft). That pair also preserves the frontier's reason for having several rows — a plan
+reaching for Perfect orbs costs more per run and lands more often, which is the whole cost↔probability
+trade, expressed in numbers a player can act on. The badges shrink to `likeliest` for the same reason:
+with no total on the card, "cheapest" and "best value" would be claims about a number the reader
+cannot see. The collapsed button carries the route count instead of the cheapest total, so the figure
+is not met without deliberately opening the section.
+
+The from-white planner is untouched — a white base really can be replaced for free, so `expected` is
+a real number there and still leads.
+
+## The true-cost model reaches the Lab tab (2026-08-23)
+
+`markovFromItem` required a Rare start, so the app's PRIMARY mode — craft this from a white base — had
+no honest cost figure and no policy graph at all. The state was `(present, blocked, jp, js, desJunk)`
+with no rarity in it, which is why a Magic item was rejected outright and a white one never considered.
+
+### What changed
+
+The state gained a **rarity** axis (`normal | magic | rare`) with the per-side cap that goes with it —
+none, one, three — and `enumerateStates` takes the rungs a craft can occupy, defaulting to Rare alone
+so every from-item craft keeps exactly the state space and solve time it had. Three add-chain actions
+join the space, each with the Greater/Perfect strengths the sheet already prices: **Transmute**
+(Normal→Magic), **Augment** (within Magic), **Regal** (Magic→Rare). Everything that needs a Rare item —
+Exalt, Chaos, Desecration, Perfect Essence — is simply absent below Rare, which is the game's rule.
+
+### The restart action is a correctness requirement, not a refinement
+
+A white base costs nothing, so the real optimal strategy includes binning a bad roll. Without an action
+for it the policy is trapped: once Transmuted the item is Magic and there is no way back to Normal, so
+a junk roll has to be dug out with a **158.7ex Annulment** instead of discarding **0.18ex** and
+rerolling. Measured on a 2-target Wand craft:
+
+| | expected cost |
+|---|---|
+| no restart action | **3607 ex** |
+| restart at 0 ex | **43.2 ex** |
+
+An **83x overestimate** — the same class of error the app has already been caught making once, so the
+action ships with the feature rather than after it. It is offered only when the caller says starting
+over is possible: a white base yes, a specific Rare in your stash no, a carved (fractured) item no.
+`WHITE_BASE_COST` in `solve.ts` names the price as an explicit 0 rather than letting an absent sheet
+key silently become one.
+
+Cross-checked the way the rest of the MDP is: 100k Monte-Carlo runs of the policy through the real
+random process, matching value iteration within 3%.
+
+### Two things the rarity axis broke, both found by running it
+
+**`distanceToGoal` ignored rarity**, so a Magic item holding every target scored 0 — the goal's own
+distance — while not being the goal. The route walk may only step to a strictly smaller distance, so it
+had nowhere to go and stalled. A non-Rare state is now at least two moves out (the Regal, plus the
+Annulment clearing the mod the Regal is forced to add). `engineMap` had a **second copy** of that
+expression and silently disagreed the moment rarity entered it; the distance is now carried on the node
+and the copy is gone.
+
+**The route walked into dead ends.** A from-white policy scraps and restarts for most outcomes, so a
+state like "rare, one target, one junk" legitimately has no forward move at all — its best action goes
+backwards to the bare base. Following the likeliest forward edge walked straight in and stalled, and
+the route vanished on every from-scratch craft. The walk now only steps to states the craft can
+actually be finished from. On a 4-target Wand craft it produces exactly the chain a player runs:
+
+    1. Transmute            5%  lands Mana Regeneration Rate
+    2. Augment             11%  lands Spell Damage
+    3. Regal                4%  lands Critical Hit Chance for Spells
+    4. Exalt (Sinistral)    7%  lands Cold Damage
+
+## Seeding value iteration, and why a free restart broke it (2026-08-23)
+
+Reported: a 6-mod from-scratch craft whose policy graph was four boxes, **every one of them** reading
+"Start over with a new base" — including a state already holding `#% increased Armour`, where the
+detail panel explained the move *"loses #% increased Armour — a step backwards"*. No route, and the
+goal was not in the graph at all.
+
+**Not slowness — degeneracy.** Value iteration 0-initialises and climbs. `restart` costs about nothing
+and lands on the start, so every state is worth `restartCost + V(start)`; while V is still near zero
+that ties with every other action, and early sweeps pick restart everywhere. VI unpicks the tie only as
+the true values separate, which on a long-shot target outlasts any budget. Measured from a white base
+(Wands, real 0.5.0 data), the two models it sits between:
+
+| targets | restart | converged | E | time |
+|---|---|---|---|---|
+| 3 | off | yes | 3,540 ex | 50 ms |
+| 3 | 0 ex | yes | 103 ex | 263 ms |
+| 5 | off | yes | 37,160 ex | 2.3 s |
+| 5 | 0 ex | **no** | 435 ex | 5.7 s |
+| 6 | off | yes | 176,400 ex | 12.2 s |
+| 6 | 0 ex | **no** | 6,940 ex | 78.7 s |
+
+Both columns are needed and neither is enough: without restart the answer converges but reads ~40x too
+high (a white base is free, so binning a bad roll really is optimal); with restart it is right and will
+not settle.
+
+**Fix: solve it in two phases.** Phase A runs push-forward only and converges to `V0`. Phase B puts
+restart back and starts from `V0` instead of from 0. `V0` is the value of a *proper* policy — one that
+always reaches the goal — so `V0 >= V*`, and
+
+    T(V0) = min( T_pushForward(V0), restartCost + V0[start] ) <= T_pushForward(V0) = V0
+
+i.e. `V0` is excessive. Phase B therefore DESCENDS toward `V*` instead of climbing, and two things
+follow. Every iterate stays above `V*`, so a truncated phase B is an **upper** bound where a from-item
+solve's is a **lower** one. And — the reason this is the fix rather than an optimisation — the greedy
+policy is sensible from the very first sweep: restart wins at a state only where `restartCost +
+V[start]` genuinely beats digging out, so a state holding a target keeps it.
+
+Verified on the same 6-target from-white craft, `mainLine` reaching the goal at every budget:
+
+| budget | converged | bound | E | route |
+|---|---|---|---|---|
+| 15 s | no | upper | 118,031 ex | 7 steps, reaches target |
+| 45 s | no | upper | 42,868 ex | 6 steps, reaches target |
+| none | yes | exact | 16,326 ex | — |
+
+The bound tightens monotonically downward and never crosses under the converged value — pinned by a
+test at 1000 vs 2000 sweeps (92.5 -> 45.1 -> 43.2 ex on the 2-target fixture).
+
+**`bound: 'exact' | 'lower' | 'upper'` is a field, not an inference.** The two solve modes truncate in
+opposite directions, so reading the sign off `converged` prints the wrong inequality on one of the two
+screens. `formatBoundedCost` (src/lib/currency.ts) is the single renderer; three tests pin the
+direction on both screens and all three fail when the ternary is swapped.
+
+**The guard.** Without a converged phase A there is no proper-policy value to seed from, and an
+unconverged 0-init V bounds the restart problem in neither direction. The solve returns `feasible:
+false` with a reason naming the limit that actually bit — the clock ("raise Search effort") or the
+sweep cap ("the step routes still cover it") — rather than quoting a figure with no meaning.
+
+**What this costs on the reported craft.** Six T1 mods on a `Body_Armours_str` from white: phase A
+alone needs ~92s, of which 99.8% is value iteration (actions 172ms, compile 42ms). Standard and
+Thorough therefore decline it; **Patient** produces an 8-step route reaching the target, `bound:
+upper`, E ~ 1.78M ex. That is the honest answer for a target this far out, but the 92s is a solver
+problem, not a physics one — see TODO 2 for the measured cause (an absolute `tolerance` of 1e-9 against
+values of ~2e6) and the two cautions on fixing it.
+
+**Two defects found alongside, both fixed.** The lab branch gave the MDP a fixed 60% of the effort
+budget while its step planner is bounded by `maxPlans` and takes no clock at all — so at Thorough, 24
+of 60 seconds went to nobody. It now takes the remainder, as the item branch already did. And
+`PolicyGraph`'s hint line was a `role="status"` wrapping a standing instruction and the `Clear` button:
+boilerplate queued for announcement next to the Item tab's "Last solve took Xs" region, with a control
+read out as part of it. The live region is now only the sentence that changes, mounted from the start
+and empty until a state is picked.
+
+**Suite.** `searchEffort.test.ts` was driving `runSolve` on a 6-target lab craft to assert the STEP
+planner's orb depth, and so bought a from-white MDP at Thorough/Patient budgets: 209s and 134s for
+numbers the assertions never read. It now calls `optimize` directly, keeping one `runSolve` case for
+the wiring. Full suite: **48 files, 952 passed, 23.0s** (was 3 failed, 940 passed, 346s).
+
+## The Lab's desecration hint contradicted the model (2026-08-24)
+
+Found while checking a real 6-mod Body Armour craft whose route read *"Desecrate — most likely lands
++# to Armour"*, twice, on a base whose desecrated pool holds **zero prefixes**. That looks like a bug
+and is not one: the ruling above (D4, user-confirmed 2026-08-23) is that normal mods DO enter the bone
+pool, so an unomened Desecration draws over `normal ∪ desecrated`.
+
+The hint next to the target picker said otherwise — *"it spans the base's whole desecrated pool"* —
+which reads as though a bone always produces a carved mod. Measured at ilvl 82:
+
+| base | carved weight | normal weight | P(any carved) | P(the one you asked for) |
+|---|---|---|---|---|
+| Body_Armours_str | 10,000 | 124,500 | 7.4% (1 in 13.4) | 1 in 135 |
+| Wands | 15,000 | 114,400 | 11.6% (1 in 8.6) | 1 in 129 |
+| Amulets | 31,000 | 173,650 | 15.1% (1 in 6.6) | 1 in 205 |
+
+So on a Body Armour, **93% of bones add an ordinary mod**. The copy now says that, with the figures.
+
+The deeper problem was that nothing pinned the ruling anywhere in the suite, which is how the copy
+drifted away from it. `desecrationGate.test.ts` now asserts on the MDP's own action space that an
+unomened bone (a) can add a NORMAL target — measured at 19% of its mass on `Body_Armours_dex_int` —
+and (b) leaves carved outcomes a minority; plus that a side-constrained bone on a side with no carved
+mods offers carved outcomes with probability zero, which is the ruling's most surprising consequence.
+
+## A Desecration offers three mods, not one (2026-08-24)
+
+User ruling, 2026-08-24: a bone puts **three** modifiers in front of you and you keep one; you cannot
+decline, so three bad offers still cost you a mod. The app modelled a single random draw — nothing in
+the engine knew about a choice at all. Measured at ilvl 82:
+
+| | 1 draw (modelled before) | 3 offered, keep one |
+|---|---|---|
+| a specific carved mod, Body Armour | 0.74% | 2.21% (**x2.98**) |
+| a specific normal mod, Body Armour | 9.67% | 26.3% (x2.72) |
+| **forced to burn the carved slot** | **6.69%** | **0.03%** |
+
+The second row is the bigger consequence: you only take a carved mod you didn't want when *all three*
+offers are carved, a 220x drop. So the `desJunk` / Omen-of-Light recovery branch is near-dead on a
+from-white craft — and the planner's habit of spending bones on ordinary mods before securing the
+carved one, which looked like a bug, was it pricing a 6.7% burn risk that is really 0.03%.
+
+**Where it is applied.** At the point a bone is SPENT — `plan.ts`'s desecrate step for the linear
+planner, an `offer` field on the MDP's desecrate actions — and never inside the three probability
+primitives. `desecrationBossProbability` and `desecrationBossAnySideProbability` are faithful ports of
+Java's `DesProbability` pinned by a differential fixture; that fixture is the oracle for the per-draw
+number and stayed green through the whole change, which is how we know the seam is in the right place.
+
+**The solver could not just take a new distribution.** Which of the three a player keeps is whichever
+leads to the cheapest state, so a bone's value is `E[min over the offer]` — a function of V, not a
+fixed distribution. Sorting outcomes by V ascending and writing `T_k` for the tail sum from k:
+
+    P(keep outcome k) = T_k^m - T_(k+1)^m        (m = offers shown)
+
+which at m = 1 collapses to `T_k - T_(k+1) = p_k`, so the ordinary case is the same formula rather than
+a branch around it. K is about 10 outcomes and only a Desecration pays the sort.
+
+**The graph had to move with it.** Edges are built from the action's distribution, which is per-DRAW.
+Left alone they would have drawn a 50% brick that the player really faces at 12.5% — and
+`simulatePolicyMean` samples those very edges, so the validator would have confirmed a cost the solver
+never computed. `realizedDist` applies the same tail weights to the published edges. Mutation-checked:
+reverting it makes the 100k-run walk cost 3.006 against the solver's 9/7.
+
+**Hand-computed anchor**, on the synthetic both-sides fixture where each draw is 1-of-2:
+
+    E = 1 + (7/8)*0 + (1/8)*(1 + E)  =>  E = 9/7      (was E = 3 under a single draw)
+
+with 100k Monte-Carlo runs of the published graph inside 3% of it.
+
+**Two tests changed price rather than expectation.** A Sinistral Necromancy omen at 0.5 used to beat
+the unconstrained route (1.5 vs 3); the offer closes that gap on its own (9/7 = 1.286), so at 0.5 the
+omen is now correctly declined. Both tests were written to pin *that an omen is weighed*, not that a
+particular price wins, so the omen was re-priced (0.5 -> 0.2, and 2 -> 0.4 in the linear planner's
+domination case) to keep them testing what they were written for.
+
+## A bone is the cheapest way to add an ordinary mod (2026-08-24)
+
+Follows directly from the offer of three. Desecration was modelled only when a carved mod was in play
+(`desecratable`), on the reasoning that otherwise "a Desecration could only ever add junk". With three
+offers and a keep-one choice that is wrong, and the prices make it badly wrong: a Preserved rib is
+0.31ex against an Exalt's 1.00ex, so a bone lands a named normal mod on a Body Armour for ~1.2ex where
+an Exalt needs ~9.6ex.
+
+Measured on a **held Rare** (no `restartCost`, so nothing masks the comparison), 3 normal targets:
+
+| base | bones excluded | bones available | |
+|---|---|---|---|
+| Wands | 4,073.8 ex | **1,215.5 ex** | −70% |
+| Body_Armours_str | 2,967.6 ex | **693.9 ex** | −77% |
+| Amulets | 54,834 ex | 54,834 ex | 0% — gate closed |
+
+And from a white base they make the solve **faster**, because the craft is genuinely easier:
+
+| targets | bones excluded | bones available |
+|---|---|---|
+| 4 | 5,824 ms, E = 173.8 ex | 2,327 ms, E = **26.3 ex** |
+| 5 | 76,119 ms, E = 435.0 ex | 13,975 ms, E = **44.6 ex** |
+| 6 | 120 s capped, E ≤ 82,210 ex | 120 s capped, E ≤ **645.5 ex** |
+
+The 6×T1 Body Armour craft that prompted the seeded solve also improves — phase A 314 s → 145 s,
+E 2.07M → 1.25M ex — though at 145 s it still needs the Patient preset.
+
+**RETRACTED 2026-09-10 — see "The bone price gate was never a necessary condition".** **The gate is a necessary condition, not a heuristic.** `bonePrice < DESECRATION_OFFER_COUNT ×
+exaltPrice`. The offer raises the chance of a hit by at most `m`, since `1−(1−p)^m ≤ m·p`; and a bone's
+per-draw `p` is strictly below an Exalt's, because its denominator also carries the carved pool. So a
+bone at `m` Exalts or more cannot win, and skipping it costs nothing — which is what keeps the desJunk
+axis, and the 3× lattice it brings, off amulets and rings. An absent bone price reads as "no bone",
+never as a free one (`stepCost` turns a missing key into 0, and a 0 here would switch desecration on
+for every base in a sheet that simply doesn't price bones).
+
+**A measurement mistake worth recording.** The first control deleted `prices.currency.desecrate` and
+showed a 0% difference everywhere — `pricesForBase` re-derives the bone price from the sheet's `bones`
+section, so both columns had bones on and the comparison was against itself. The real control is
+`policy: { excluded: new Set(['desecrate']) }`, the same mechanism the app's own currency toggles use.
+
+## Where the Omen of Light actually earns its price (2026-08-24)
+
+Raised as a suggestion — the Omen of Light removes a carved mod specifically, so it should help when a
+bone adds carved junk. It was already modelled (`lightOutcomes`, P=1) and is pushed OUTSIDE the
+`desecratable` block, so it does not depend on a carved mod being targeted — which matters now that
+letting bones compete for ordinary mods made "carved junk on a craft that wanted none" reachable.
+
+What the measurement adds is **when it is worth buying**, and the answer is: rarely.
+
+    3,095 ex  Omen of Light            (8.5 divine)  - certain
+    3,350 ex  Omen of Dextral Annulment (9.2 divine) - certain if the side holds only it
+    4,370 ex  Omen of Sinistral Annulment (12 divine)
+      158.7 ex  plain Annulment                       - random target
+
+So it is the cheapest CERTAIN removal of a carved mod, and 19.5x a random Annulment. Measured on a
+`Body_Armours_str` held Rare, target 5 ordinary + 1 carved, with the WRONG carved suffix stuck on it:
+
+| targets already landed | best move | E with omen | E without | omen worth |
+|---|---|---|---|---|
+| 0 | Chaos | 31,327 ex | 31,327 ex | 0 ex |
+| 2 | Annul | 31,610 ex | 31,610 ex | 0 ex |
+| 4 | Annul | 31,636 ex | 31,636 ex | 0 ex |
+| 5 | Annul | 31,410 ex | 31,410 ex | 0 ex |
+
+Zero throughout: a random Annulment at 158.7 ex, even eating a landed mod now and then, beats a 3,095 ex
+certainty on a craft costing ~31,000 ex. Same result on the newly-reachable no-carved-target case — the
+policy clears carved junk with a **Chaos Orb** (33.39 ex) and the omen is worth 0 ex there too.
+
+It is chosen on the reported 6-mod craft, at `5 mods · +1 desecrated` where E ≈ 9,185 chaos
+(~307,000 ex): there the omen is ~1% of the craft and a random annul risks five landed mods. That is
+the shape of the rule — the Omen of Light is a **protect a nearly-finished expensive item** tool, not a
+clean-up-junk one, and the model already draws that line without being told where it is.
+
+**Load-bearing caveat.** The 8.5-divine quote is hand-transcribed (2026-08-22, `omenQuotes`; poe.ninja
+has no omen endpoint). Every "worth 0 ex" above is a comparison against that number, so a materially
+different real price would move the line.
+
+## A Chaos restriction that never existed — built twice, retracted once (2026-08-24)
+
+Worth keeping as a process note more than a mechanics one.
+
+Reported: *"we cannot use a Chaos Orb on desecrated modifiers, even if they are normal modifiers gotten
+through desecration."* Built as an outright immunity. Then refined to a preference (take an ordinary
+affix if the item has one, the carved mod only if it does not) after reasoning that an immunity would
+declare a legal move impossible. Both shipped — `af9843fc`, `73fbcaf9`.
+
+**Neither was real.** The ruling had been retracted in the same conversation and the retraction was not
+picked up. A Chaos Orb takes the desecrated mod at the same uniform odds as anything else, and the item
+is clean afterwards. So does an Annulment. Reverted; `removeOutcomes` spares nothing.
+
+Three things this cost, all of them recorded here as fact at the time:
+
+- Two rounds of hand-recomputed tests and prices, for a rule that does not exist.
+- A claim that barring the removal made a 5-ordinary+1-carved Body Armour craft ~35% CHEAPER (by
+  protecting a landed carved target from a Chaos). That effect is gone with the rule.
+- A bracketed "known approximation" about mod provenance, sized at +0.0%/+5.3%, that only mattered
+  because of the restriction.
+
+The lesson is not "ask more questions" — the rule was stated plainly and then withdrawn plainly. It is
+that a ruling which arrives in conversation needs the same treatment as one that arrives in data: the
+LAST word wins, and a correction is easy to miss when it comes as an aside in a message about something
+else. Rulings now get written into docs/validation.md with the date they were confirmed AND re-read
+against later messages before being built on.
+
+## A bone is the cheapest way to add an ordinary mod (2026-08-24)
+
+Follows directly from the offer of three. Desecration was modelled only when a carved mod was in play
+(`desecratable`), on the reasoning that otherwise "a Desecration could only ever add junk". With three
+offers and a keep-one choice that is wrong, and the prices make it badly wrong: a Preserved rib is
+0.31ex against an Exalt's 1.00ex, so a bone lands a named normal mod on a Body Armour for ~1.2ex where
+an Exalt needs ~9.6ex.
+
+Measured on a **held Rare** (no `restartCost`, so nothing masks the comparison), 3 normal targets:
+
+| base | bones excluded | bones available | |
+|---|---|---|---|
+| Wands | 4,073.8 ex | **1,215.5 ex** | −70% |
+| Body_Armours_str | 2,967.6 ex | **693.9 ex** | −77% |
+| Amulets | 54,834 ex | 54,834 ex | 0% — gate closed |
+
+And from a white base they make the solve **faster**, because the craft is genuinely easier:
+
+| targets | bones excluded | bones available |
+|---|---|---|
+| 4 | 5,824 ms, E = 173.8 ex | 2,327 ms, E = **26.3 ex** |
+| 5 | 76,119 ms, E = 435.0 ex | 13,975 ms, E = **44.6 ex** |
+| 6 | 120 s capped, E ≤ 82,210 ex | 120 s capped, E ≤ **645.5 ex** |
+
+The 6×T1 Body Armour craft that prompted the seeded solve also improves — phase A 314 s → 145 s,
+E 2.07M → 1.25M ex — though at 145 s it still needs the Patient preset.
+
+**RETRACTED 2026-09-10 — see "The bone price gate was never a necessary condition".** **The gate is a necessary condition, not a heuristic.** `bonePrice < DESECRATION_OFFER_COUNT ×
+exaltPrice`. The offer raises the chance of a hit by at most `m`, since `1−(1−p)^m ≤ m·p`; and a bone's
+per-draw `p` is strictly below an Exalt's, because its denominator also carries the carved pool. So a
+bone at `m` Exalts or more cannot win, and skipping it costs nothing — which is what keeps the desJunk
+axis, and the 3× lattice it brings, off amulets and rings. An absent bone price reads as "no bone",
+never as a free one (`stepCost` turns a missing key into 0, and a 0 here would switch desecration on
+for every base in a sheet that simply doesn't price bones).
+
+**A measurement mistake worth recording.** The first control deleted `prices.currency.desecrate` and
+showed a 0% difference everywhere — `pricesForBase` re-derives the bone price from the sheet's `bones`
+section, so both columns had bones on and the comparison was against itself. The real control is
+`policy: { excluded: new Set(['desecrate']) }`, the same mechanism the app's own currency toggles use.
+
+## Where the Omen of Light actually earns its price (2026-08-24)
+
+Raised as a suggestion — the Omen of Light removes a carved mod specifically, so it should help when a
+bone adds carved junk. It was already modelled (`lightOutcomes`, P=1) and is pushed OUTSIDE the
+`desecratable` block, so it does not depend on a carved mod being targeted — which matters now that
+letting bones compete for ordinary mods made "carved junk on a craft that wanted none" reachable.
+
+What the measurement adds is **when it is worth buying**, and the answer is: rarely.
+
+    3,095 ex  Omen of Light            (8.5 divine)  - certain
+    3,350 ex  Omen of Dextral Annulment (9.2 divine) - certain if the side holds only it
+    4,370 ex  Omen of Sinistral Annulment (12 divine)
+      158.7 ex  plain Annulment                       - random target
+
+So it is the cheapest CERTAIN removal of a carved mod, and 19.5x a random Annulment. Measured on a
+`Body_Armours_str` held Rare, target 5 ordinary + 1 carved, with the WRONG carved suffix stuck on it:
+
+| targets already landed | best move | E with omen | E without | omen worth |
+|---|---|---|---|---|
+| 0 | Chaos | 31,327 ex | 31,327 ex | 0 ex |
+| 2 | Annul | 31,610 ex | 31,610 ex | 0 ex |
+| 4 | Annul | 31,636 ex | 31,636 ex | 0 ex |
+| 5 | Annul | 31,410 ex | 31,410 ex | 0 ex |
+
+Zero throughout: a random Annulment at 158.7 ex, even eating a landed mod now and then, beats a 3,095 ex
+certainty on a craft costing ~31,000 ex. Same result on the newly-reachable no-carved-target case — the
+policy clears carved junk with a **Chaos Orb** (33.39 ex) and the omen is worth 0 ex there too.
+
+It is chosen on the reported 6-mod craft, at `5 mods · +1 desecrated` where E ≈ 9,185 chaos
+(~307,000 ex): there the omen is ~1% of the craft and a random annul risks five landed mods. That is
+the shape of the rule — the Omen of Light is a **protect a nearly-finished expensive item** tool, not a
+clean-up-junk one, and the model already draws that line without being told where it is.
+
+**Load-bearing caveat.** The 8.5-divine quote is hand-transcribed (2026-08-22, `omenQuotes`; poe.ninja
+has no omen endpoint). Every "worth 0 ex" above is a comparison against that number, so a materially
+different real price would move the line.
+
+## What a Chaos Orb does to a carved modifier (2026-08-24)
+
+Landed on the third attempt, and both wrong answers are worth keeping because they are mirror images.
+
+1. **Originally**: a Chaos could take the carved mod freely. That made it the model's cheapest way to
+   clear carved junk at 33.39 ex — a move the game refuses, recommended as the best one, and reported
+   as fact in this document.
+2. **First fix**: barred entirely. That declared the opposite error — on an item whose ONLY modifier is
+   carved there is no ordinary affix to reroll, so the Chaos does take the carved one, and calling that
+   impossible is the same class of mistake in the other direction.
+3. **The rule** (user, after checking): a Chaos rerolls an ORDINARY affix whenever the item has one. So
+   the carved mod is out of the pool while anything else is there, and in the pool when nothing is. A
+   **preference, not an immunity** — `removeOutcomes`' `sparesCarvedWhenAble`, set only by
+   `chaosOutcomes`.
+
+**The consequence that is easy to miss** is not about clearing junk at all: a Chaos can no longer
+DESTROY a carved target already landed, as long as any ordinary affix remains. On a Body Armour
+targeting 5 ordinary + 1 carved with the wrong carved suffix stuck on, that is a **~35% cheaper craft**
+(≈31,400 ex → ≈20,300 ex), which dwarfs the cost of losing Chaos as a junk-clearer.
+
+**An Annulment is not restricted** — user-confirmed the same day. It takes a carved mod randomly like
+any other, so the Omen of Light makes that removal *certain* rather than *possible*. Had it gone the
+other way, carved junk would be a near-brick and the omen the price of ever desecrating again. Every
+"worth 0 ex" in the section above therefore stands: a 158.7 ex random Annulment beats a 3,095 ex
+certainty on any craft not already worth ~100x the omen, at every level of progress from 0 to 5 of 6
+targets landed.
+
+**Known approximation, size measured rather than asserted.** The ruling extends to ORDINARY mods a bone
+placed — provenance, not pool — and the state abstraction carries none for those (`jp`/`js` are counts,
+`present` is a bitmask). Modelling it means splitting every junk counter and tagging every present
+target, ~100x the lattice on a solve already at 145 s. Instead the error is bracketed: the truth lies
+between "Chaos fully usable" (today) and "Chaos unusable", so that gap is the worst it can cost.
+
+| craft | Chaos usable | Chaos barred | bracket |
+|---|---|---|---|
+| Wands x3, held Rare | 732 ex | 732 ex | +0.0% — Chaos best in 0/485 states |
+| Body_Armours_str x3, held Rare | 193 ex | 203 ex | +5.3% — Chaos best in 7/485 states |
+| Wands x4, from white | 26 ex | 26 ex | +0.0% — 0/1232 |
+| Body_Armours_str x5, from white | 14 ex | 14 ex | +0.0% — 0/2816 |
+
+A 0.31 ex bone offering three mods has left the 33.39 ex Chaos nearly unused, so the approximation is
+worth at most a few percent, in a known direction: it can only make a craft look cheaper than it is.
+
+**Testing note.** The first attempt at pinning this probed the POLICY GRAPH, which carries only the
+action chosen at each state — and since a Chaos is rarely optimal any more, the "carved mod spared"
+branch never appeared and the assertion passed vacuously. The tests probe `createActionSpace` directly
+instead, and assert both branches, each mutation-checked.
+
+## The desecration flag follows the MOD, not the pool (2026-08-24)
+
+The resolution of four attempts in one day, each built one step too literally on a ruling. The fact
+that settles all of them:
+
+> a desecration adds a mod to the item, and **that mod is flagged as desecrated because a desecration
+> applied it** — whatever pool it came from. Removing or changing that mod clears the flag, and the item
+> can be desecrated again.
+
+Three rules I had been modelling separately are one rule: *at most one desecrated mod* = at most one
+FLAGGED mod; *once per item, cleared by removing the desecrated modifier* = remove the flagged mod;
+*a Chaos cannot touch a desecrated mod* = retracted, and the Chaos has no special treatment at all.
+
+**What the abstraction gained, and what it lost.** `desJunk: 'none' | 'prefix' | 'suffix'` described an
+unwanted DESECRATED-POOL mod held on its own axis with its own slot. It became
+`flagged: none | junk-on-a-side | target-i`. Two things fall out:
+
+- The pool a mod came from stops being recorded at all, correctly — once a mod is on the item it fills
+  the same slot, blocks the same family, and every currency removes it the same way. Only the flag
+  survives, and only until the mod does.
+- The old axis DOUBLE-COUNTED: it held a desecrated mod outside `jp`/`js` while also charging it a slot,
+  so an item could hold a phantom extra affix. `prefUsed`/`sufUsed` lost their extra term.
+
+An earlier attempt at the same ruling added a standalone `boned` bit instead (branch
+`desecration-one-per-item`). That made a desecrated target on an unreplaceable item a permanent
+one-shot — E = Infinity — which the user rejected, and it broke the two-phase seed besides, since a
+permanent dead end means no restart-free proper policy exists. The flag model has no permanent dead
+ends (an Annulment always clears it), so the seed works and that branch is abandoned.
+
+**The model now reaches the real strategy unaided.** A bone marks whatever it applies, so the one
+Desecration is a resource to place well rather than an opener to spam. Asked for three ordinary mods on
+a held Wand, the policy now **opens with an Exalt and holds the bone back** — which is how the mechanic
+is played ("desecration is at the end, for the mods with the low weights"). The previous version, which
+let a bone be spent freely, opened with one and used it on every target. That behaviour is pinned by a
+test, because it is the strongest evidence the flag sits in the right place.
+
+### Every desecration figure re-measured
+
+Held Rare, three ordinary targets, no restart (so nothing masks the comparison):
+
+| base | bones excluded | bones available | |
+|---|---|---|---|
+| Wands | 4,073.8 ex | **2,181.3 ex** | −46% |
+| Body_Armours_str | 2,967.6 ex | **1,358.5 ex** | −54% |
+| Amulets | 54,834 ex | 54,834 ex | 0% — price gate closed |
+
+This **corrects the −70% / −54% pair** published under `974700c4`, which assumed a bone could be spent
+over and over.
+
+D4 sensitivity, on crafts with **no desecrated target at all** — also corrected, and smaller than the
+4x reported in TODO 1:
+
+| assumed weight | Wands x3 | Body_Armours_str x3 |
+|---|---|---|
+| 1 | 1,953 ex | 1,315 ex |
+| **1000 (shipped)** | **2,181 ex** | **1,359 ex** |
+| 20,000 | 4,074 ex | 1,478 ex |
+
+2.1x across the plausible range on Wands, 1.1x on Body Armour. Still worth pinning down, still TODO 1,
+but it is no longer setting the price of every craft to the degree claimed.
+
+The **Omen of Light** conclusion survives its third re-measurement: worth 0 ex at every level of
+progress on a Body Armour craft targeting 5 ordinary + 1 desecrated. A 158.7 ex random Annulment still
+beats a 3,095 ex certainty.
+
+### What it costs
+
+The flag axis is about **5x the solve time** when desecration is in play — a 4-target from-white Wand
+craft goes 1.9 s to 10.2 s, a 5-target one 15.9 s to 77.7 s. Both still converge; the 6-target craft
+caps out and returns a looser upper bound than it did. Accepted rather than approximated away: a looser
+honest bound beats a tighter wrong one, and TODO 3 (value iteration is 99.8% of a from-white solve, on
+an ABSOLUTE tolerance against values of ~2e6) is the standing fix and is now worth more.
+
+A free win found alongside: `desecratable` did not consult the currency policy, so excluding
+Desecration still enumerated the whole flag axis for nothing. Checking it there took the bones-excluded
+4-target craft from 12.2 s to 1.9 s.
+
+### And a real bug it exposed
+
+Reachability meant *"can reach the goal with SOME chance"*, which is only adequate while every action
+can be retried. States with no route at all were being backed up regardless: each sweep added another
+orb's cost, so their V climbed forever, `delta` never fell under `tolerance`, and `converged` came back
+false however long the solve ran — measured on a 2-target armour craft as E growing **11.4M → 113.6M ex
+when the sweep cap rose 10x**, while the start's own value had been stable throughout. Replaced with
+the standard almost-sure (Prob1) fixpoint, computed before value iteration with dead states pinned at
+Infinity, and computed PER PHASE since phase A runs without restart and has different dead ends. That
+craft now converges in 171 ms.
+
+## Value iteration: a stopping rule on the scale of the numbers (2026-08-24)
+
+`tolerance` was **absolute at 1e-9** while these values run to ~2e6 exalts, so a solve ground fifteen
+decades of residual to settle digits neither the price sheet nor the player has. It now defaults to a
+**thousandth of the cheapest action the craft can play**. Measured interleaved, three reps, on a
+4-target from-white Wand — the two sets of runs do not overlap:
+
+    flat 1e-9      median 17,477 ms   [15311, 17527, 17477]
+    scale-aware    median  9,898 ms   [ 9898, 10144,  9253]     1.77x
+
+The cost is a relative error of **1.0e-3 to 1.4e-3**, and two things make that acceptable rather than
+merely small. It is far below what the inputs support — the price sheet moves daily, the desecrated
+spawn weight is unverified by ~900x — and it is **one-directional**: the sequence stops ABOVE its limit,
+so the number overstates a craft's cost and never flatters it. The test asserts the direction, not just
+the magnitude; a symmetric closeness check would pass just as happily on an answer that was too cheap.
+
+The hand-computed tests keep their precision by asking for it (`EXACT = { tolerance: 1e-12 }`). They
+pin the model's arithmetic, not the stopping rule.
+
+**The residual is not the error.** A descending sequence stopping at Δ < tol still sits `tol/(1−r)`
+above its limit, and `r` is near 1 here — which is why the error is ~1e-3 and not ~1e-6. Dividing by
+10,000 instead buys 10x the accuracy for almost none of the speed (92.2 s against 50.1 s at n=5), so
+1,000 is the knee.
+
+### Two things tried and NOT kept
+
+**Sweeping toward the goal — a negative result.** `enumerateStates` counts `present` from 0 to 2^n − 1,
+so `present === GOAL` sorts last and every sweep appeared to run away from the answer. Reordering the
+lattice nearest-goal-first looked like free money. It is not: measured interleaved, five reps, on a
+5-target push-forward solve —
+
+    none  median 9,533 ms      near  median 8,471 ms      far  median 8,484 ms
+
+*near* and *far* are indistinguishable from each other, and both sit inside the run-to-run spread. The
+premise was wrong: in this model most transitions are BRICKS (85–99% on a from-white craft), so `V[near]`
+depends mostly on `V[far]` and information does not flow purely backward from the goal. Reverted. Worth
+recording so the next person does not spend the afternoon on it.
+
+**A seed repair that repaired nothing.** Phase B is an upper bound because phase A reached a fixed
+point, and stopping phase A at residual `tol` weakens that — so the seed was scaled by
+`cheapest / (cheapest − tol)` to put it back on the excessive side. The derivation is sound
+(`T(cV) <= c·T(V)` for `c >= 1` with positive costs) and the code was one line. It did nothing
+measurable: removing it moved the answer in the FIFTH decimal at every tolerance from 1e-4 to 1.5e-1,
+in both directions, and never turned a violated bound into a satisfied one. Phase B's own truncation
+margin — `tol/(1−r)`, orders larger — is what actually holds the bound up, and that is measured rather
+than assumed. Removed. A mutation test that cannot kill a line is telling you something about the line.
+
+### Measurement discipline
+
+Three conclusions were drawn and discarded in this work before the method was fixed. Single runs of
+these solves have a **~40% spread**: the unchanged code measured 103.8 s and then 145.6 s for identical
+work. The sweep-order change was called a large win, then a large regression, on that basis — both from
+noise. Every number above is a median of interleaved repetitions, and anything that cannot be separated
+that way is reported as indistinguishable rather than as a result.
+
+## Making a slot's alternatives cost what one mod costs (2026-08-27)
+
+Slot alternatives shipped working but expensive: measured on a 4-slot Wands craft from white, a
+three-way group ran 2.8x (cross-family) to 5x (same-family) the single-mod solve. The maintainer's read —
+*"if x is on the item, we do not need to search for y"* — is right about the goal and wrong about the
+pool. Once X lands you never need to FIND Y (`isAccepting` already stops asking), but Y is still in the
+pool: deleting it does not stop the game rolling it, it only makes the model lie about the next Exalt.
+Y stops being a target and becomes an obstacle.
+
+The redundancy is real, one step over. The solver tracks WHICH alternative landed when it only needs to
+know HOW MANY, and in what condition. Two exact reductions, and they are not interchangeable — they
+differ in whether the members can be on the item at the same time.
+
+**Same family (`increased Fire / Cold / Lightning` are one family): MERGE.** Only one can ever land, and
+once any of them does the whole family is excluded — so every later draw sees the identical pool and a
+removal returns the slot to empty either way. `McTarget` became one POSITION holding several `mods`;
+weights sum on arrival. Exact regardless of the members' weights or tier floors, because individual
+weights stop mattering the moment the family is occupied and on the way in they simply add up.
+
+**Different families (`Gain % as Extra Cold` / `… Lightning`): QUOTIENT.** These cannot merge — both can
+land, each takes a different mod out of the pool, and the "you got both" state is a finished item. Only
+the labelling can go: a canonicalising `StateEncoder` picks one spelling of `(Cold present, Lightning
+blocked)` and the lattice carries only that. One choke point rather than 24 — every successor in
+`markovActions.ts` is named through `encodeState`, so wrapping that reaches all of them, and `addTo`
+already sums duplicates so the collapse is free.
+
+**Measured, interleaved, 4 reps each, with the mechanism toggled in place so nothing else confounds it.**
+4-slot Wands craft from white, `solver: 'policy'`:
+
+| group | before | after | graph nodes | cost |
+|---|---|---|---|---|
+| same-family 3-way | 5.18 / 4.96 / 5.27 / 5.19 s | **2.17 / 2.03 / 2.05 / 1.96 s** | 60 → 32 | `256.959615 exact` in all 8 |
+| cross-family 3-way | 14.08 / 14.41 / 13.75 / 13.74 s | **3.86 / 4.25 / 4.48 / 4.41 s** | 122 → 53 | `217.990477 exact` in all 8 |
+
+**2.5x and 3.2x, with the answer identical to six decimals in every run** — which is what makes these
+optimisations rather than trades. Both beat their state-count predictions (2.1x and 2.7x) because the
+collapsed outcome distributions are smaller too.
+
+Costs move in the last bits and no further, and the reason is the mechanism: merging sums weights and
+divides once where separate targets each divided first, and canonicalising re-orders a floating-point
+sum. A same-family anchor moved 3 ulp (23.539201819271987 → …984), a cross-family one 1 ulp. Those two
+anchors are `toBeCloseTo(…, 12)`; every other anchor is `toBe`.
+
+**A prediction that was wrong, recorded because it was load-bearing.** `Wands/DamageGainedAsFire` was
+expected to be disqualified from the cross-family class: `FireDamage` also holds
+`PerfectEssence_FireDamage`, so occupying Fire excludes a mod that occupying Cold does not. It is not
+disqualified, because a Perfect Essence FORCES its mod rather than drawing one — `pools.essence` is read
+exactly once in the whole optimizer, to check a target is in it, and is never a denominator. The essence
+pool stays in the interchangeability signature anyway: the regular-Essence action (TODO 1) makes it a
+real weighted draw, and a condition added then is a condition added after the numbers were already wrong.
+
+**Mutation testing: 23 mutants, 14 caught, 9 survivors — every one a real gap.** The survivors clustered
+on one theme worth stating: merging runs BEFORE three validity checks, and all three count POSITIONS.
+"All prefixes or all suffixes", "two slots both want family X" and "at most one essence modifier" each
+compare a list that merging has already collapsed, so anything wrongly swallowed reports as one item and
+sails through. `mergeKey`'s guards are therefore load-bearing for checks downstream of them, and each is
+reachable in the shipped data rather than theoretical:
+
+- **ten families span both sides on one base** — `Bows/Desecrated_CompanionDamage` is a prefix and `…_2`
+  a suffix of `CompanionDamage`, same source, same weight, everything the merge looks at except the side;
+- **six bases carry two or more perfect-essence mods of one family** (`Bows` among them);
+- a held mod graded against a neighbour's tier floor reports a satisfied slot as `blocked`, so the plan
+  opens by annulling a mod the player wanted — only a from-ITEM craft catches it, and every test here
+  had started from white.
+
+Two conditions turned out to be inert in 0.5.0 and are pinned with built pools rather than found ones:
+**pool exclusion** (every interchangeable pair in the shipped data also has families of equal pool
+weight) and **boss-pool counts** (every differing-boss pair on Wands shares a family). Both are
+necessary — occupying a family removes its whole weight from every later denominator, and the boss draw
+is uniform over candidates rather than weighted, so weight is the wrong question there. Leaving them
+untested until a refresh moved a weight is how they would have become wrong silently.
+
+**What a player can act on.** The merge is unconditional; the quotient is measured against the data every
+solve and quietly does not apply when the data says no. Asking DIFFERENT TIERS of two cross-family
+alternatives switches it off, and that is the one cause the player controls — `MIXED_TIER_NOTE` says so
+on the group row, worded as a planner fact ("slower to compute, same answer") rather than a game rule,
+and promising no number, since matching the tiers is necessary for the fold and not sufficient.
+
+## The solver was evaluating the same move at two prices (2026-08-28)
+
+Both of the reductions above attack the STATE COUNT. Nothing had ever attacked the other axis — the work
+done per state — and that is where the next win was, sitting in plain sight.
+
+A Rare state on a Wand compiles about 27 actions, and 23-31% of them turn out to be **exact duplicates
+of a cheaper sibling**: same outcome distribution, bit for bit, at a higher price. Measured on real 0.5.0
+crafts before anything was built (24.3% on a 4-target Wand from white, 22.7% on a 3-target Body Armour,
+31.1% on a held Rare Wand), from four independent causes:
+
+- **A side omen that constrains nothing.** `addOutcomes` uses `constrainTo` only to close the other side,
+  so a Sinistral Exaltation is the same computation as a plain one wherever the suffix side is already
+  full — at 20-27x the price. The *opposite* variant was already dropped by the empty-`dist` guard, which
+  is why the survivor is the duplicate. Biggest single cause: 2,556 of 8,767 duplicates on the Wand craft.
+- **A strength that buys nothing.** Greater/Perfect raise the minimum tier a roll can produce; where the
+  remaining addable mods all sit above the floor anyway, only the price moves. 768 more.
+- **A boss whose pool is the whole legal pool** — the case the desecrate block had noted for months and
+  only tie-broken.
+- **An Omen of Light where the flagged mod is the only thing an Annulment could take.**
+
+The fix is one fold at `push`, the choke point through which every action already enters the space: keep
+the cheapest spelling of each outcome distribution. Exact, because with the distribution held fixed an
+action's value `(cost + Σ p·V)/(1 − pStay)` is monotone in cost — a strictly cheaper duplicate already
+had strictly lower value and already won the argmin, and on equal cost the first survives, which is the
+order `bestAction`'s strict `<` already resolved in. So this does not merely cost the same; it reproduces
+the same POLICY, including which action the graph names.
+
+**Interleaved, six crafts, 60 runs, medians:**
+
+| craft | before | after | |
+|---|---|---|---|
+| 3 targets, Body Armour, from white | 0.13s | **0.11s** | 1.18x |
+| 3 targets, held Rare Wand | 0.39s | **0.33s** | 1.20x |
+| 5 targets, Wand, from white | 9.41s | **7.08s** | 1.33x |
+| 4 targets T2, Wand, from white | 2.65s | **1.92s** | 1.38x |
+| 4 targets incl. a carved one, held Rare | 2.22s | **1.57s** | 1.41x |
+| 4 targets, Wand, from white | 2.00s | **1.33s** | 1.51x |
+
+Every craft returned **exactly one** `(expectedCost, bound)` across all 60 runs with the fold on and off
+— e.g. `1899.257096509057 exact` on all twelve runs of the 5-target craft. That, not the timings, is the
+result: the answer cannot move, and the 1,182-test suite passed unchanged.
+
+`isRestart` is in the signature and has to be. An Annulment that empties a one-mod item lands on the
+start state with P=1 exactly as a restart does, and phase A runs push-forward only — folding those two
+would leave phase A with no action at all there, an Infinity where a real value belongs, and a different
+seed for phase B. That one is mutation-tested; so are the fold itself, keeping the cheaper spelling, and
+replacing in place rather than appending.
+
+`offer` is in the signature too and **no craft can exercise it** — mutating it out changes nothing. The
+reason is structural rather than lucky: the only action with `offer > 1` is a Desecration, and a
+Desecration is the only thing that flags what it placed, so its outcomes differ from every unflagged
+action's in the state key itself. There is a test on that invariant rather than on the unreachable guard,
+so a second offer mechanic that does not flag goes red next to the term protecting it.
+
+Two pre-existing tests turned out to pin both directions already, on real semantics: `markovEssenceDesecrate`
+asserts that where the untargeted draw and the Blackblooded one coincide the planner reports the
+omen-free step (now folded rather than tie-broken), and that a Sinistral Necromancy omen which genuinely
+narrows the draw is still offered and still bought.
+
+### Two levers this closes on measurement
+
+**Policy iteration for phase A: dead.** `evaluateClosedForm` is fast only because restart states are
+absorbing and are 98% of the lattice. Phase A has no restart, so every phase-A policy plays forward
+everywhere — which is the chain `heuristicPolicy` already records burning 5,000,000 sweeps and an entire
+deadline. Evaluation there degenerates into the problem being solved.
+
+**Prioritised sweeping: dead, and now measured rather than argued.** A worklist pays off when the residual
+is LOCALISED. Instrumenting phase A to count states moving by more than `tol` per sweep says it is not:
+
+| craft | sweeps | moving at sweep 1 | at 50% | at the end |
+|---|---|---|---|---|
+| 4-target Wand, from white | 1,238 | 99.8% of N | 99.2% | 31.9%, then 2.1%, then 0 |
+| 3-target Body Armour | 174 | 99.6% | 99.6% | 3.5%, then 0.1%, then 0 |
+| 3-target held Wand | 814 | 99.6% | 99.4% | 71.2%, then 24.2%, then 0 |
+
+Essentially every state moves on essentially every sweep until the last two or three. That is a global
+slow mode, not a thin spine: a worklist would re-enqueue nearly everything each round and pay predecessor
+bookkeeping for it. The same instrumentation also found **zero** actions touching an Infinity-pinned
+state on any of the three crafts, closing a third candidate before it was written.
+
+
+## Is there any point to the effort ladder? (2026-08-28)
+
+The maintainer's question, and a fair one: *"people will rather wait and have a finished way instead of a
+semi done way."* A campaign over **18 realistic crafts and 108 solves** says the instinct is right but
+the culprit is the SOLVER, not the ladder.
+
+Until now only `exhaustive` set `solver: 'policy'`. The other four — including `standard`, the default
+— ran Gauss-Seidel value iteration, which stops on a residual TOLERANCE and therefore prints a ceiling
+(`≤ x`) when it runs out. Policy iteration stops on a CERTIFICATE: the policy stopped changing, so no
+action anywhere improves on it.
+
+### Policy iteration did not lose a single cell
+
+| | exact | ceiling | no number |
+|---|---|---|---|
+| Quick / VI | 6 | 4 | 8 |
+| Quick / **PI** | **10** | **0** | 8 |
+| Standard / VI | 9 | 5 | 4 |
+| Standard / **PI** | **14** | **0** | 4 |
+| Thorough / VI | 10 | 6 | 2 |
+| Thorough / **PI** | **16** | **0** | 2 |
+
+**PI produced a ceiling zero times.** It either solves exactly or reports it could not start — which is
+precisely the "semi done" outcome the question was about.
+
+### Waiting does not rescue value iteration
+
+The direct test. At Patient's full 300 s:
+
+| craft | VI @ 300s | PI | VI high by |
+|---|---|---|---|
+| wand-5 | 546 exact (96.5s) | 546 exact (**4.3s**) | — |
+| wand-6 | ≤2,115 (301s) | 1,319 exact (**19.7s**) | 1.60x |
+| wand-3-T1 | ≤326,624 (300s) | 240,666 exact (**4.9s**) | 1.36x |
+| wand-4-T2 | ≤54,660 (300s) | 50,934 exact (**7.7s**) | 1.07x |
+| wand-6-T2 | ≤266,824 (306s) | 108,966 exact (155s) | **2.45x** |
+| armour-4-T1 | ≤18,553 (300s) | 17,030 exact (**14.1s**) | 1.09x |
+| armour-6 | ≤909 (302s) | 855 exact (**21.6s**) | 1.06x |
+| amulet-4 | ≤174,414 (300s) | 167,889 exact (99.9s) | 1.04x |
+
+Five minutes of VI still leaves a ceiling on 7 of 8. **Switching solver beats raising effort**:
+wand-4-T2 is `≤110,585` under VI at Thorough (60 s) and the exact `50,934` under PI at STANDARD (6.7 s).
+Patient-PI and Exhaustive-PI return byte-identical costs (`108965.74824797024` for wand-6-T2 at both),
+so `exact` really is converged rather than truncated.
+
+### Why it cannot regress a number into a refusal
+
+The property that makes the swap safe rather than merely better on average. "No number" comes from
+**phase A** failing, and phase A is plain VI on both paths — `markovFromItem` returns `fail(...)` before
+it reads the solver choice. A phase B that runs out under PI yields `bound: 'upper'`, the same kind of
+ceiling VI gives. The measured no-number counts are identical at every rung (8/8, 4/4, 2/2), exactly as
+that predicts, and `solve.test.ts` now pins both halves on a Rings craft bounded by SWEEPS rather than
+by the clock (a wall-clock bound would be flaky by construction): at 5,000 sweeps VI gives `≤8,906` and
+PI the exact `781.82`; at 2,000 neither can finish phase A and both refuse.
+
+### Two negatives worth keeping
+
+**The Item tab is wholly inert across the ladder.** All three held-item crafts returned the same answer
+in the same time (0.13–1.5 s) at every preset. There is no phase B without a restart, so effort has
+nothing to buy there.
+
+**Only 1 craft of 18 changed frontier output between rungs** — wand-6-T2, from 2 alternatives / 5,760
+plans at Standard to 7 / 368,640 at Thorough. Every other craft produced identical frontier output at
+every rung. Real, but thin, and the spread holds only one craft big enough to exercise `maxPlans`.
+
+### And the hints were already wrong
+
+Re-measuring the shape the hints describe (6 T2 targets on Wands, budget 600, interleaved, 3 reps):
+**Standard 24.9 s, Thorough 84.8 s** end to end, against hints saying 15 s and "roughly a minute". The
+old figures quoted the budget search ALONE and left the MDP out of a wait the user experiences as one.
+Solver-independent — VI 24.86 s vs PI 24.45 s at Standard, 84.78 vs 85.38 at Thorough — which confirms
+the reading that a budgeted craft is bound by `maxNodes`, not by the clock. `maxMillis` governs only
+the model, via `clockLeft()`. Hints corrected; the ladder's own numbers left alone.
+
+### Not done here
+
+Collapsing the ladder. The two negatives above argue for it and the PI results weaken the case for five
+rungs, but it is a separate decision. What this entry settles is that the rungs no longer differ in
+RIGOUR — every one ends on a proof — only in how long they may take to reach one.
+
+
+## The MDP learns to buy an Essence (2026-08-28)
+
+The last place in the app where a player asked a reasonable question and got no answer. A craft naming
+an essence-only mod was refused outright — *"this model has no Essence action yet"* — and fell through
+to the step routes. Perfect essences had been modelled for weeks; only the REGULAR grade was missing.
+
+The gap was genuinely just the action. `essenceForcedProbability` already existed, `PlanStep` already
+had `{ currency: 'essence'; add; essenceTier; essenceLevel }`, `stepCost` already priced it as
+`essence:<level>:<modId>`, and the state had carried rarity since the Magic rung was added. So the work
+was one outcome builder mirroring the probability primitive condition for condition, plus letting the
+target through two validators.
+
+### Three things the data decided
+
+**An essence mod's tiers ARE its levels**, ascending exactly like a normal mod's: `Lesser Essence of
+Alacrity` (ilvl 15) → `Essence of Alacrity` (30) → `Greater Essence of Alacrity` (60), against
+`of Talent` [9,12] → `of Nimbleness` [13,16] → … So `minTierIndex` needed no special case, and
+`mod.tiers[minTierIndex]` is at once the tier the player receives, the essence they buy, and the price
+key. It also gives the policy graph a label worth reading: the step says **"Greater Essence of
+Alacrity"**, which is what goes in a trade search, rather than "Essence (greater)".
+
+**The side-room check is against the RARE cap, not the Magic one.** An Essence converts as it adds, so
+the slot it needs is a slot on the item it produces — the same treatment a Regal gets. Checking the
+Magic cap (1 per side) would refuse a legal essence on the commonest shape there is: a transmuted item
+that happened to roll the other side. Mutation testing caught this; the cost tests did not, because the
+wrong answer is still a legal route at a higher price and the argmin simply hides it.
+
+**Both planners buy the same level, and that is a shared LIMITATION as much as an agreement.** The MDP
+mirrors the linear planner's `clamp(minTierIndex)` rather than shopping for a cheaper level that would
+also satisfy the target, because two models pricing one step differently is how the D8 desecration
+mispricing survived. But the sheet is **not monotone in level** — Essence of Abrasion runs Lesser 116ex,
+Normal 107ex, Greater 0.81ex — so any level at or above `minIndex` satisfies the target and both
+planners can be buying one 100x dearer than one that would do. Fixing that belongs wherever the two
+share the choice; doing it in one of them would recreate D8.
+
+### Two refusals, replacing one that was too broad
+
+`optimizeItemMarkov` carried a blanket `applicable: false` for any regular-essence target, reasoning
+that those need a Magic item while the model starts from the Rare you hold. Half right — and the wrong
+half was refusing the case that works, since the Lab's from-white craft climbs through Magic on its way
+up. It is gone. What replaces it is narrower and can name the mod: from a held **Rare** the action is
+genuinely unreachable, so `markovFromItem` says *"can only be added by a regular Essence, which needs a
+Magic item — this one is already Rare"*. The generic *"no policy reaches the target"* told the reader
+nothing to act on.
+
+An older test asserting the reason "blames the missing action rather than the rarity" is now inverted,
+and the inversion is the point: when there was no action, naming the rarity described a limit that was
+not binding. Now the action exists and the rarity IS the binding constraint.
+
+### Verified
+
+Hand-computed on a synthetic pool where a Transmute can only land one mod and the Essence is the only
+route to a suffix: E = 0.2 + 5 exactly, with the three levels priced 5 / 50 / 500 apart so a wrong
+level cannot hide in a tolerance. On real 0.5.0 data: the MDP's chosen `tierIndex` and `level` equal the
+linear planner's, and `actionCostOf` equals `stepCost` through the two different entry points. Plus a
+40k-run policy simulation, because a P=1 edge is exactly where a mis-encoded successor hides — nothing
+else in the distribution can dilute it.
+
+Five of six guards were caught by mutation testing after two rounds; the sixth (`excluded(mod, occ)`)
+is unreachable by construction, since two slots wanting one family are refused upstream — the same
+reason the identical line in `addOutcomes` is labelled defensive.
+
+### Found on the way, not fixed
+
+**A lone essence target still throws in the LINEAR planner** — *"an essence-only mod needs a Magic item
+first"* — and `runSolve` calls that planner before the model, so the throw takes down a compute the MDP
+could now answer. That is the inverse of the standing rule that an MDP failure must never delete the
+frontier. Recorded in TODO 2.
+
+
+## A better essence is usually the cheaper one (2026-08-29)
+
+Three fixes, two of them consequences of teaching the model to buy an Essence the day before.
+
+### The step planner was taking the model's answer down with it
+
+Ask for ONLY an essence mod — the most natural essence query there is — and `runSolve` died before the
+model ran. `optimize()` throws *"an essence-only mod needs a Magic item first — include at least one
+rollable mod in the target"*, and it was called unguarded. The MDP answers that craft perfectly well
+(transmute, roll whatever lands, then essence), so from the moment it learned the Essence action the app
+was throwing away an answer it had.
+
+`frontierOrReason` is the mirror of `markovOrReason`, which has protected the frontier from a model
+failure for months. The rule was always symmetric; only one half had ever been reachable.
+`EngineResult.reason` carries the planner's own sentence, and `FrontierView` prefers it over the generic
+"nothing this search tried worked" — a search that RAN and found nothing and a planner that DECLINED are
+different answers, and telling the second reader to try a lower tier sends them to fix something that
+was never the problem.
+
+### Both planners were quoting essences ~13x too dear, on average
+
+An essence mod's tiers ascend, so every level at or above the wanted one satisfies the target **and**
+rolls better stats. Both planners took the wanted level itself — `clamp(minTierIndex)` — on the
+reasonable-sounding assumption that a weaker essence is a cheaper one.
+
+**It is not, for 250 of the 302 fully-priced essences in 0.5.0 — 83%.** Measured across all 317 essence
+targets, choosing the cheapest satisfying level instead:
+
+| | before | after |
+|---|---|---|
+| total quoted price, all targets | 8,595.8 ex | **646.6 ex** (13.3x cheaper) |
+| targets whose level changed | — | 251 of 317 (79%) |
+| worst single case | `Bows/Essence_FireDamage` 364.2 ex | **0.3 ex** (1,214x) |
+
+Examples of the shape: `Amulets/Essence_FireResistance` lesser 15 / normal 100 / **greater 1.886**;
+`Amulets/Essence_ColdResistance` 20 / 54.99 / **0.9385**. Since the optimizer ranks plans BY cost, this
+was a wrong recommendation and not merely a wrong total.
+
+`cheapestEssenceLevel` lives in `cost.ts` and **both planners call it** — one function on purpose, since
+two models pricing one step differently is exactly how the D8 desecration mispricing survived. It prices
+candidates through `stepCost` rather than the raw key, so a level whose per-mod entry is missing is
+compared at the `essence_<lvl>` fallback it will actually be charged; ties keep the lower level, so a
+flat sheet reproduces the old behaviour exactly. The linear planner resolves it **once per craft**, not
+per ordering — `buildParetoSteps` runs for every permutation the search tries.
+
+### The ladder is three rungs
+
+Retired `thorough` and `patient`. Not because effort stopped mattering — the MDP gradient under policy
+iteration is real (Quick 10 of 18 crafts exact, Standard 14, Thorough 16, Patient 18) — but because two
+rungs overlapped: Patient and Exhaustive returned **byte-identical costs** on every hard craft, and
+Thorough sat between neighbours that already bracketed it.
+
+The surviving top rung keeps Exhaustive's 900 s clock rather than Patient's 300 s, deliberately: every
+craft in the 18-craft spread settled inside ~300 s, but 18 crafts is a spread and not a census, the
+clock is a ceiling rather than a promise, `maxSweeps` is usually what binds, and cancel is a worker
+`terminate()`.
+
+**A retired rung maps UPWARD.** `read()`'s unknown-id fallback is right for a corrupt value and wrong
+here: it would have moved someone who deliberately chose Patient to a *shorter* search and a worse
+answer without telling them. `RETIRED_EFFORT` is honoured by `limitsFor` too, so a stored id reaching
+the solver by any path — a worker message, a test, a link — lands on the successor.
+
+### Sentry: the gating verified, not assumed
+
+No DSN was added; the maintainer sets it in Vercel, and the production build runs there, so a local `.env` would
+not reach the site. What was checked is that the build-time gating behaves as documented — the check
+that would have caught the 2026-08-26 error, where a bundle was profiled with Sentry compiled out:
+
+| build | entry chunk | Sentry chunk |
+|---|---|---|
+| no DSN | 374.07 kB (gzip 113.75) | — |
+| DSN set | 375.83 kB (gzip 114.60) | 479.24 kB (gzip 158.85), separate |
+
+The entry chunk moves 0.85 kB gzip because the SDK is a **dynamic** import; a static one took it to
+202 kB. `warnIfUnmonitored` prints on the unset build as intended. Steps now live in
+`docs/DEVELOPMENT.md` where a deployer will find them, pointing at `.env.example` as canonical rather
+than duplicating it.
+
+
+## Making Sentry worth having (2026-08-29)
+
+Turning the DSN on closed the "we hear nothing" gap. Two more gaps decided whether what we now hear is
+worth reading, and both were found by looking rather than assumed.
+
+**No source maps.** An issue would have read `index-R5rPqtGC.js:1:284729` inside a function called
+`Xe`. `build.sourcemap: true` now, served publicly — which costs ~2.2 MB of deploy and **nothing** in
+page weight, since a browser fetches a `.map` only with devtools open. Public is the right trade here
+specifically: the repo is public and AGPL-3.0, so a map reveals nothing GitHub does not already. The
+alternative (`'hidden'` plus `@sentry/vite-plugin` uploading them) needs a `SENTRY_AUTH_TOKEN` — which,
+unlike a DSN, is a genuine secret to store and rotate. Worth switching to only if the repo goes private.
+
+**The solver reported nothing.** Everything hard in this codebase — the MDP, policy iteration, the
+action space — runs in a Web Worker, and the main-thread SDK does not see it. A throw there was a
+progress bar that stopped.
+
+The obvious fix is a `Sentry.init` inside the worker, and it is the wrong one: that is the entire
+158 kB gzip SDK on the thread whose whole job is to keep weight off the one the user is looking at, and
+this app respawns the worker on **every cancel**. The worker already had an error channel to the main
+thread, which already has the SDK loaded. So it now sends `stack` alongside `message`, and
+`engineClient` rebuilds the Error and reports it with `origin: worker-solve` or `worker-fatal`. Nothing
+extra is downloaded and the worker's startup cost is unchanged.
+
+One thing this exposed on the way: **the worker's outer catch is no longer what its comment said.** It
+used to be where the planner's "that target is illegal" refusals surfaced. Since `frontierOrReason` and
+`markovOrReason` wrap both planners, those now come back as a `reason` on a result that returns
+normally — so what reaches the catch should be genuinely unexpected, which is what makes reporting it
+sane rather than noise. If the issue tracker fills with validation sentences, that is the signal some
+path is unwrapped, not a reason to stop reporting.
+
+### The bug the test exists for
+
+The first version tagged the report by hanging a `tags` property off the Error:
+
+```ts
+reportError(Object.assign(err, { tags: { origin } }));   // type-checks, runs, reports — no tags
+```
+
+Sentry reads tags from `captureException`'s **second argument** and nowhere else, so that silently
+dropped them. It type-checked, it ran, the error arrived — only the tag was missing, which is the kind
+of thing nobody notices until they need to filter by it. `reportError(error, context)` carries them
+now, the queue carries them too (an error thrown before the chunk lands is the startup case most worth
+seeing, and replaying it untagged files it in the wrong place), and `sentry.test.ts` mutation-pins all
+three: the live path, the queue replay, and the queue's 20-item cap.
+
+
+## The from-item planner learns orb strength, by decomposing it (2026-09-01)
+
+`baseTransforms` set no `tier` on any add, so every plan the from-item planner built used a
+base-strength orb; it reported `currencyDepth: 'base-only'` and the badge said so. TODO 5 proposed
+copying the from-white **estimate-then-reduce throttle**. Three measurements said that was the wrong
+fix, and a fourth said a better one was available.
+
+### 1. The naive product is unusable, and the throttle would have been worse than slow
+
+Skeleton count for `j` junk and `m` missing rollable mods is `Σ_c C(j,c)·C(m,c)·c!·(j+m−c)!`. Measured
+against the real planner, the model is exact — `j=2, m=5` gives 14,640 skeletons and **295,680 plans in
+3.6–3.9 s**, reproducing the figure recorded in `fromItem.ts`.
+
+Running the code's own `estimate()` ladder at its default `maxPlans` of 100,000:
+
+| craft (j, m) | plans today | at `full` | at `base+strongest` | rung it would pick |
+|---|---|---|---|---|
+| j=1, m=4 | 2,688 | 217,728 | 43,008 | `base+strongest` |
+| j=3, m=3 | 10,980 | 296,460 | 87,840 | `base+strongest` |
+| j=2, m=4 | 20,352 | 1,648,512 | 325,632 | **`strongest-only`** |
+| j=3, m=4 | 168,192 | 13,623,552 | 2,691,072 | **`strongest-only`** |
+| j=2, m=5 | 295,680 | 71,850,240 | 9,461,760 | **`strongest-only`** |
+
+`reduceOrbTiers` at `strongest-only` returns `[strongest]` — it **drops base entirely**. So on every
+craft big enough to need the throttle it would have deleted the cheap end of the frontier this planner
+returns today: not a wider search, a changed answer. There is no rung equal to today's behaviour and
+the ladder has no fourth branch to add one to.
+
+### 2. The axis does not need enumerating
+
+`applyStep` reads only `currency` / `remove` / `add` / `adds` / `essenceTier` — never `tier`,
+`constrainTo` or `omen` — and `stepProbability` is pure in `(data, state, step)` on all ten branches.
+So the state trajectory is fixed by the skeleton and the levers move only price and probability. That
+makes the cost separable: `E = (Σ c_k·S_{k−1})/S_n = Σ_k c_k / T_k` with `T_k = Π_{i≥k} p_i` the SUFFIX
+product, so `T_k = p_k·T_{k+1}` and `E_k = E_{k+1} + c_k/T_k` — a backward DP over the steps.
+
+Pruning it is exact rather than heuristic. For `T_a ≥ T_b`, `E_a ≤ E_b`, extending both by `(p, c)`
+gives `p·T_a ≥ p·T_b` and `E_a + c/(p·T_a) ≤ E_b + c/(p·T_b)`, so domination survives every extension.
+Needs `c ≥ 0` and `p > 0`; `leverOptions` guarantees both. `leverDp.test.ts` checks it against an actual
+brute force on eight skeleton shapes plus the live sheet, rather than taking the algebra's word.
+
+### 3. It is FASTER, and it searches ~192x more
+
+Interleaved within each rep — A then B, per craft, per rep — because this machine has a documented ~40%
+wall-clock spread and two opposite conclusions have already been drawn here from batched runs. Medians
+of 3, all reps shown.
+
+| craft | old | new | | plans old → new |
+|---|---|---|---|---|
+| wand j2 m5 T1 | **3,667 ms** [3667, 4599, 3459] | **1,050 ms** [1037, 1050, 1110] | **3.49x** | 295,680 → 56,687,040 |
+| wand j2 m5 T3 | 3,950 ms [3950, 3882, 4425] | 1,209 ms [1209, 1199, 1338] | **3.27x** | 295,680 → 56,687,040 |
+| wand j2 m5 any | 3,638 ms [3638, 3602, 3869] | 1,039 ms [1039, 1026, 1161] | **3.50x** | 295,680 → 56,687,040 |
+| wand j2 m4 T1 | 239 ms [239, 237, 278] | 140 ms [137, 140, 178] | 1.71x | 20,352 → 1,648,512 |
+| wand j2 m4 T3 | 211 ms [211, 206, 238] | 127 ms [127, 123, 140] | 1.66x | 20,352 → 1,648,512 |
+| wand j3 m3 T3 | 100 ms [100, 100, 108] | 114 ms [114, 107, 123] | **0.88x** | 10,980 → 296,460 |
+| wand j2 m3 T3 | 14 ms [15, 12, 14] | 15 ms [18, 15, 14] | **0.93x** | 1,608 → 43,416 |
+| armour j2 m3 T3 | 12 ms [13, 11, 12] | 14 ms [15, 13, 14] | **0.86x** | 1,608 → 43,416 |
+
+**It loses 7–14% on the small crafts and wins 3.5x on the big ones**, and the reason is visible in the
+counts: the DP replaces the omen power set, so it pays off in proportion to how many `2^k` variants it
+deletes. A skeleton heavy in annuls and chaos swaps has few omen levers to save and the DP's per-step
+enumeration is not yet repaid. Those crafts run in 12–115 ms, where 14 ms is not a wait; the ones that
+were seconds are the ones that got faster.
+
+### 4. The answers moved, a long way
+
+Best success-per-attempt on the frontier, old against new:
+
+| craft | old | new | |
+|---|---|---|---|
+| wand j2 m5 T1 | 1.407e-14 | 4.533e-11 | **322x** |
+| wand j2 m5 T3 | 3.082e-10 | 5.771e-08 | **187x** |
+| wand j2 m4 T3 | 1.655e-08 | 8.133e-07 | 49x |
+| wand j1 m2 T3 | 3.474e-04 | 5.910e-03 | 17x |
+| wand j2 m5 any | 4.763e-07 | 7.772e-07 | 1.63x |
+
+The frontier also got longer — `j2 m5 T1` went from **1 row to 5**, `j2 m4 T3` from 6 to 15 — which is
+the point: an orb strength is a cost↔probability trade, so each one that survives is a real choice the
+panel can offer. The dearest row's per-attempt cost rose in step (356 ex → 2,673 ex on `j2 m4 T3`).
+
+Note the **any-tier** row. It moved 1.63x, and it is the reason this must NOT reuse `legalOrbTiers`:
+that function reads `tiers[minTierIndex].ilvl` (≈1 for an any-tier target), finds every strength floor
+above it, and concludes `['base']`. But a Greater orb is legal on an any-tier target — a better tier
+still satisfies "any tier or better". Reusing it would have shipped the whole axis as a no-op for the
+commonest from-item target there is. `leverOptions` filters on `p > 0` instead, which is exact and
+needs no guess. **The same hole is live in `optimizePareto`, which reports `full` — "tried every orb
+strength" — on any-tier crafts where it tried one.** See TODO.
+
+### 5. The carried frontier does not blow up
+
+Measured over three real 5-target crafts, 72,900 backward DP steps each:
+
+| targets | peak carried frontier | cap |
+|---|---|---|
+| T1 | 6 | 256 |
+| T3 | 11 | 256 |
+| any tier | 9 | 256 |
+
+A contraction argument says why, rather than luck: subtracting two extensions gives
+`E'_a − E'_b = (E_a − E_b) − (c/p)·(1/T_b − 1/T_a)`, so every step that costs anything erodes the gap
+between two incomparable points until one dies. `MAX_FRONTIER` has never been observed to bind; when it
+does it sets `truncated`, because a capped frontier is a SUBSET and the app must say so.
+
+### 6. The regression, and where it actually lives
+
+`alternativesFromItem` runs one from-item search per relaxed node, then `planCostCdf` per frontier plan
+per node. Interleaved, `maxNodes: 200`:
+
+| craft | old | new | |
+|---|---|---|---|
+| T3 3-target | 8,714 ms | 11,132 ms | **0.78x** |
+| T1 3-target | 9,229 ms | 12,247 ms | **0.75x** |
+| T3 4-target | 39,430 ms | 34,140 ms | 1.15x |
+
+A 25–33% regression on the 3-target shapes. Diagnosed rather than assumed:
+
+| costCells | old | new | plans handed to `planCostCdf` |
+|---|---|---|---|
+| 200,000 (shipped default) | 8,802 ms | 10,699 ms | 1,120 → 1,447 |
+| 2,000 | 1,213 ms | 1,283 ms | 1,120 → 1,447 |
+
+**`planCostCdf` is 86% of a from-item alternatives run** — 8,802 ms falls to 1,213 ms when the cell cap
+drops 100x. The planner itself accounts for 70 ms of the 1,897 ms difference; the rest is 327 extra
+frontier rows (+29%, the widened search doing its job) multiplied by a CDF that is running a
+200,000-cell fallback sweep. Fixed the same day — see the next entry, which also corrects the cause
+stated here.
+
+> **Correction (2026-09-01, same day).** This paragraph originally continued: "`exactQuantum` fails on
+> the live sheet — 4.796, 8.561, 98.47, 0.9274 are not commensurable at ≤6 dp". That was inferred from
+> `exact: false`, not measured, and it is wrong. `exactQuantum` SUCCEEDS on these plans, returning
+> 0.001 at d=3. `exact` is false because `budget / quantum` is then 5,000,000 cells, 25x over the
+> 200,000 cap. Same symptom, different cause, and the fix that follows from each is different.
+
+### 7. A latent mispricing this armed, fixed first
+
+`currencyKey` gated its `_greater`/`_perfect` suffix on transmute/augment/regal/exalt — **chaos was not
+on the list** — while `chaosProbability` had forwarded the ilvl floor to `exaltProbability` all along.
+So a tiered chaos landed at better odds and billed at the base price: 33.39 ex instead of 2,058 ex for a
+Perfect Chaos, a **62x underquote**. And `allowsStep` reads the same key, so a player excluding Perfect
+Chaos Orbs — a row the UI offers, and the example `cost.ts` cites — would have been handed a plan built
+on them. Inert while no planner emitted one; chaos is this planner's main transform, so it shipped
+separately and first.
+
+## The cost CDF was 86% of a near-miss search, spent proving plans lose (2026-09-01)
+
+`searchAlternatives` picks each node's best plan by `P(finish in budget)` over its whole frontier — the
+cheapest plan is not automatically the likeliest to land inside a budget, so the scan is necessary. But
+`planCostCdf` costs ~7 ms per plan at the shipped cell cap, and this ran on **1,447 plans across 200
+nodes** to report one winner each.
+
+### What it is NOT
+
+Two plausible causes were checked and killed before anything was built.
+
+**It is not incommensurable prices.** `exactQuantum` succeeds on live plans, returning **0.001 at
+d=3**. `exact` comes back false because `budget / quantum` is then **5,000,000 cells** at a 5,000 ex
+budget, 25x over `DEFAULT_COST_CELLS`. The first draft of TODO 5c blamed the prices; that was inferred
+from the `exact` flag rather than measured.
+
+**It is not an over-large cell cap.** Lowering it is the obvious fix and it does not work, because the
+bracket has to be narrow enough for `fmtPct(lower)` and `fmtPct(upper)` to render the same string —
+otherwise the panel prints "1.2%–1.3%" where it used to print a number. Measured on live plans at a
+5,000 ex budget:
+
+| cells | bracket width | ms/plan | renders as |
+|---|---|---|---|
+| 200,000 | 3e-6 – 4e-5 | 6.4–8.8 | one number |
+| 50,000 | 2e-5 – 1.6e-4 | 1.6–2.2 | a range on some rows |
+| 20,000 | 5e-5 – 3.9e-4 | 0.6–0.8 | a range on some rows |
+| 5,000 | 2e-4 – 1.7e-3 | 0.0–0.2 | a range |
+| 2,000 | 5e-4 – 2.3e-2 | 0.0–1.0 | a wide range |
+
+One row needed the full 200,000 to collapse to a single percentage. So the default is well chosen for
+the number the app prints, and the waste was never the resolution — it was spending full resolution on
+plans that could not win.
+
+### Screen, then settle
+
+`bestByBudget` brackets each plan on a grid a tenth as fine, then settles only the plans that could
+still win. The skip is exact and needs no assumption about the two grids lining up: `planCostCdf`
+returns a bracket AROUND the true value at any cell count, so `settle(x).lower ≤ truth(x) ≤
+screen(x).upper`, and a plan whose screening ceiling is below a rival's settled floor is beaten
+outright.
+
+Interleaved, medians of 3, `maxNodes: 200`, rows compared byte-for-byte:
+
+| craft | unscreened | screened | |
+|---|---|---|---|
+| T3 3-target | 11,047 ms [11132, 11047, 10991] | **3,027 ms** [3027, 3027, 3097] | **3.65x** |
+| T1 3-target | 12,009 ms [11981, 12009, 12250] | **3,539 ms** [3530, 3625, 3539] | **3.39x** |
+| T3 4-target | 33,394 ms [33348, 33394, 33407] | **18,595 ms** [18831, 18523, 18595] | 1.80x |
+
+Every `inBudget` / `inBudgetMax` / plan identical to 12 decimal places. Taken with the orb-strength
+work the same day, the 3-target from-item alternatives search is **2.9x faster than before either
+change** (8,714 ms → 3,027 ms) while now also searching every orb strength.
+
+### The asymmetry is the whole argument, and it needed extracting to test
+
+The ceiling must come from the screen and the floor from a settled sweep. Pruning on the screen's own
+`lower` compares two bounds that do not bracket each other and can cut the true winner.
+
+That mutation **survived every end-to-end test**, because on real data the screening bracket is a few
+parts in ten thousand — tight enough that the wrong comparison picks the same plans anyway. So the rule
+was extracted into `bestByBudget`, which takes its two scorers as arguments, and the test injects a
+deliberately useless screen (`[0, 1]` for everything) and a valid-but-backwards one. Both now fail the
+mutation. **A guarantee that cannot be made to fail on real data has to be tested somewhere it can.**
+
+## The from-white planner adopts the lever DP, and loses a dial that did nothing (2026-09-01)
+
+`paretoForOneCraft` built `permutations x orbAssignments`, expanded each into its omen power set, and
+scored the lot — a `K! x Π|strengths| x 2^omens` product, rationed by `maxPlans` picking a coarser
+orb-strength DEPTH when the estimate grew. Replacing that with `searchSkeletons` leaves only the
+orderings to enumerate.
+
+### It is faster nearly everywhere, and dramatically so where it was slow
+
+Interleaved within each rep against the previous planner, medians of 3, Wands at ilvl 82:
+
+| craft | old | new | | old depth |
+|---|---|---|---|---|
+| 5 tgt T3 | 464 ms [473, 456, 464] | **7 ms** [6, 7, 7] | **66.3x** | full |
+| 4 tgt T1 | 28 ms [28, 40, 28] | **1 ms** [1, 1, 1] | **28.0x** | full |
+| 5 tgt T1 | 131 ms [130, 131, 153] | **6 ms** [6, 5, 6] | **21.8x** | base+strongest |
+| 4 tgt T3 | 19 ms [21, 19, 18] | **1 ms** [1, 1, 1] | **19.0x** | full |
+| 6 tgt T3 | 73 ms [77, 73, 63] | 45 ms [44, 45, 45] | 1.62x | strongest-only |
+| 6 tgt T1 | 63 ms [60, 65, 63] | 44 ms [43, 45, 44] | 1.43x | strongest-only |
+| 6 tgt any | 78 ms [88, 70, 78] | 49 ms [61, 49, 48] | 1.59x | full |
+| 4 tgt any | 1 ms [3, 1, 1] | 3 ms [5, 1, 3] | 0.33x | full |
+
+The 6-target crafts gain least because they are skeleton-bound (720 orderings), not lever-bound; the
+sub-5 ms rows are noise. Every craft now reports `full`.
+
+### The answers improved, and by more than the timings
+
+The throttle was not merely slow — where it bit, it deleted rows. `strongest-only` drops BASE strength,
+and `legalOrbTiers` was suppressing the axis entirely for any-tier targets while the badge said "tried
+every orb strength".
+
+| craft | cheapest plan, old → new | surest, old → new |
+|---|---|---|
+| 6 tgt T1 | 42,683,000,412 → **2,470,362,374** (−94%) | unchanged |
+| 5 tgt T1 | 54,217,303 → **18,259,582** (−66%) | unchanged |
+| 6 tgt T3 | 3,522,806 → **2,486,398** (−29%) | 7.49e-8 → **1.72e-7** (2.3x) |
+| 5 tgt any | 9,054 → **3,513** (−61%) | 6.64e-5 → 1.00e-4 (1.5x) |
+| 4 tgt any | 1,485 → **570** (−62%) | 4.02e-4 → 6.06e-4 (1.5x) |
+| 2 tgt any | 10.57 → **4.29** (−59%) | 1.86e-2 → 4.51e-2 (2.4x) |
+
+The any-tier rows are the `legalOrbTiers` bug, and the reason they get **cheaper** is worth stating
+plainly: on the live sheet a **Greater Transmute costs LESS than a plain one** (0.1333 against 0.1775),
+as does a Greater Augmentation (0.07389 against 0.2699). So on many crafts the stronger orb is both
+likelier and cheaper — strictly better — and the search was refusing to consider it at all.
+
+That also explains a frontier with no base-strength step on it, which looks like a throttle and is not:
+on a craft whose targets all sit at ilvl 25-60, base is genuinely dominated. `pareto.test.ts` pins that
+base SURVIVES on a craft where it earns its place, which is the assertion that distinguishes the two.
+
+### A test had pinned the bug, with a false reason attached
+
+`pareto.test.ts` carried:
+
+> `it('an any-tier target uses only a base orb (stronger orbs would reject tiers you accept)')`
+
+The parenthetical is the whole error. A stronger orb raises the ilvl FLOOR of what it can roll, and a
+higher tier still satisfies "any tier or better" — so a Greater orb is legal on an any-tier target. The
+test asserted a one-row frontier and passed for as long as the bug existed, which is what a test
+written from the implementation's reasoning rather than the game's will do.
+
+### `maxPlans` is gone from the effort ladder
+
+It selected an orb-strength depth. There is no depth left to select, so it moved nothing — and a dial
+that does nothing does not belong on a control that promises the user it will. Removed from
+`EffortLimits`, the three presets, `OptimizeParetoOptions` and `AlternativesOptions.maxPlansPerNode`.
+
+Two things fell out of that:
+
+- **`OptimizeParetoOptions.maxMillis` had never been read on the from-white path.** It was declared,
+  documented ("Hitting it sets `truncated`"), and used by no code. `searchSkeletons` honours it, so the
+  lab step planner has a clock for the first time — and `solve.ts` hands it the preset's, as a ceiling
+  rather than a reservation, since the model still takes the remainder via `clockLeft()`.
+- **`alternativesFromItem` never had a plan cap either**, and now cannot want one.
+
+`optimize.ts` lost 113 lines: `orbAssignments`, `reduceOrbTiers`, `legalOrbTiers`, `strengthUsable`,
+`ORB_TIERS`, `ADD_CURRENCIES`, `withOmenVariants` and the `estimate`/depth ternary. `CurrencyDepth`
+survives because `DEPTH_RANK` still merges runs, but every planner now reports `full`.
+
+## An Augmentation the planner could not spend, and a Chaos axis not worth having (2026-09-01)
+
+Two small items from TODO 4 and 5d. One shipped, one was built and reverted on its measurement.
+
+### The Augmentation step (TODO 4) — shipped
+
+`baseTransforms` emits chaos/annul/exalt and no `augment`, so the only way the from-item planner could
+add a mod to a MAGIC item was the Regal that converts it to Rare. Openers now cover the whole add
+chain: Regal, Augmentation, and Augmentation-then-Regal.
+
+It is a genuine cost-probability trade rather than a missing cheap option. On a Magic item holding one
+prefix, an Augmentation must land a SUFFIX — the prefix side is full at one — so it draws from the
+suffix pool alone, where a Regal draws from both sides. Likelier, and dearer for it: 0.2699 against the
+Regal's 0.1977.
+
+**TODO 4's stated reason was wrong on both halves**, which is worth recording. It read "for a 2-mod
+target an Augment would be cheaper, and the planner cannot express it". An Augmentation is DEARER than
+a Regal on this sheet, so "cheaper" was the wrong reason to want it; and the test pinning the gap used
+a two-PREFIX target, which a Magic item cannot hold at all — so on that craft the Regal is required by
+a game rule and no Augmentation could ever have helped. The gap was real; the example was not.
+
+That test now asserts the rule it was actually demonstrating, and a second one covers the prefix+suffix
+case where the Augmentation does apply and finishes the craft in one step.
+
+### The MDP's Chaos strength axis (TODO 5d) — built, measured, reverted
+
+`chaos_greater` and `chaos_perfect` are real listings, the engine has always honoured the floor, and
+`currencyKey` prices them correctly since earlier the same day — so the linear planner searches them
+and the MDP did not. The matching `strength` axis was built and then reverted.
+
+Interleaved, medians of 3, six crafts (2 and 3 targets, any/T3/T1, two held junk mods):
+
+| craft | axis off | axis on | | answer |
+|---|---|---|---|---|
+| 3 tgt T1 | 1,778 ms [1664, 1851, 1778] | 2,690 ms [2370, 2690, 2982] | **0.66x** | identical, 164,682.69 exact |
+| 3 tgt T3 | 689 ms [742, 672, 689] | 961 ms [961, 983, 955] | 0.72x | identical, 28,377.16 exact |
+| 3 tgt any | 131 ms [144, 131, 129] | 182 ms [182, 210, 181] | 0.72x | identical, 2,684.76 exact |
+| 2 tgt T1 | 213 ms [223, 213, 205] | 289 ms [296, 289, 284] | 0.74x | identical, 19,362.79 exact |
+| 2 tgt T3 | 78 ms [81, 78, 61] | 85 ms [103, 84, 85] | 0.92x | identical, 3,782.28 exact |
+| 2 tgt any | 39 ms [59, 39, 33] | 47 ms [64, 47, 47] | 0.83x | identical, 904.15 exact |
+
+**1.2-1.5x the solve time, and not one answer moved.** The MDP is the app's slowest component and its
+headline number, so slower means more crafts return a ceiling rather than an exact cost at a given
+effort. That is a real loss against a benefit that measured exactly zero.
+
+The prices explain it: a Greater Chaos is 2.95x the price of a plain one for at most ~2.6x the odds, a
+Perfect 61.6x for at most ~4.5x. The model was paying to prove what the sheet already implies.
+
+**It is the PRICES that decide this, not the mechanics**, so the trade should be re-measured if they
+move. The pricing half stays shipped, and `costConsistency.test.ts` carries the reasoning next to the
+pair that would need adding back.
+
+Two findings survive the revert. The exclusion regression test had to grow `chaos_greater` and
+`chaos_perfect` to keep passing — a strength axis is also an exclusion surface, and "exclude chaos"
+stops meaning "exclude every chaos" the moment one exists. And `pusher` folds only IDENTICAL outcome
+distributions, so it cannot absorb a strength that differs in distribution but loses on price; the
+principled fix would be a dominance rule over distributions, and there is no cheap one.
+
+## Clearing the last of the backlog: three checks, two of them negative (2026-09-01)
+
+### `CurrencyDepth` deleted — one reachable value is not a report
+
+The field named which orb strengths a search had settled for, and its badge said so. With both planners
+searching every strength there was one value left, so a four-way type and a badge that could only ever
+say one thing were noise where they had been information. Removed from `optimize.ts`, `alternatives.ts`,
+`engineTypes.ts`, `engineMap.ts`, `solve.ts` and `FrontierView.tsx`, along with `DEPTH_RANK` and the
+depth-merging in both `mergeParetoRuns` and `mergeAlternativeRuns`. `evaluate` in `alternatives.ts`
+dropped its wrapper object and returns `Alternative | undefined`.
+
+The claim itself survives as static text on the "checked N plans" line, which is where a reader asking
+"how hard did it try" is already looking — and it stays gated on a search having run, so a planner that
+DECLINED reports 0 plans and makes no claim about orbs it never looked at.
+
+### The MDP's Magic start was already done, and the TODO saying otherwise was stale
+
+TODO 4 carried: "the MDP does not model a Magic START as a distinct node", blocked on "the state key has
+no rarity, so a Magic start encodes identically to the Rare state with the same mods" and "`stateLabel`
+would render both identically".
+
+Both describe a design superseded when rarity entered the state. Measured:
+
+| start | feasible | cost | bound | policy states | rungs | first key |
+|---|---|---|---|---|---|---|
+| Magic | yes | 1,552.19 | exact | 397 | magic, rare | `0:0:0:0:0:1` |
+| Rare | yes | 1,426.68 | exact | 357 | rare | `0:0:0:0:0:2` |
+
+The key ends in a rarity code, so the two never collapse; the Magic craft spans both rungs and costs
+more, which is the direction that makes sense since the item has to be opened first. And `stateLabel`
+does not exist anywhere in the repo — the note named a function that was never written.
+
+**It survived a rewrite of the section around it because it was copied rather than checked**, which is
+the failure a behavioural test closes and a comment does not. Pinned now in `markovFromItem.test.ts`.
+
+### tailwind-merge stays — the hypothesis was false
+
+TODO 6 proposed dropping tailwind-merge (8.8% of the bundle, ~10 kB gzip) for bare `clsx`, "if nothing
+actually relies on conflict resolution". `cn()` has exactly three call sites, and **two of them do**:
+
+| call site | conflicting pair | why |
+|---|---|---|
+| `<Badge variant="outline" className="border-amber-500/60 …">` | `border-input` vs `border-amber-500/60` | both border COLOUR |
+| `<Badge className="text-[10px]">` | `text-xs` vs `text-[10px]` | both font SIZE |
+| `PolicyGraph`'s coverage buttons | none | `border` is a width, `border-primary/60` a colour |
+
+"Just order the classes correctly" is not an escape: both members of each pair are emitted at the same
+specificity, so the winner is decided by TAILWIND'S output order rather than by the `class` attribute.
+Dropping the loser is the only reliable way to make the caller's intent win — which is precisely what
+tailwind-merge does and `clsx` does not.
+
+Pinned in `src/lib/utils.test.ts` with the real class strings, so the audit does not need re-running and
+a swap fails the suite rather than quietly breaking the amber "stopped early" badge.
+
+## Belts, and the weight table that still needs a human (2026-09-02)
+
+41 bases → 42. Belts plan on both models: the step planner returns a 3-row frontier
+(`transmute → augment`) and the MDP returns `bound: 'exact'` at **7.99ex** on a 2-mod craft at ilvl 82.
+
+**Why ONE base rather than 20.** All 20 of RePoE's belt bases carry a byte-identical craftable pool —
+166 mods, the same `mod → tier → ilvl` map across all three tag groups (`belt,default`,
+`runeforged,belt,default`, `not_for_sale,demigods,belt,default`). They differ only in `drop_level` and
+in their implicit, and an implicit is fixed on the base rather than rolled. This matches Amulets and
+Rings, which have always shipped as one base each.
+
+**Weight coverage.** poe2db filled 100.0% of normal tiers after `apply_weights.mjs` learned the
+category (97.9% before — the missing third of three category maps). Zero-weight mods are exactly the
+essence and perfect-essence ones, which is correct and matches Amulets and Rings:
+
+| category | total mods | normal | desecrated | essence | perfect | zero-weight |
+|---|---|---|---|---|---|---|
+| Amulets | 80 | 33 | 31 | 7 | 9 | essence 7, perfect 9 |
+| Rings | 67 | 31 | 22 | 7 | 7 | essence 7, perfect 7 |
+| **Belts** | **53** | **18** | **21** | **6** | **8** | essence 6, perfect 8 |
+
+### The belt normal pool, for cross-checking
+
+**NOT YET CROSS-CHECKED against Craft of Exile.** CoE is client-rendered and `scripts/coe-verify.mts`
+takes hand-entered numbers, so this needs a browser — outstanding, and listed under "Still deferred".
+The table is here so the comparison is quick when someone does it.
+
+| side | mod | top-tier weight | tiers | ilvl range |
+|---|---|---|---|---|
+| prefix | BeltFlaskLifeRecoveryRate | 800 | 6 | 1–75 |
+| prefix | BeltFlaskManaRecoveryRate | 800 | 6 | 5–63 |
+| prefix | BeltIncreasedCharmDuration | 800 | 5 | 8–75 |
+| prefix | IncreasedLife | 1000 | 10 | 1–65 |
+| prefix | IncreasedMana | 1000 | 9 | 1–60 |
+| prefix | PhysicalDamageReductionRating | 1000 | 10 | 1–80 |
+| prefix | ThornsPhysicalDamage | 1000 | 7 | 1–74 |
+| suffix | BeltIncreasedCharmChargesGained | 800 | 6 | 2–81 |
+| suffix | BeltIncreasedFlaskChargesGained | 800 | 6 | 2–81 |
+| suffix | BeltReducedCharmChargesUsed | 800 | 6 | 3–81 |
+| suffix | BeltReducedFlaskChargesUsed | 800 | 6 | 3–81 |
+| suffix | ChaosResistance | 250 | 6 | 16–81 |
+| suffix | ColdResistance | 1000 | 8 | 1–82 |
+| suffix | FireResistance | 1000 | 8 | 1–82 |
+| suffix | LifeRegeneration | 1000 | 9 | 1–68 |
+| suffix | LightningResistance | 1000 | 8 | 1–82 |
+| suffix | Strength | 1000 | 9 | 1–81 |
+| suffix | StunThreshold | 800 | 10 | 1–72 |
+
+Internal consistency is encouraging while that check is outstanding: Chaos Resistance sits at 250
+against 1000 for each elemental resist, the same ~1:4 ratio Rings shows (1500 against 8000).
+
+### A latent mispricing found on the way
+
+`BONE_BY_CATEGORY` (`probability.ts`) listed "Amulet, Ring or Belt" in its comment while having no
+`Belts` entry, and `desecrationBoneFor` falls through to `?? 'rib'`. So the day belts landed, a belt
+Desecration would have been charged the ARMOUR bone — 0.41ex against the collarbone's 4.69ex on the
+2026-09-02 sheet, an 11x underquote — and `bossOmenAllowed`, which is defined as "not rib", would have
+silently refused the boss omens the game does allow on a belt. Found by checking the map rather than
+reading the comment; fixed in the same commit that added the category.
+
+## Omen of Whittling: the spec had the mechanic wrong (2026-09-02)
+
+TODO 12 described the Omen of Whittling as making an **Orb of Annulment** remove the lowest **tier**
+modifier. Both halves are wrong. Traced to poe2db:
+
+> *"While this item is active in your inventory your next **Chaos Orb** will remove the **lowest level**
+> modifier"* — `Metadata/Items/Currency/OmenOnChaosLowestLevelMod`
+
+It is a CHAOS omen, and it works on item LEVEL. That second point resolves an ambiguity the section
+worried about: tier numbers are per-mod and not comparable across mods (a T5 of a five-tier mod is its
+worst roll; a T5 of a ten-tier mod is mid-range), so "lowest tier" would have had no well-defined
+meaning on an item carrying both. Item level is one scale for the whole item.
+
+The same trace produced the full 45-omen list, which also settles a question left open on 2026-09-01:
+the chaos side-omens DO exist (**Sinistral / Dextral Erasure**, "remove only prefix/suffix modifiers"),
+but they constrain what the orb REMOVES, where `PlanStep.chaos.constrainTo` tunes what it ADDS. So the
+inert field is still not priceable as an Erasure omen — see TODO 12c.
+
+**Prerequisite, fixed first and pinned by a test written to fail.** `addMod` placed every mid-plan add
+at `tierIndex 0`, the lowest ilvl a mod has, regardless of the step's `minTierIndex`. Harmless while
+no probability read a walked tier; fatal for Whittling, since everything a plan added would have tied
+for lowest level. Placing at `minTierIndex` is the worst tier that still satisfies the target, so the
+model never flatters a plan.
+
+**Measured behaviour**, on a Wand holding three mods with one at its lowest tier: an unomened Chaos
+removes that mod 1 time in 3, Whittling takes it every time — the option costs the orb plus the omen
+and buys exactly **3x** the chance, because only the removal factor moves. Where the named removal is
+NOT the lowest-level mod the option scores 0 and never reaches the DP.
+
+**Shipped dormant.** `OmenofWhittling` has no `omenQuotes` entry and `stepCost` charges 0 for a
+missing key, so the lever is gated on the omen having a price — ungated it would have come back free
+and dominated every chaos step it touched.
+
+### The one assumption
+
+Where several mods share the lowest level, the game's tiebreak is **untraced**. Uniform among the tied
+is modelled, matching every other pick-among-equals in this engine (an unomened Annulment, a
+boss-omened Desecration). It is also the conservative direction for the common case: a plan whittling
+junk off gets a LOWER probability than a deterministic tiebreak in its favour would give it. Listed
+under "Still deferred" until someone can confirm it in game.
+
+## poe.ninja serves omens after all — under `type=Ritual` (2026-09-02)
+
+The sheet hand-transcribed 13 omen quotes for months on the belief that poe.ninja has no omen
+endpoint. That belief was HALF right, and the wrong half was never tested: `type=Omens` really does
+return byte-identical output to `type=NonsenseXYZ`, and the Omens page really is client-rendered with
+no `__NEXT_DATA__` or equivalent to scrape. But **omens are Ritual content in PoE2**, and
+`type=Ritual` returns 38 lines of which **36 are omens** — every key this sheet uses, plus Whittling —
+with `volumePrimaryValue` and a sparkline like any other line.
+
+Found by enumerating the type values rather than by guessing better: of 17 tried, ten are valid
+(Currency 51, Runes 132, Essences 76, Ritual 38, SoulCores 35, Breach 28, Delirium 26, Fragments 25,
+Expedition 23, Abyss 15). Cross-checked against poe2db, which quotes Whittling at 11.4 divine against
+poe.ninja's 11.7 — two independent sources agreeing.
+
+**Why it mattered more than a chore removed.** Omens are an ADDITIVE surcharge 20-27x the orb they
+modify, so a drifted omen:orb ratio changes which plans the optimizer recommends rather than only what
+it says they cost. Against the 11-day-old transcription:
+
+| omen | transcribed 22 Aug (ex) | live (ex) | factor |
+|---|---|---|---|
+| Sinistral Annulment | 4,837 | 7,068 | 1.5x |
+| Dextral Crystallisation | 199.9 | 107.7 | 0.5x |
+| **Greater Exaltation** | **11.9** | **2.33** | **0.20x** |
+| Sinistral Necromancy | 1.157 | 2.051 | 1.8x |
+| **Whittling** | *(absent)* | **4,731** | — |
+
+`omenQuotes` stays as a fallback for anything the feed cannot price, under the same units/day depth
+gate as the currencies: 2 of 14 fall back today — the Blackblooded at 23/day and the Sovereign at 7 —
+and the staleness warning is now scoped to those rather than fired on every run.
+
+**A test moved because of it, and the move is the interesting part.** `solve.test.ts`'s "policy
+iteration answers where value iteration can only bound" asserts a fact about the SOLVERS, but whether
+a given craft is hard enough to separate them depends on what the orbs cost. With omens live the
+craft became easy enough that VI settled it too, so the test failed while its claim stayed true. It
+reads `loadFrozenPrices()` now, like the other price-pinned tests.
+
+## The league-rollover zero, found by asking what happens on day one (2026-09-02)
+
+A fair worry: on the first days of a new league, prices are thin or absent — so does the optimizer
+start recommending things that are only cheap because nobody has traded them yet? Checked rather than
+reassured, and the answer split three ways.
+
+**Currency and bones are SAFE.** The refresh starts from `{...prev.prices}` and `continue`s past a
+line the feed does not carry, so a missing orb keeps its previous price. Stale, never free.
+
+**Omens are safe.** They fall back to `omenQuotes` under the units/day depth gate.
+
+**Essences were NOT.** The refresh DELETES every `essence*` key and rebuilds them from the feed, and
+the per-level fallbacks (`essence_lesser`, `essence`, `essence_greater`) are written only when a
+median exists. With no essence trades those keys simply vanish — and `stepCost` reads
+`prices.currency[key] ?? 0`, so an absent key is not "unavailable", it is a **free essence**, which
+dominates every frontier it can reach. Confirmed by building a sheet with the keys stripped: a Greater
+Essence and a Perfect Essence both priced **0**.
+
+Three changes:
+
+1. **Never delete a price you cannot replace.** Essence keys the new run could not price now keep
+   their previous value, matching what the currency loop always did, and the run says how many.
+2. **A league change blocks the auto-merge by name**, rather than being inferred from price movement.
+   `prev.league !== league` is exact and free, and early-league prices are the single most predictable
+   way this sheet goes wrong — "probably caught by the depth checks" is the wrong standard for it.
+3. **A no-free-price guard in `priceResolution.test.ts`**, which is one of the two tests the refresh
+   runs before merging, so a sheet that lost a key cannot reach the site unseen. Mutation-checked:
+   deleting `essence_greater` turns it red.
+
+Worth being clear about what is NOT fixed, because it cannot be: if an orb genuinely trades at 5ex on
+day two because nobody has found any yet, the optimizer will use it, and it is right to — that is what
+the orb costs that day. The guards above are against prices that are ABSENT or unbacked, not against a
+market that is simply young.
+
+## Shipping the patch data: the split loses to the strip (2026-09-02)
+
+TODO 13 asked to split `mods.json` into a solver half and a display half, so the Worker could start
+before the labels finished downloading. Its premise was that "37% of it is display-only, fields the
+Worker never reads". Both halves of that turned out to be wrong, and measuring the alternative made
+the split unnecessary rather than merely unattractive.
+
+**The Worker reads the "display" fields.** `tiers[].ranges` is read by `valueRatio`
+(`alternatives.ts`) to score how much of the asked-for stat a relaxed tier still guarantees — solver
+data by any definition. And `text` is read by `engineMap`, which runs **inside** the worker: every
+result the worker returns is mapped to UI shapes before it is posted. So the clean split the TODO
+described was not available; the worker needs both.
+
+**What is actually unread is not display data — it is dead data.** `group`, `field`, `categories`
+and `tiers[].stats` are read by nothing in `src/` or `packages/`, production or otherwise. They
+appear only in the type and in test fixtures. `stats` alone is 575,841 raw bytes.
+
+**And the transfer numbers were being read off the wrong compressor.** The TODO quoted 238 kB gzip.
+Vercel serves the asset brotli-compressed; `poe2htc.com` returns 137,701 bytes for it, which
+`brotliCompressSync` reproduces exactly at **quality 3, lgwin 19** — so that is the setting every
+number below is measured at, rather than a default quality 11 that would flatter every option by ~3x.
+
+### The comparison
+
+| shipped as | raw | wire (br q3/w19) | `JSON.parse` |
+|---|---|---|---|
+| today — pretty, all fields | 3,211,239 | **137,701** | 6.15 ms |
+| minified only | 1,531,678 | 104,414 | 5.4 ms |
+| pretty, dead fields dropped | 2,335,632 | 89,420 | 6.5 ms |
+| **minified + dead fields dropped** | **988,070** | **65,013** | **3.32 ms** |
+| the TODO's solver half (no `text`, no `ranges`) | 728,900 | 44,240 | 2.3 ms |
+| …plus its display companion | 201,650 | 19,729 | 0.3 ms |
+
+The last two rows are the finding. Even granting the split were possible, it costs **74,015** wire
+bytes against one file's **65,013** — worse, because splitting duplicates the id column across both
+files and hands brotli two smaller corpora instead of one. The simpler change is strictly the bigger
+win, so there is no second fetch, no half-loaded state, and no interval where the picker renders mod
+ids. TODO 13 is closed as **done differently**, not deferred.
+
+### Shipped
+
+- `Mod` and `Tier` (`types.ts`) no longer declare the four dead fields. That is the load-bearing part:
+  the data file keeps them, and the type is now the app's contract, so a stripped field cannot be read
+  by accident — it is a compile error everywhere, in dev as well as in a build.
+- `shipMods.ts` projects a parsed `mods.json` onto exactly that contract and minifies it. Typed
+  `ModsFile -> ModsFile`, with `: Mod` / `: Tier` annotations on the two `.map` callbacks — verified
+  by mutation that omitting `tags` and that adding `group` or `stats` are each a `type-check:engine`
+  failure. (Contextual typing through `.map` alone does **not** run excess-property checking; without
+  those annotations only the first direction was caught.)
+- `shipPatchData` (vite.config.ts) applies it to the emitted asset, and minifies the other two.
+- `dataIntegrity.test.ts`'s group/field invariant now reads the raw file, which is what it was always
+  really asserting — the RePoE join is a property of the import, not of the engine's model.
+
+### The hash had to move with it
+
+Rollup fixes an asset's content hash **before** `generateBundle`, so the first working version shipped
+988 kB under the byte-identical filename `mods-BfEpI_vg.json` that the live site already serves for
+the 3.1 MB version. Harmless on the day — but `immutable, max-age=31536000` means the day someone adds
+a field to `Mod` and to the projection **without** the data changing, the URL does not turn over and
+every returning browser keeps an asset missing that field. Silent, and exactly the class of bug this
+project spends its time on.
+
+So `assetFileNames` is a function that hashes the bytes the build will actually write, sharing one
+`shippedJson` helper with the rewrite so a name can never describe bytes nobody emitted. Mutation-
+checked: dropping `tags` from the projection moves the asset `mods-z68ZDNnb` → `mods-FDp1al5J`.
+
+### Result
+
+| | live today | after |
+|---|---|---|
+| `mods.json` | 137,701 | 65,013 (−52.8%) |
+| `base_items.json` | 14,132 | 13,142 (−7.0%) |
+| `prices.json` | 7,567 | 7,444 (−1.6%) |
+| patch data total | 159,400 | **85,599 (−46.3%)** |
+| first load, incl. the 118,123-byte JS entry | 277,523 | **203,722 (−26.6%)** |
+
+`JSON.parse` of the mods file: **6.15 ms → 3.32 ms** (median of 9). The five browser smoke tests pass
+against the stripped `dist/` — a real Chromium cold load, a Lab compute and an Item compute — which is
+the end-to-end licence that nothing the app reads was thrown away.
+
+**Not done, deliberately:** `tiers[].stats` is the named route to cross-family similarity in
+`alternatives.ts`'s header. It stays in the file; the day that feature is built it goes back into
+`Tier` and into the projection, and the asset gains ~11 kB. Dropping it from the wire costs that
+feature nothing today.
+
+## Omen of Greater Exaltation, in the step planners (2026-09-02)
+
+**"While this item is active in your inventory your next Exalted Orb will add two random modifiers"**
+— poe2db, internal id `OmenOnExaltAddTwoMods`. 2.331 ex on the sheet, cross-checked against poe2db's
+own 2.7 ex. TODO 14.
+
+### Two rulings, both flagged as rulings
+
+- **A Greater or Perfect Exalted Orb can carry the omen.** The item text says "your next Exalted
+  Orb", and a Greater Exalted Orb is its own BaseType (`CurrencyAddModToRare2`, "Minimum Modifier
+  Level: 35" — which matches the engine's `CURRENCY_FLOOR.greater` exactly), so the text does not
+  settle it. **User ruling, 2026-09-02.** It is what gives the step a strength axis; without it the
+  step would be plain-orb only. Modelled, not observed.
+- **The one-open-slot case is not modelled at all.** What the game does with a half-spendable omen is
+  untraced. `greaterExaltProbability` returns 0 there, and the recursion is what says so — an explicit
+  `free < 2` guard was written and DELETED, because no mutation could distinguish it. The move is
+  dominated wherever it would be legal (it can only land what a plain Exalt lands, with 2.331 ex on
+  top), so nothing is lost and nothing is claimed.
+
+### One recursion, two currencies
+
+`alchemyProbability`'s four-draw recursion became `multiDrawProbability`, parameterised by draw count,
+starting item and ilvl floor; alchemy is four draws onto a white base and this is two onto the Rare
+you hold. The alchemy differential fixtures did not move a digit, which is the licence for the
+refactor.
+
+The one genuinely new rule is the tier gate. **A target landing at too LOW a tier is a failure, not a
+retry** — its family is spent, so the craft can no longer reach the tier it asked for. A needed mod
+therefore advances only on its at-or-above-tier weight while occupying its family on its FULL weight.
+Mutation-checked: collapsing the two makes the tier test go red.
+
+Validated against Monte-Carlo on the shipped 0.5.0 Wands pool (400k runs, three mod pairs plus a
+Greater-orb floor), with the simulation written from the item text and sharing no code with the
+function it checks.
+
+### Why it can win, being dearer
+
+A plan is a fixed sequence, so two Exalts commit to an order: A then B. One omened orb gets BOTH
+orders, because its two draws are unordered. Up to 2x the probability for 1.67x the price
+(1 + 2.331 ex against 1 + 1 ex). Measured on Wands at ilvl 82, omen priced out vs in:
+
+| craft | cheapest expected | best P/attempt | frontier rows using it |
+|---|---|---|---|
+| from white, 5 targets | 2,019.08 → 2,019.08 | 0.008756% → 0.008756% | 0 of 8 |
+| from white, 6 targets | 117,053 → **77,774** (−33.6%) | 0.0002081% → 0.0002638% | 4 of 4 |
+| from white, 6 targets **T1** | 4.040e9 → **2.349e9** (−41.9%) | — | 5 of 5 |
+| held 1 mod, want 3 | 265.61 → 265.61 | 1.997% → **2.266%** | 2 of 6 |
+| held 1 mod, want 4 | 1,720.71 → 1,720.71 | 0.2857% → **0.3344%** | 3 of 6 |
+| held 2 mods, want 4 | 214.06 → 214.06 | 1.800% → 1.800% | 0 of 4 |
+
+Two shapes of win, and they are different: from white it makes the craft **cheaper**; from a held item
+it makes a **surer** route exist that did not before. The rows that show no change are honest —
+offered, ranked, and beaten on price.
+
+**From white the route needs FIVE targets before it can exist at all**, because the add chain is
+transmute → augment → regal → exalt…, so there is no adjacent Exalt pair below five. That is why the
+2-target craft above searched byte-identically.
+
+### Cost of the widened search
+
+Interleaved, 5 reps, medians (per CLAUDE.md's ~40% spread rule):
+
+| craft | off | on | |
+|---|---|---|---|
+| white 5 targets | 8.5 ms | 14.0 ms | 1.64x |
+| white 6 targets | 48.7 ms | 104.6 ms | 2.15x |
+| white 6 targets T1 | 44 ms | 96 ms | 2.16x |
+| item held 1 want 4 | 0.6 ms | 0.9 ms | 1.45x |
+| item held 1 want 5 | 1.4 ms | 4.0 ms | 2.85x |
+
+Accepted: ~2x on a planner whose worst measured craft is 105 ms, against a 42% cheaper answer on the
+hardest one. Note **`plansEvaluated` grew only 8% while time doubled** — a fused skeleton has one step
+where there were two, so it stands for fewer lever assignments while still costing a DP pass. The
+"checked N plans" figure is a weaker proxy for time than it was.
+
+### The MDP half: built, measured, REVERTED — and there is a reason, not just a number
+
+Added as `{ currency: 'greater-exalt', strength }` with its distribution composed from `addOutcomes`
+twice, the way `chaosOutcomes` composes a removal with an add. Instrumented, the action was genuinely
+offered **1,519 times per solve** (and folded 1,415 more by `pusher`, where only one slot was free so
+the second draw collapsed the distribution onto a plain Exalt's). Interleaved, 3 reps, medians:
+
+| craft | expected cost off → on | time | policy plays it |
+|---|---|---|---|
+| held 1, want 3, any tier | 3912.8886 → 3912.8886 | 146 → 173 ms (1.19x) | no |
+| held 1, want 4, any tier | 12022.604 → 12022.604 | 953 → 1034 ms (1.08x) | no |
+| held 0, want 3, any tier | 3928.3519 → 3928.3519 | 147 → 182 ms (1.23x) | no |
+| held 1, want 3, **T1** | 96138.986 → 96138.986 | 870 → 1054 ms (1.21x) | no |
+| held 2, want 4, any tier | 11713.232 → 11713.232 | 936 → 1187 ms (1.27x) | no |
+| held 1, want 5, any tier | 24228.676 → 24228.676 | 3935 → 5576 ms (1.42x) | no |
+
+Every cost identical to eight figures, `bound: exact` on both sides of all six. Same verdict as the
+Chaos strength axis (§5d), and reverted the same way.
+
+**Why it loses is structural, not a property of these six crafts.** The omened orb's distribution is
+exactly "exalt, then exalt" in this model, so:
+
+    Q(s, GE@T) − Q(s, exalt@T) = c_omen − c_orb(T) + E[ Q(mid, exalt@T) − V(mid) ]
+
+The last term is the **regret of being forced to exalt at strength T again**, and it is ≥ 0 because
+the policy would otherwise pick the best action at `mid`. So the omen wins only when its discount
+beats the flexibility it takes away. The discount is real and worth having — the omen is a FLAT
+surcharge, so at Greater strength one omened orb is 11.118 ex against 17.574 for two, and at Perfect
+1,025.331 against 2,046 — but after one Greater Exalt the right move is usually a cheap base Exalt, a
+Chaos, or an Annulment, not another Greater Exalt. The MDP re-decides after every draw; this omen is
+a promise not to.
+
+**That is also why the step planners DO want it.** A plan is a fixed sequence with no decision points,
+so it has no flexibility to give up — the regret term is zero there by construction, and all that is
+left is the discount and the two-orders bonus. The same mechanic, worth 42% on one model and nothing
+on the other, for a reason each model's shape explains.
+
+Re-measure only if the omen's price falls below a plain Exalted Orb's, or if the strength prices move
+far enough that a doubled Perfect Exalt becomes a route the policy would take anyway. The attempt is
+kept at `scratchpad/markovActions.mdp-attempt.ts` for the session; the diff is ~30 lines.
+
+## What a mod you already hold is worth, and a no-op that cost 71 seconds (2026-09-03)
+
+Prompted by a user question — *"adding 2 mods on a 4 mod item took ~3 minutes on Exhaustive. Is it
+normal? Did it redo everything?"* — which turned out to have three separate answers, one of them a bug.
+
+**The craft.** Six targets on a Wand at ilvl 82, three prefixes and three suffixes, every one at T2:
+`WeaponSpellDamage`, `IncreasedMana`, `DamageGainedAsCold`, `SpellCriticalStrikeChance`,
+`IncreasedCastSpeed`, `GlobalIncreaseSpellSkillGemLevelWeapon`. 24 solves in total. Every figure below
+is `bound: 'exact'` — a proof, not a stopping rule — so the costs are deterministic and one run each
+is enough; only timings would need reps, and timings are not the finding.
+
+### ~3 minutes is normal, and holding more of the target does not shrink the work
+
+Exhaustive settled this craft in 71-303 s. The state count did **not** move with the starting item:
+**15,545 states in all 14 runs**, at every held count. `enumerateStates` takes the TARGET count and
+loops `present` and `blocked` over 2^n each; it never sees the item. What the held mods do is set the
+start state — `classifyStart` does `present |= bit(i)` for each one at or above its wanted tier — so
+they are kept, not re-rolled, and you begin deeper inside a lattice of unchanged size.
+
+At Standard (15 s) every run clocked out at `bound: 'lower'`, so this craft genuinely needs Exhaustive.
+Two Standard runs of the SAME input returned 2.747e5 and 2.089e5: not nondeterminism, but two floors on
+a value still climbing when the clock stopped, which is the argument for rendering `lower` as ">=" and
+never as a figure.
+
+### The marginal value of a mod you already hold
+
+`V(k)` = expected cost still to come, holding the first k targets of a fill order.
+
+| hold | sided (P,P,P,S,S,S) | saved | balanced (P,S,P,S,P,S) | saved |
+|---|---|---|---|---|
+| 0 | 1,509,425 ex | 0.00% | 1,509,425 ex | 0.00% |
+| 1 | 1,509,117 | 0.02% | 1,509,117 | 0.02% |
+| 2 | 1,508,804 | 0.04% | 1,499,575 | 0.65% |
+| 3 | 1,505,412 | 0.27% | 1,490,419 | 1.26% |
+| 4 | 1,443,641 | 4.36% | 1,302,866 | 13.68% |
+| 5 | 801,762 | 46.88% | 801,762 | 46.88% |
+| 6 | 0 | 100% | 0 | 100% |
+
+**Four of six is 4-14% done, not 67%.** The last mod alone is 53% of the craft; the first three
+together are 0.27% of it. Cost on a fixed-size item is violently back-loaded — each mod added shrinks
+the slots an Exalt can land in, while a miss then needs a 179 ex Annulment that picks uniformly and can
+take what was banked. The curves are pinned together at k=0, 1, 5 and 6 (same items by construction),
+which is four free consistency checks; k=0 also reproduced digit-for-digit across separately-launched
+processes, which is what licenses comparing the rest.
+
+**Which four you hold matters ~3x more than how many** — 140,775 ex apart at k=4. A "completing a side
+forces later Exalts onto the other side, so it should help" prediction was made in advance and
+**falsified**: filling the prefix side was worse, not better. The cause is per-draw rarity, not shape.
+On an empty Rare at T2-or-better, prefixes average **0.92%** per Exalt against suffixes' **0.37%**
+(2.47x), so banking the easy side leaves the expensive half still to buy. Log-log correlation between
+P(everything still owed) and V is r = -0.72 — the right direction, and loose enough that how full the
+item is clearly does work too. `balanced` beating `sided` is therefore an artifact of this mod list's
+ordering, not a rule about sides; the rule is that a held mod is worth the difficulty of what it
+removes from the shopping list.
+
+### The bug: an already-finished item solved the whole lattice to reach zero
+
+`copyItemToTarget` (`ItemActions.tsx`) sets every target to `tiers.length` — the WORST tier, since
+tiers run best-first — so **Copy my current mods -> Compute plan** builds a target the item already
+satisfies. The step planner has always short-circuited that (`fromItem.ts`, the `steps: []` frontier).
+`markovFromItem` did not: it computed `s0` and then ignored it, building all 15,545 states to return 0.
+
+Measured on a finished 6-mod Wand, through the real facade with `copyItemToTarget`'s own tier logic:
+
+| | before | after |
+|---|---|---|
+| Standard (the default) | 16,292 ms, `bound: 'lower'`, rendered **"&ge; 0 ex"** | 2 ms, `exact` |
+| Exhaustive | 71,092 ms | 1 ms |
+
+The default path is the worse one and was the one nearly everybody would hit. It is also where the
+`lower` bound made it absurd rather than merely slow: a floor on zero, printed under the heading *True
+expected cost*.
+
+Fixed by a guard where `s0` is built, gated on `isAccepting` — the same predicate `goalKeys` is built
+from, so it cannot disagree with the solver about what "finished" means. Three mutations checked, all
+caught. The test asserts `policy.size === 0` rather than a wall time: the policy holds one entry per
+non-goal state, so an empty one proves no lattice was built, where asserting the cost alone would pass
+just as happily after a full solve.
+
+### Surfacing it: what the item you hold is worth, for free
+
+The finding is only useful if the app says it, and "4 of 6" is the framing that misleads — so the Item
+tab states it in currency instead. `MarkovResult.bareCost` is what the same craft would cost from a
+bare item of the start's rarity, and it costs NOTHING to obtain: the solver already computes a value
+for every state in the lattice and the bare state is one of them. A second solve would have doubled a
+three-minute craft.
+
+Verified against the sweep above, reading the field out of a HELD item's lattice and comparing with
+the bare-Rare figure measured hours earlier in a separate process:
+
+| | read out here | separately measured |
+|---|---|---|
+| from the held item (sided k=4) | 1.443641e+6 | 1.443641e+6 |
+| `bareCost` | 1.509425e+6 | 1.509425e+6 |
+
+Digit-for-digit, so the field is the same quantity and not an approximation of it. The item is worth
+**65,784 ex = 4.36%** of the craft, which is what the panel now says.
+
+**The liability case is real, and had to be shown rather than asserted.** The UI carries a branch for
+`expectedCost > bareCost` — "your item is behind a clean start" — and a branch for a state nobody has
+produced is dead code dressed as care. The first attempt to demonstrate it FAILED: an item holding
+four targets alongside junk came out at **+14,196**, because the targets' value swamped the junk. A
+junk-ONLY Wand (three mods, none of them targets) settles it: **1.509914e6 against the bare 1.509425e6
+— 489 ex worse than an empty base**, `bound: exact`. Small against a 1.5M ex craft, and reachable.
+
+The row is withheld unless `bound` is `exact`. Both figures come from one solve, so when that solve
+runs out of clock they are two floors on values still climbing and their DIFFERENCE bounds nothing; a
+percentage there would be invention. It is also withheld on a bare start, which is what keeps it off
+the Lab tab without a second rule.
+
+**Two test fixtures were passing BECAUSE of the bug**, and that is the part worth carrying forward.
+`solve.test.ts` and `engineClient.test.ts` both held an item whose targets it already satisfied (item
+= p0 + s0, targets = p0 + s0 at the same tier). Three tests — progress messages advance monotonically,
+a one-sweep budget cannot converge, the worker forwards progress on an item solve — were therefore
+measuring the solver grinding through a lattice for a craft that was already finished, and went red
+the moment the grinding stopped. Their INTENT was sound; the fixture was not. Both now hold one mod
+and ask for two, and a re-run of the guard mutation confirms they pass with the guard either way, so
+they no longer depend on the waste they were accidentally exercising.
+
+**A number in an earlier draft of this was wrong and is worth recording as such.** The 71 s was first
+quoted as 215 s, taken from a probe that used a T2 target rather than `copyItemToTarget`'s worst-tier
+one. Running the actual user path is what corrected it — and what surfaced the 16 s Standard case,
+which the probe could not have shown at all.
+
+## The plan cards were filtered on a number they no longer show (2026-09-03)
+
+Asked to drop the free-restart total from the Lab tab — *"the prices are so high, I'd rather just keep
+the true expected cost"* — the removal itself is one prop. What it exposes is the ordering underneath.
+
+**Why the total had to go, beyond the price.** `expected` is the cost of a policy *forbidden to repair*:
+on any miss you bin the item and start from a fresh base. That is as false from white as from a held
+Rare — nobody bins an item six steps in holding five of six targets. The MDP behind True expected cost
+already has `restartCost` among its actions (`solve.ts:326`), so wherever restarting genuinely is
+cheapest it agrees; where it is not, it comes back orders of magnitude lower. The frontier's total can
+never be the better number, only the same or worse. Nothing is lost by deleting it.
+
+**What that exposed.** `paretoFrontier` prunes on `(expected, probability)`. The cards show
+`(perAttempt, probability)`. A set non-dominated on one pair is not on the other, because
+`expected = Σ c_k·S_{k−1} / S_n` charges a step only by how often you REACH it — so a plan that saves
+its 1023ex Perfect Exalt for last, behind a chain it clears one time in ten thousand, is scored as
+though the orb were nearly free.
+
+Measured over 61 multi-plan from-white frontiers (5 bases × 5 target shapes × 3 tiers):
+
+| | |
+|---|---|
+| frontiers whose per-run cost FELL as the odds rose | **51 of 61** |
+| cards beaten on BOTH visible numbers by another card in the same list | **229 of 470 (49%)** |
+| worst single frontier | Bows 3p/2s T3: **20 cards → 6** |
+
+The sharpest single case, a Helmet 3p/3s at any tier — first card **25.2 ex/run at 1 in 60,000**, last
+card **4.0 ex/run at 1 in 10,500**. The last is cheaper per run *and* 5.7× likelier, and it was listed
+last, ranked by a number about to be taken off the screen.
+
+**The fix** is a display-axis Pareto filter in `mapFrontier` (`src/lib/engineMap.ts`), deliberately not
+a change to `paretoFrontier`: the budget search downstream still needs the expected-cost frontier. It
+sits at the display boundary rather than inside the component so the cards and the Lab's screen-reader
+announcement cannot describe different lists.
+
+**It does not gut the frontier.** Over 124 crafts (7 bases × 5 shapes × 4 tiers), cards fall from 983
+to 531 — average 7.9 → 4.3 — and the distribution stays a frontier rather than collapsing to one route:
+
+| cards shown | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| crafts | 12 | 11 | 13 | 38 | 18 | 20 | 6 | 1 | 4 | 1 |
+
+Mutation-checked: removing the filter reddens both the domination property test and the ordering test
+(4 dominated cards on the from-white fixture, and `25.002` where `≥ 28.102` was required). The
+from-item fixture passes either way — the property holds there by luck, which is why the from-white
+case is the one that carries the guard.
+
+**Dead code deleted with it**, since `freeRestart` then had one reachable value: the prop and its five
+branches, `recommendPlan`, `Recommendation`, `MAX_PRACTICAL_ATTEMPTS`, the impractical-frontier note,
+and the `best value` / `cheapest` / `surest` badges — all claims that ranked on the hidden total.
+
+## Wand and staff bases are locked to one spell element, and the app shipped the permissive one (2026-09-03)
+
+Reported: *"a cold wand base, it can only roll +x to cold spell skills, and not fire"*. True, and the
+dump says so outright rather than by implication — a base carries negative tags (`no_fire_spell_mods`,
+…) and every mod they gate lists that tag at weight 0. `resolveWeight`'s first-match convention has
+implemented this correctly the whole time.
+
+**What shipped instead.** `pickVariant` collapses each class to one RePoE tag-set, and `isSpecializer`
+matches `/^no_.*_spell_mods$/` — so it deliberately skipped every restricted variant and picked the
+unrestricted one. `Wands` was the Attuned Wand: right for 9 of 18 wand bases, wrong for the other 7.
+
+**Scope, measured against the dump rather than guessed.** Only two classes. Wands: 18 bases → 6 pools.
+Staves: 19 → 6. Sceptres: 16 bases, 1 pool. Quarterstaves has 8 tag-set variants but they are
+`ezomyte`/`maraketh`/`vaal`/`karui` cultural tags, and **no mod anywhere gates on a `*_basetype` tag**,
+so those genuinely share a pool and stay collapsed. 42 bases → 52.
+
+**Two costs, and the second is the one that matters.** The app offered mods the base can never roll —
+a plan naming `+X to Level of all Fire Spell Skills` on a Frigid Wand is a craft that cannot complete.
+And because the gated mods stayed in the DENOMINATOR, it understated the odds of every mod that IS
+legal. The restriction drops 10-11 of 29 groups: the elemental damage prefixes, the gem-level mods, and
+the ailment mods (`FreezeDamageIncrease`, `IgniteChanceIncrease`, `ShockChanceIncrease`).
+
+| | app (`Wands`) | real (`Wands_cold`) | |
+|---|---|---|---|
+| prefix-side weight, ilvl 82 | 41,400 | 31,200 | **1.327x** |
+| suffix-side weight | 73,000 | 62,600 | 1.166x |
+| one exalt lands `+X cold spell skills` | 2.273% | **3.030%** | 1.33x |
+| 3-target cold craft, surest per run | 0.0072% | **0.0146%** | **2.03x**, and 2 plans where there was 1 |
+
+The error ran CONSERVATIVE — overstating cost, understating odds — which is the safer direction to be
+wrong in, and still made exactly the bases a cold or fire caster would buy look worse than they are.
+
+**Three things made the fix cheap, each measured rather than assumed.**
+
+1. **No new normal mods.** A variant's pool is a subset of its parent's groups, and every group they
+   share resolves to the same weight — checked across all ten variants: 118-123 shared mods each, zero
+   differing, zero gated-to-0, because a variant's own `mods` list is already the restricted pool. So a
+   variant reuses the parent's `Wands/<group>` ids and `mods.json` gains no normal mod.
+2. **No downstream map entry.** `apply_weights` and `apply_pools` resolve a poe2db page from
+   `base.category`, not `base.id`, for everything outside `ARMOUR_CATS` — so a variant keeping
+   `category: 'Wands'` reads the same page as its parent. This is the three-map trap the belt note in
+   CLAUDE.md warns about, sidestepped by varying only the id.
+3. **Share links keep working.** The parent keeps the id `Wands`, so an existing link still resolves
+   and still means the unrestricted base.
+
+**The pipeline reproduces the shipped data byte-for-byte**, verified by running it unchanged before
+touching anything — which also confirmed the `templateFixedRoll` fix from earlier the same day agrees
+exactly with the migrated file. Every diff after that point is this change alone.
+
+**Costs.** +285 mods, all desecrated/essence: `apply_pools` mints per-base carved ids, and that is the
+established pattern rather than something this introduced — `Body_Armours_str` and `_dex` already carry
+byte-identical 10-mod carved pools under different ids. Wire cost +4.4 kB gzip (mods 79.69 → 82.46,
+base_items 11.38 → 13.03).
+
+**Not asserted either way:** whether the desecrated and essence pools are element-gated too. They come
+from poe2db's class page and nothing in the RePoE dump gates a non-normal mod with these tags, so a
+variant inherits its parent's carved pool. If that is wrong the variants over-offer carved mods exactly
+as the single base over-offered normal ones — worth a look, and not something to guess at.
+
+**A stale invariant found on the way.** `workspace.ts` claimed every id in a base's pool starts with
+that base's prefix, "verified across all 1297". False as of this change: `Wands_cold` reuses `Wands/…`
+ids, so nothing is stripped and those links carry the full id. The round trip is still exact — `strip`
+only shortens on a match and `restore` passes through any short form containing a slash — but exact by
+construction rather than by that invariant, and `spellBases.test.ts` pins it.
+
+## Alloys were named by us and priced by nobody (2026-09-03)
+
+Asked what Alloys are and whether the app sees them. It does — all 13, live, and on a Wand **8 of 11**
+perfect-essence targets are Alloys — but under a name we invented and a price we made up.
+
+**What they are, traced.** RePoE: `StackableCurrency`, ids `CurrencyVerisiumAlloy1..13`, tagged
+`verisium_common` / `uncommon` / `rare` / `mythic`, named plainly (`Runic Alloy`, `Sovereign Alloy`).
+poe2db files their outcomes in the same `perfect_essence` array `poe2db.mjs` already reads, flagged
+`"IsAlloy": true`, `"IsPerfect": "0"`, `"Removes": true`. They appear on **42 of 42** item-class pages
+and grant league stats — Runic Ward, elemental penetration, ballista limit, chain chance.
+
+**The mechanic was already right, and that is why it did not change.** Every alloy row is
+`Removes: true`, exactly as the 84 true Perfect Essence rows are, against `Removes: false` on the 1,676
+regular-essence rows. Remove-one-random + add-this-guaranteed is what poe2db asserts for both, so the
+engine source stays `perfect_essence` for both and every planner is untouched.
+
+**Defect 1 — the name.** `apply_pools.mjs` prepended `Perfect Essence of ` to every row in that pool,
+so `href="Runic_Alloy"` became *"Perfect Essence of Runic Alloy"* — a string in neither poe2db nor the
+game. Fixed by asking whether the href was an "Essence of" anything at all, which needs no new field
+on the parser's contract.
+
+**Defect 2 — the price, and it was the serious one.** `essenceId` asked poe.ninja for
+`perfect-essence-of-runic-alloy`, matching nothing, so `priceEssences` fell through
+`exact ?? median(this essence's other levels) ?? median(the level)`. Alloys have ONLY a PERFECT level,
+so the middle rung is always empty and all 272 landed on the global median.
+
+The feed exists and was never fetched: **`type=Verisium`**, 24 lines, all 13 Alloys under bare-name
+ids. Confirmed a real endpoint by the repo's own test — an invalid `type` returns byte-identical
+output, and `Verisium` differs from that baseline while `Alloys`, `Alloy` and `Expedition2` do not.
+
+| | before | after |
+|---|---|---|
+| Alloy mods priced | 192 of 272 | **272 of 272** |
+| distinct Alloy prices | **1** (`4.331`) | **13** |
+| range | — | 3.63 – 2,261 ex |
+| entries inferred rather than observed | 58 | **41** |
+
+Worst case: **Celestial Alloy, 2,261 ex, charged as 4.331 — 522x under.** CLAUDE.md: *"the optimizer
+ranks plans BY cost, so a wrong relative price changes the recommendation, not just the total."* That
+did not merely understate a total; it made Alloy routes the bargain of the frontier.
+
+**The `verisium_*` ladder does not predict price** — Adaptive and Protective are tagged `common` and
+trade at 290 and 239 ex, above the `mythic` Transcendent at 38. Do not derive one from the other.
+
+**Three things done deliberately rather than by default:**
+
+1. **Alloys are excluded from the level median.** They never need the fallback, so the only question is
+   whether they should SHAPE it — and `perfect_essence` is what an unknown PERFECT ESSENCE costs. Left
+   in, 13 values spanning 3.6–2,261 ex would drag the fallback for every essence that genuinely needs
+   it.
+2. **Only lines matching an essence we ship are taken**, so the feed's other 11 (`liquid-verisium`, the
+   starlit ores, the crests — league material this app does not model) stay out by construction rather
+   than by a list of names to skip. Logged: `13 of 24 Verisium lines matched`.
+3. **The one-essence-per-item cap still covers Alloys.** `whyNotAdd` tested
+   `source === 'essence' || 'perfect'` — a COMPARISON, so adding `'alloy'` to the union did not make
+   the compiler ask about it. Whether the cap really applies to Alloys is untraced; today's behaviour
+   is the conservative reading and is now pinned by a test rather than left to drift.
+
+**A stale disclosure found on the way.** `prices.json`'s `source` — which `PriceBasisNote` shows to
+players — still said omens were *"hand-transcribed from the Omens page (no API serves them)"*, weeks
+after the Ritual feed was found and wired up. Corrected, and it now names the Verisium feed too.
+
+**A fragile test found on the way.** `solve.test.ts`'s "stops binning items when it bites" counts
+`Start over` nodes in the returned policy graph, which is the visit-ranked closure — its SHAPE moves
+with the price sheet even when the model has not. The live refresh flipped it 6/26 with no code change
+behind it, and the same run passed against the previous sheet. Moved to `loadFrozenPrices()`, the
+precedent already set one block below it in the same file: the claim is about the solver, not the
+market.
+
+**Not asserted:** whether the desecrated pools are element-gated (see the base-split entry), and what
+the 138 poe2db rows that are `Removes: true`, `IsPerfect: 0` and NOT Alloys actually are. Both are
+their own questions.
+
+## Every subset priced at once, and a copy claim the measurement corrected (2026-09-09)
+
+The 2026-09-03 campaign above walked ONE fill order and paid for a solve per step. The whole table was
+already sitting in the lattice: value iteration solves every state, and "a clean item holding exactly
+these targets" is a cell of it — which is how `bareCost` had been read since it shipped. `holdings`
+reads out all `2^n` of them, so a six-target craft answers 64 shopping questions on a solve that
+already ran, and the 2026-09-03 finding that **which** mods you hold matters more than **how many** is
+now a thing the app shows rather than a thing this file records.
+
+Differentially checked before being believed: each single-modifier row equals an actual
+`markovFromItem` solve from an item holding that modifier, to 6 decimals (`markovFromItem.test.ts`).
+
+### The campaign — 7 synthetic crafts, then fubgun's 9 real items
+
+Every one returned `bound: exact`. Timing is the solve, not the table, which costs `2^n` map lookups.
+
+| craft | targets | solve | bare | best 1 | best n−1 |
+|---|---|---|---|---|---|
+| Wands 2p+1s | 3 | 70 ms | 1,997 ex | 8% | 46% |
+| Wands 2p+2s | 4 | 193 ms | 8,189 | 1% | 47% |
+| Wands 2p+2s T2+ | 4 | 361 ms | 44,523 | 11.6% | 45.7% |
+| Wands 2p+2s T1 | 4 | 1.2 s | 175,339 | 8.5% | 50.0% |
+| Wands 3p+2s | 5 | 744 ms | 17,444 | 1% | 50% |
+| Amulets 2p+2s | 4 | 268 ms | 39,680 | 4% | 30% |
+| Rings 3p+3s | 6 | 2.1 s | 42,354 | 0.1% | 35.7% |
+| Helmets_str 3p+3s | 6 | 2.2 s | 16,931 | 0% | 31% |
+
+Real gear, same shape and far wider spread — the Helm's five-of-six saves **97%** where the Ring's
+saves **27%**, so "the last mod is everything" is not a rule, it is a property of which mod is rare on
+that base. Solve times 0.9 s (Crossbow, 5) to 15.7 s (Ring, 6); all exact.
+
+### The correction: "trap" was an overclaim, by two orders of magnitude
+
+The first version of `WhatToBuy` called a modifier that leaves you worse off than an empty base a
+**trap**, and the commit called it "the difference between paying for a head start and paying for a
+handicap". The effect is real and common — 6 of 7 synthetic crafts and every real item had at least
+one — but measured, it is **+0.03% to +0.20%** of the bare cost. At that size it is "worth nothing,
+do not pay extra for it", not something to avoid. The panel prints the percentage instead of the
+adjective, and `WhatToBuy.test.tsx` pins that the number arrives with the claim.
+
+The effect that IS large is the back-loading the table shows, and it was already this file's finding
+in 2026-09-03. Nothing new was discovered by dramatising the small one.
+
+### One rendering bug the campaign surfaced
+
+A holding lists several positions on one line, and two of them can print identically: 8 base/text
+collisions exist in 0.5.0, all the `ItemFoundRarity` prefix/suffix pair, which an item can carry at
+once. Rendered plainly a row read `Rarity + Rarity` and looked like a bug rather than the two
+modifiers it is. `mapMarkov` appends the side on collision only, so every other row is unchanged. A
+policy-graph BOX shows one position at a time and never had to care, which is why this surfaced only
+once holdings existed.
+
+### Driving the app found three things the headless campaign could not (2026-09-09)
+
+Running the real build in a browser, not the suite.
+
+1. **`holdings` was read at the STARTING rarity**, so a from-white craft got one row and the panel
+   never appeared on the Lab tab at all. Fixed to the Rare rung. Two of my own probes were also wrong
+   before the app was: one matched any `%` on the page and called a finished solve "still computing",
+   the other matched the standing explainer paragraph containing the words "True expected cost" and
+   declared a craft answered 0s after clicking. Wait on the Cancel button going, not on prose.
+2. **The Lab tab is the wrong home for the table.** With the default free base the policy bins the
+   item and restarts, so the "holding none of them" row came out equal to the white base's own cost to
+   the exalt, and three-of-four saved 18% where a held Rare saved 37%. Removed from that tab.
+3. **`bound: 'exact'` is a real gate, and it closes on ordinary crafts.** Four T1 targets on a Wand
+   with THREE of them prefixes returns a floor at Standard. 2 prefixes + 2 suffixes at T1 settles
+   exactly on every base tried (Wands 1.0 s, Amulets 2.1 s, Rings 0.7 s, Helmets 0.5 s), so the
+   failing axis is how many land on ONE SIDE, not the tier or the count — a third prefix has to land
+   in the last prefix slot, and that transition governs VI's convergence rate.
+
+   | maxIters | time | bound | cost |
+   |---|---|---|---|
+   | 100,000 (Standard) | 8.2 s | lower | 5.0803e+6 |
+   | 1,000,000 | 93.4 s | lower | 2.2672e+7 |
+   | 5,000,000 | 262.5 s | **exact** | 2.3312e+7 |
+   | 20,000,000 (Exhaustive) | 261.1 s | **exact** | 2.3312e+7 |
+
+   So raising effort DOES fix it, and Standard's floor is **out by 4.6x** — not a near-miss to be read
+   as an estimate. That is the case for refusing to build a table from a bound.
+
+   Confirmed in the browser end to end: the same craft at Exhaustive settles in **123 s**, the floor
+   warning is gone, and the table draws. Two rendering bugs surfaced only there — the table used
+   `formatCost` per row and printed "123K div / 120.6K div / 4,781 chaos" (the exact mistake
+   `pickUnit`'s own comment warns about), and a +0.03% trap rounded to "+0.00%".
+
+   **The first version of this entry said the opposite, and was wrong because of the probe.**
+   `MarkovOptions` takes `maxIters`; the effort ladder calls it `maxSweeps` and `withSweepLimit`
+   maps between them. Passing `maxSweeps` directly to `markovFromItem` silently gets the default
+   100,000 at every rung — four runs, four identical numbers, read as "more effort changes nothing".
+   Identical results across a swept limit mean the limit is not being swept.
+
+One copy bug too: JSX drops whitespace between an element and text across a line break, and the gear
+tab shipped reading "makes it the target on *I have an item*and leaves your own item alone".
+
+## The engine against a real character's gear (2026-09-09)
+
+All nine of fubgun's items, crafted from a white base of the same kind, at 20M sweeps — **at ANY tier**:
+`scripts/policy-vs-mc.mts` passes bare mod ids, so each row prices those modifiers, not the streamer's
+rolls. (Corrected 2026-09-10. At its real tiers — what "Craft this from scratch" sends — the Dire Spire
+is **1,981,936 ex**, 100x its row; see "Extra Cold OR Extra Lightning" below.)
+
+| item | targets | solve | cost from white |
+|---|---|---|---|
+| BodyArmour Corpse Mantle | 6 | 2.6 s | 3,778 ex |
+| Boots Empyrean Pace | 6 | 2.8 s | 4,223 ex |
+| Weapon2 Phoenix Core | 5 | 1.6 s | 7,513 ex |
+| Helm Kraken Crest | 6 | 13 s | 8,920 ex |
+| Gloves Horror Mitts | 6 | 3.8 s | 12,490 ex |
+| Amulet Pain Collar | 5 | 19 s | 18,540 ex |
+| **Weapon Dire Spire** | **6 + rune** | **4.8 s** | **19,415 ex + 12.13** |
+| Ring2 Miracle Twirl | 6 | 8.8 s | 85,780 ex |
+| Ring Damnation Circle | 6 | 24 s | 317,100 ex |
+
+Every one returns `bound: exact`.
+
+### Monte Carlo against V — five clean, two OPEN
+
+`scripts/policy-vs-mc.mts` walks the solver's own policy graph, samples its transition edges and
+averages the real spend. At **50,000 runs, one seed**:
+
+| item | V (ex) | MC mean | ±2 SE | z |
+|---|---|---|---|---|
+| Corpse Mantle | 3,778 | 3,773 | ±34 | −0.32 |
+| Empyrean Pace | 4,223 | 4,229 | ±37 | +0.31 |
+| Phoenix Core | 7,513 | 7,508 | ±67 | −0.15 |
+| Kraken Crest | 8,920 | 8,931 | ±64 | +0.31 |
+| Horror Mitts | 12,490 | 12,480 | ±111 | −0.13 |
+| Dire Spire (5-target form) | 6,615 | 6,682 | ±59 | **+2.27** |
+| Pain Collar | 18,540 | 18,300 | ±147 | **−3.37** |
+
+**This is UNRESOLVED and must not be read as a pass.** Across seven items you would expect ~0.35
+exceedances of 2 SE, not two, and z = −3.37 is not a coin-flip. There are two candidate explanations
+and they need opposite responses:
+
+- **Heavy tails.** A run is a geometric-ish number of cheap restarts with a long tail, and for heavy
+  tails the SAMPLE variance understates the true variance — so the SE is too small and z is inflated.
+  Then these are non-events.
+- **A real bias** between the policy graph the MC walks and the transition model VI solved. Then it is
+  a defect, and one no unit test would catch.
+
+**One seed cannot distinguish them; independent seeds can.** A bias keeps its SIGN across seeds,
+sampling noise does not, so the test is the sign count and not the z.
+
+### The seed sweep: 6 seeds x 800 runs (2026-09-09)
+
+    npx tsx scripts/policy-vs-mc.mts 800 6
+
+| item | per-seed deviation from V (%) | above V | mean of 6 |
+|---|---|---|---|
+| Corpse Mantle | +5.64 +1.96 +2.56 −4.48 +2.27 +0.22 | 5/6 | +1.36% |
+| Empyrean Pace | −0.17 −1.70 −2.17 −2.30 +3.53 −1.36 | 1/6 | −0.69% |
+| Phoenix Core | −4.25 −1.60 +1.54 +3.55 −2.81 +2.11 | 3/6 | −0.24% |
+| Kraken Crest | +4.59 +0.03 −3.53 −3.98 +2.79 +3.24 | 4/6 | +0.52% |
+| Pain Collar | −1.07 −3.06 −8.00 +0.62 −0.20 +3.74 | 2/6 | **−1.33%** |
+
+**The heavy-tail explanation is confirmed**: SD/mean ≈ 1.0 on every item and a worst single run of
+5-9x V, so the single-seed standard error really was too small and the z values were inflated. Every
+item flips sign across seeds, Pain Collar included.
+
+**But it is NOT settled, and the reason is Pain Collar.** Its mean over 6 seeds is −1.33%, against
+−1.29% from the independent 50,000-run pass — same sign, near-identical magnitude. Mixed per-seed
+signs are what you would see either way at this sample size: the seed-to-seed spread is ~4%, so the
+mean-of-means carries roughly ±1.6%, and a −1.3% bias is not distinguishable from zero by this run.
+Two measurements agreeing to 0.04 points is suggestive; it is not evidence at this precision.
+
+Next step, and it needs more than patience — at ~1% precision the sampling cost scales badly. Either
+run `policy-vs-mc.mts` at high seeds AND high runs on Pain Collar alone, or reduce variance directly
+(compare per-STATE V against a per-state MC rather than the start value, which localises any bias to
+the states that carry it). Do not record this as a pass until one of those is done.
+
+The two rings are skipped by the script: their odds are long enough that a run walks millions of
+restarts before it succeeds, so sampling them is intractable rather than informative. That is a limit
+of the check, not a result about those items.
+
+### The Dire Spire row is a correction
+
+It was first measured at **6,615 ex for five targets**, because the reading dropped the second
+`Gain as Extra Fire` — two of one family, which `ItemState` cannot hold — and the craft routes were
+handed that five-modifier item. The user caught it: the staff has six modifiers, and the sixth is a
+CONVERSION, not an absence. Rolling fire AND cold is legal (different families) and a Passion of Aldur
+then converts the cold one, which is how the item was really made.
+
+So a gear reading now carries two items: `item` (what can be held, five) and `goal` (what to aim at,
+six plus the rune). The honest number is **2.9x** the one first reported — the conflation did not just
+misdescribe the craft, it flattered it.
+
+Caveats that remain, and where they land: **4 sanctified modifiers, all on this same staff** (read as
+T1, so its craft is still a floor on the real item); **7 of 9 items carry a desecrated modifier**, and
+that pool's spawn weight is the engine's one measured-not-published input (2,500 assumed, range
+1,995-3,981 from 40 bones — see D4).
+
+## Five streamers, and a data gap they exposed (2026-09-10)
+
+`tools/streamers/profiles.json` now reads five profiles. Each streamer's CURRENT character, as the job
+resolved it:
+
+| streamer | character | items read | modifiers placed | lines unread | items not shown |
+|---|---|---|---|---|---|
+| fubgun | Fubgun_Oil, 97 | 9 | 52 | 2 | 1 Unique |
+| Zizaran | ZizaranMonkBrothers, 93 (HC private) | 8 | 42 | 5 | 2 Rares |
+| Steelmage | SteelMonkBrothers, 95 (HC private) | 4 | 21 | 1 | 3 Rares, 3 Uniques |
+| XTheFarmerX | xthefarmerxMILKED, 96 | 4 | 23 | 2 | 4 Rares, 3 Uniques |
+| SpicySushi | SushiToppingFub, 96 | 4 | 18 | 6 | 2 Rares, 4 Uniques |
+
+**Corrected the same day: the 11 Rares were a PIPELINE gap, not a data gap.** Every one sits on a base
+no row named — Sekhema Sandals (x2), Ancestral Tiara (x2), Daggerfoot Shoes, Runeforged Daggerfoot
+Shoes, Secured Wraps, Runeforged Secured Wraps, Sirenscale Gloves, Akoyan Spear, Skullcrusher
+Quarterstaff. This paragraph first said they were missing from the 2026-07-04 RePoE cache as well; they
+are not — `repoe_base_items.json` names each one exactly once. A name search of `repoe_mods_by_base.json`,
+which lists bases by metadata path, finds no base at all, the controls included, so it proved nothing.
+The next section is the fix; all 11 resolve now.
+
+Unread LINES on the items that did resolve fall into three groups, recorded so the next pass does not
+re-diagnose them: `crafted: Essence…` and `crafted: Alloy…` (essence and alloy grants the stat index
+does not cover — fubgun's first read had one too), minion modifiers on rings (`MinionLifeRing4`,
+`MinionElementalResistance4`, …), and league-mechanic grants (`GenesisTreeRing…Crafted`, the desecrated
+`Offering Skills have #% increased Buff effect`).
+
+**Before this, the tab hid whole items.** The job did not persist `skipped`, so Steelmage showed 4
+items while wearing 6 more — the panel's "everything left off is named" held for modifiers and never
+for whole items. The job now writes the Rare and Unique skips; socketed runes (`Chakra`) and Incursion
+limbs carry no such rarity and are left out as noise.
+
+## Base-type twins: the eleven Rares were in the data all along (2026-09-10)
+
+**What was wrong.** `refresh.mjs` builds each row from ONE RePoE variant — the plain one — and shipped
+only that variant's base names. RePoE splits every class into variants by tag, and most bases sit in
+variants that add only a base-type family tag (`ezomyte_basetype`, `maraketh_basetype`, `vaal_basetype`,
+`karui_basetype`) or `runeforged`. Their names were never read: **1,019 released base names** that no
+paste and no profile could trace to a row, against the 529 the rows carried — low-level bases like
+Leather Vest (level 1) among them, and the Karui endgame set the streamers wear.
+
+**The rule** (`tools/refresh/twins.mjs`). A variant lends a row its names only when its tags minus
+`SPECIALIZER` ARE the row's tags, in order, AND `poolKey` matches — the same prefix and suffix groups
+with the same tier ids. A tag-twin rolling another pool is warned and left unread; the unit test covers
+that guard on a synthetic class, since the real dump never trips it.
+
+| measured on the 2026-07-04 dump | |
+|---|---|
+| variants holding an unnamed released base | 333 |
+| … whose tags minus `SPECIALIZER` are a row's | 332 — all 332 roll that row's exact pool |
+| released names added | 1,019 (529 → 1,548) |
+| names landing on two rows | 0 |
+| rows / `mods.json` / pools / weights changed | none — byte-identical; only `bases` grew |
+| captions changed | 1 (Wands gained "Runemastered Runic Fork") |
+
+`run.sh` on the clean tree reproduced the committed data byte-for-byte BEFORE the change, so the diff
+is the change and nothing else. A name must also be `release_state: released`: that kept out the two
+unreleased Demigod twins (Golden Hoop, Golden Obi) and removed none of the 529.
+
+**Left unread on purpose — 31 released names, TODO 19.** Tri-attribute armour (Grand Regalia,
+Sacrificial Regalia, Grasping Mail, Garment, Grand Cuisses, Grand Manchettes, Grand Visage, and their
+rune forms) has no row and no cached poe2db page, so a row now would ship defaulted weights. The
+Trarthan Cannon (`cannon`) rolls its own pool — 3 grenade suffixes, no Additional Ammo. Fists of Stone
+is an Ascendancy base whose pool matches only through a doubled `gloves` tag, and whether it crafts like
+ordinary gloves is untraced. The Str/Dex Runemastered Venerable Defender is Unique-only; the Golden
+bases are Demigod.
+
+**The gear, re-fetched against the new data:**
+
+| streamer | items read | modifiers placed | lines unread | items not shown |
+|---|---|---|---|---|
+| fubgun | 9 | 52 | 2 | 1 Unique |
+| Zizaran | 10 | 54 | 5 | none |
+| Steelmage | 7 | 35 | 4 | 3 Uniques |
+| XTheFarmerX | 8 | 45 | 4 | 3 Uniques |
+| SpicySushi | 6 | 30 | 6 | 4 Uniques |
+
+The 11 formerly unread Rares place 60 modifiers and leave 5 lines unread: an essence grant, two
+desecrated lines (the desecrated pool carries no `tiers[].stats`), and
+`ReducedLocalAttributeRequirements4`/`5` on the Sekhema Sandals and the Akoyan Spear. That last is a
+**normal suffix our data carries on both rows**, with the stat id RePoE uses, so it is a stat-reader
+matching gap and not a data gap — and it predates this change: Zizaran's Morbid Bane wand already left
+`…3` unread. Fixed the same day — next section.
+
+**Three tests had pinned the bug.** "Obliterator Bow" was the suite's example of "a base from a later
+patch" in `parseItem`, `profileItems` and `pasteItem`. It is a Karui bow, in the data all along. The
+negative cases now use an invented base; the real bow is a positive case.
+
+**Mutation-checked**, each by breaking the behaviour, watching its test go red, and restoring byte for
+byte: in `twins.mjs`, the pool guard, the tag rule and `poolKey`'s group ordering (synthetic test, 2, 2
+and 1 red); through the real pipeline, not folding twins at all (529 names ship; 7 lookup tests red) and
+dropping the `released` filter (1,550 names, Golden Hoop and Golden Obi back; the owner test red).
+
+## "Reduced" modifiers never matched a tier from a profile (2026-09-10)
+
+Traced from the unread `ReducedLocalAttributeRequirements` lines above. poe.ninja sends
+`{ "local_attribute_requirements_+%": -35 }` for XTheFarmerX's Dusk Edge — the stat id our tier carries
+and the value its range holds, `[-35,-35]`. The matcher found the mod uniquely and then no tier:
+`within` (`tierFit.ts`) flipped a negative range's sign unconditionally, because pasted text prints the
+magnitude (`35% reduced …`), and so turned the profile's signed `-35` into `+35`. `aboveEveryTier`
+compares magnitudes, saw 35 against 35, and did not fire either. Pasting the same item always read it.
+The first guess — that poe.ninja and RePoE disagree on the sign — was wrong: they agree, and the flip
+was ours.
+
+**Reach:** every shipped mod with a negative range — 52, in 5 groups: `LocalAttributeRequirements` on
+38 bases, `ReducedBleedDuration` and `ReducedPoisonDuration` on 6 each, and the two belt charge mods.
+None could be placed from a profile. The fubgun fixture holds no such line, so the suite never saw it.
+
+**Fix:** a negative range is judged by magnitude, which reads both conventions, as `aboveEveryTier`
+already did; a positive range still compares raw. `tierFit.test.ts` pins both signs and the raw
+positive case; `profileItems.test.ts` pins the real Dusk Edge line at T1. Mutation-checked, each
+restored byte for byte: the old flip turns 2 tests red (the signed case, Dusk Edge) while the paste
+tests stay green; magnitude everywhere turns the positive-range case red.
+
+**Re-fetched**, no gear changed since the fetch before: 4 lines placed, none newly unread (21 → 17
+across the five characters) — `ReducedLocalAttributeRequirements3/4/5` on Zizaran's Morbid Bane,
+Steelmage's Cataclysm Span and XTheFarmerX's Dusk Edge, and a second family in the wild,
+`ReducedPoisonDuration3` on XTheFarmerX's Pandemonium Sanctuary. What stays unread is outside the stat
+reader: essence and alloy grants, desecrated lines the text path cannot place, minion ring mods, and
+league-mechanic grants.
+
+## The Aldur rune route worked in every test and nowhere in the app (2026-09-10)
+
+Reported from the app: crafting fubgun's staff from scratch sent five modifiers to the Lab, not the six
+the rune route builds. `runeConvert.ts` found a base's gain-as-extra siblings by their STAT ids, through
+`statsOf` — and `tiers[].stats` is stripped from the mods asset the browser downloads (`shipMods.ts`).
+Rebuilt the way the app builds it, the data gave the Staves base no siblings at all: no route, a goal
+identical to the five-modifier held item, and no `RuneHint` in the Lab or the Item tab either. Every test
+loaded the full file with `loadPatch`, where the stats exist, and passed.
+
+**Fix:** the element is read off the text (`Gain #% of Damage as Extra Fire Damage`) of the NORMAL pool
+only. A text match over every pool would also take Staves' carved Extra Chaos, Wands' carved Extra
+Physical and the martial weapons' Perfect Essence lines, which carry text and no stats, so the stat
+version never used them; a test holds the two equal on all 52 bases. `loadShippedPatch` builds the
+browser's projection for tests, and the rune, streamer-tab and RuneHint suites load it now.
+**Mutation-checked:** the stat-id lookup back turns 11 browser-data tests red across four suites; a text
+match over every pool turns 3 red, the equality test among them.
+
+**On the real staff, with the browser's data:** holds 5, goal 6 — Extra Fire T1, Extra Cold T1, Spell
+Damage T1, +Level of all Fire Spell Skills T2, Intelligence T1, Cast Speed T2 — finished by socketing a
+Passion of Aldur. Cold and Lightning roll identically on Staves (weight 500 at each of six tiers), so the
+sibling chosen, Cold, costs nothing over Lightning.
+
+## "Extra Cold OR Extra Lightning": the Aldur goal's sixth modifier is a slot (2026-09-10)
+
+Reported from the app right after the fix above: the staff's sixth modifier came across as Extra Cold
+alone. Passion of Aldur converts Cold and Lightning alike, so either one finishes the craft, and a goal
+naming Cold throws away every roll that lands Lightning. The engine already solves a slot of
+alternatives directly (`slots.ts`: the MDP takes the disjunction, the linear planners expand it); the
+streamer goal simply could not express one, because it was an `ImportedItem`.
+
+**Fix:** `runeRoute` returns `slots` — `[[Fire], [Cold, Lightning]]` for two copies, every sibling named
+outright for three — and `GearReading.goal` is a `CraftGoal` target list, so the converted copy becomes
+one slot at the tier of the copy it replaces. A candidate joins the slot only if `place()` still holds
+with it standing there. `runeOpportunity`/`RuneHint` count positions, one per slot: counting candidates
+would have printed "3× fire" for this very goal.
+
+On today's staff, with the browser's data: 6 positions — Extra Fire T1, [Extra Cold T1 or Extra
+Lightning T1], Spell Damage T1, +Level of all Fire Spell Skills T2, Intelligence T1, Cast Speed T2.
+**Mutation-checked:** a fixed sibling again turns 6 tests red; the hint counting candidates, 3 (printing
+the old "3× fire"); no legality check, 1 — on a built base where Lightning clashes with another
+modifier's family, since no shipped base has one.
+
+At the default Standard effort (15 s) the Lab cannot put a number on this craft with either goal: both
+come back "ran out of time … a six-mod target at T1 needs the longest setting". At the longest setting
+(20M sweeps, policy solver, free restart) both are exact, at the staff's real tiers: **1,997,322 ex**
+naming Extra Cold, **1,981,936 ex** with the slot — 0.8% cheaper (94 s and 106 s). The slot is the
+right goal; the saving is small here because only one of the six positions gained an alternative.
+These are the numbers "Craft this from scratch" leads to. The 19,415 ex in the 2026-09-09 table is the
+same six modifiers at ANY tier, which is what that table measured throughout.
+
+## The bone price gate was never a necessary condition (2026-09-10)
+
+Asked while reading a from-white route for fubgun's Aldur staff: *"why do we not desecrate also,
+wouldn't we have better odds? It is not because we do not put desecrated mod, that the best way isn't
+with it."* The MDP had not been allowed to answer. `desecratable` switched the whole Desecration action
+space off unless a bone cost less than three Exalts, and on 2026-09-10 none did: jawbone 4.2ex, rib
+21ex, collarbone 110ex, against a 1ex Exalt. The jawbone first crossed the line on 09-05 and has
+flickered since; the rib has been over it since 09-05; the collarbone never was under it. From then on no
+craft in the app desecrated for an ordinary mod, and nothing said so.
+
+**The argument, and where it breaks.** Three offers raise the chance of a hit by at most 3x
+(1−(1−p)³ ≤ 3p) and a bone's per-draw p is below an Exalt's, so a bone at three Exalts or more "cannot
+win". That weighs one bone against three Exalts on the chance of a hit — and three Exalts put three mods
+on the item where a bone puts one. Every miss is a mod that has to come off again, by an Annulment
+(140ex on the live sheet) that picks at random and can take a target, or by giving up the item. The offer
+is worth what a miss costs, and that is a property of V, not of the price sheet: the bone is worth
+`c_B + E[min of three V(s′)]`, the Exalt `c_E + E[V(s′)]`, and no ratio of `c_B` to `c_E` orders the
+two without knowing how far apart the V(s′) are. On a high-tier craft they are millions of ex apart.
+
+**Measured.** Held Rare, three ordinary targets at top tier, frozen sheet — the gate's own test craft:
+
+| base | bone price | bones excluded | bones available | |
+|---|---|---|---|---|
+| Amulets | 7.69ex (gate closed) | 52,738.7 ex | **26,561.2 ex** | −50% |
+| Rings | 7.69ex (gate closed) | 6,932.4 ex | **3,811.3 ex** | −45% |
+| Wands | 0.20ex | 4,073.8 ex | **2,493.7 ex** | −39% |
+| Wands | 4.155ex (the live jawbone) | 4,073.8 ex | **2,509.0 ex** | −38% |
+| Wands | 10ex | 4,073.8 ex | **2,531.7 ex** | −38% |
+| Wands | 30ex | 4,073.8 ex | **2,608.8 ex** | −36% |
+
+At thirty Exalts a bone still takes a third off the craft.
+
+From white, live sheet, Standard effort (15 s), T2 targets:
+
+| craft | bones excluded | bones available |
+|---|---|---|
+| Wands, 3 | 4,924 ex, 0.2 s | 4,111 ex, 0.8 s |
+| Wands, 4 | 13,819 ex, 0.9 s | 9,825 ex, 7.1 s |
+| Wands, 5 | 52,758 ex, 5.4 s | 27,006 ex, 19.5 s — past Standard |
+| Body_Armours_str, 3 | 2,142 ex, 0.1 s | 1,533 ex, 0.3 s |
+| Body_Armours_str, 4 | 10,441 ex, 0.6 s | 5,661 ex, 2.1 s |
+| Body_Armours_str, 5 | 23,866 ex, 1.3 s | 8,873 ex, 8.6 s |
+| Amulets, 3 | 10,041 ex, 0.2 s | 8,940 ex, 0.9 s |
+| Amulets, 4 | 52,626 ex, 0.9 s | 24,918 ex, 7.4 s |
+| Amulets, 5 | 141,127 ex, 4.6 s | 37,717 ex, 22.5 s — past Standard |
+| Staves, 3 | 4,924 ex, 0.3 s | 4,140 ex, 0.7 s |
+
+Timed with four solves sharing the machine, so read the ratios, not the seconds.
+
+And the craft that asked: fubgun's Aldur staff from white, six targets at the streamer's tiers with the
+Cold-or-Lightning slot, Exhaustive — **1,981,936 ex (7,445 div) → 187,666 ex (705 div)**, both exact.
+Ten times cheaper. Without bones the solve takes 106 s alone and 191 s under that load; with them it
+took 817–839 s under the load, so roughly 450 s alone — inside Exhaustive's 900 s, not by a wide margin.
+
+**The fix** deletes the price clause: `desecratable` opens whenever a bone is priced and the player has
+not excluded Desecration (an unpriced bone still reads as none). Two tests replace the one that pinned
+the gate — an amulet whose collarbone is over the old line, and a Wand whose jawbone is priced at thirty
+Exalts — and with the clause restored exactly those two go red.
+
+**What it costs is real:** the flag axis, ~3x the states and 2-8x the solve time, and two 5×T2 crafts
+that fit Standard now need Exhaustive. That is TODO 20 — the price of an answer that was wrong by up to
+ten times, not a regression to revert.
+
+**Asked on the same route: why Regal straight after Transmute, not Augment?** A near-tie. With the
+slot's Cold on a Magic item, a Greater Regal beats a Greater Augment by **0.3 ex**, on the 1.98M ex
+craft and on the 187,666 ex one alike. The first hit is worth ~1 ex of progress, because almost all of
+the cost sits in the last mods; with Fire as the first hit the policy Augments first, by 0.5 ex. The
+route shows whichever wins by a hair.
+
+## Ancient bones, the Omen of Abyssal Echoes, and a Perfect Transmute's real floor (2026-09-10)
+
+Three rulings from the user on one day, each answering a question the app had put to them:
+
+- **Ancient bones — "yes"**, used in play. The item text reads "Minimum Modifier Level: 40", so an
+  Ancient bone is a Preserved bone's draw with every normal tier below modifier level 40 taken out
+  (`ANCIENT_BONE_FLOOR`). Carved mods are all ilvl 65 and unaffected, so a boss draw gains nothing from
+  one and is offered on a Preserved bone only.
+- **The Omen of Abyssal Echoes — "yes"**, it rerolls the three offered mods once.
+- **"Perfect Orb of Transmutation … guaranteeing 1 modifier with minimum modifier level of 70.
+  Augmentation is the same."** The engine had one ladder for every orb — the Exalt's, Greater 35 and
+  Perfect 50 — so a Perfect Transmute could land a mod whose best tier sits at 54 (`Rings/IncreasedLife`).
+  `CURRENCY_FLOOR` is per currency now. Greater Transmutation and Augmentation were not stated and kept
+  35 — until the next entry: 55.
+
+**The reroll, modelled.** A player looking at an offer throws it back exactly when its best is worse than
+a fresh offer is worth, τ = E[best of three], so the outcome kept is
+`P'(k) = [V_k ≤ τ]·P(k) + P(throw)·P(k)`. That is one function, `keepWeights`, read by the value, the
+closed-form policy evaluation and the published edges — the three copies of the tail-sum loop it
+replaced could drift apart silently. Hand-computed on the synthetic 9/7 case, the brick falls from ⅛ to
+1/64 and E = (65 + 64c)/63: 17/15 at c = 0.1, bought; declined above the ¼ break-even; and 100k walks of
+the published graph land on it. The omen is charged whenever it is taken, rerolled or not — the
+conservative reading of when the game consumes it. **Superseded the same day** (next entry): it is spent
+only on a reroll, which changes this arithmetic to E = (65 + 8c)/63.
+
+**Measured**, frozen sheet, a held Rare, three Wand targets:
+
+| | without | with |
+|---|---|---|
+| the omen at 0.1 / 1 / 5 ex, any tier | 2,493.7 ex | 1,573.4 / 1,575.3 / 1,583.8 ex (−37%) |
+| an Ancient bone at 1 / 20 / 100 ex, top tiers | 164,365.3 ex | 137,205.7 / 137,725.4 / 139,913.9 ex (−16%) |
+
+An Ancient draw nearly doubles a top tier's chance on that Wand: 1.35% → 2.56% per draw.
+
+From white, on the live sheet (Ancient bones 853–1,116 ex, the omen 73.82 ex), Standard effort, T2
+targets — the previous build against this one on the same sheet, run side by side:
+
+| craft | before | now |
+|---|---|---|
+| Wands, 3 | 4,111 ex, 0.7 s | 3,582 ex, 0.6 s |
+| Wands, 4 | 9,825 ex, 5.5 s | 7,489 ex, 6.9 s |
+| Wands, 5 | 27,006 ex, 15.9 s | 20,878 ex, 13.9 s |
+| Body_Armours_str, 3 | 1,533 ex, 0.3 s | 1,255 ex, 0.3 s |
+| Body_Armours_str, 4 | 5,661 ex, 1.5 s | 4,054 ex, 1.3 s |
+| Body_Armours_str, 5 | 8,873 ex, 8.2 s | 6,636 ex, 11.1 s |
+| Amulets, 3 | 8,940 ex, 0.8 s | 7,404 ex, 0.5 s |
+| Amulets, 4 | 24,918 ex, 7.0 s | 15,607 ex, 3.2 s |
+| Staves, 3 | 4,140 ex, 0.7 s | 3,613 ex, 0.7 s |
+| Staves, 4 | 10,081 ex, 10.6 s | 7,603 ex, 9.7 s |
+| Staves, 5 | ran out | 20,597 ex, 14.1 s |
+
+Amulets at 5 runs past Standard in both. 13–37% cheaper at about the same speed — from 2.2x faster to
+1.35x slower, craft by craft — once the pruning and the sort below were in; before them the same table
+ran up to 1.8x slower.
+
+**It did not fit, at first.** With both in, a weapon's Desecration fanned out to 30 actions per Rare
+state where it had 12 — each draw in two grades, each with and without the omen, and nine boss draws
+doubled with them. fubgun's staff ran the whole 900 s of Exhaustive and returned no number. A CPU profile
+of that solve put 61% of the time in the sweep loop and 34% in `keepWeights`, so the cure had to be fewer
+offers, not only faster ones:
+
+- **Boss draws only for a boss the craft wants** (`bossesWanted`, markovActions.ts). A boss omen confines
+  the draw to its boss's carved pool; with none of that pool among the targets, all it can add is flagged
+  junk. That is not a proof — junk can be worth something, filling a side steers the next Exalt — so it
+  was measured: on 24 crafts without a carved target (Wands, Staves, Sceptres, Amulets; held Rares at
+  any and at top tiers, and from white; frozen and live sheets) the costs agree to 1e-6 ex, and no
+  unpruned policy chose a boss draw even once. On a weapon it is 18 of the 30 actions.
+- **`keepWeights` sorts from where it left off** — V moves little between sweeps, so the insertion sort
+  is near-linear — and cubes by multiplying rather than through `Math.pow`. The callers that publish or
+  freeze the weights start from index order, so outcomes tied on V split the same way every time.
+
+With all of it, fubgun's Aldur staff from white at Exhaustive, alone on this machine: **165,187 ex (621
+div) in 664 s**, exact — down from 187,666 ex (705 div) with Preserved bones alone. The route is the same
+to its last step, where a bone with the Omen of Abyssal Echoes (2.7% onward) replaces the plain one
+(1.4%), and what is left to pay there falls from 251 div to 135. No Ancient bone is played: at 1,116 ex a
+jawbone, the better odds do not pay for themselves on this craft. 664 s is inside the 900 s budget but not
+by much, and the build on `main` before this change is no faster — run side by side on one loaded
+machine, both ran out at 900 s. That is TODO 20.
+
+**Mutation-checked seventeen ways**, each red: either Perfect floor back at 50; boss draws built for
+every boss (two tests); the MDP's add chain on the
+Exalt's ladder; the Ancient floor ignored; an unpriced Ancient bone offered; 40 missing from the
+interchangeability floors; the reroll ignored, made unconditional, or dropped from the action signature;
+the Quick check's rows without the reroll or without the floor; the omen uncharged; the Ancient price key
+or its per-base resolution missing; the step label without the omen.
+
+## The Echoes omen is spent only on a reroll, and Greater is 55 (2026-09-10)
+
+The two open questions from the entry above, answered: *"The echoes is consumed when you reroll all three
+choices, to give you three other choices, not excluding the ones that were presented before. For greater
+both are minimum modifier level of 55."*
+
+**Greater Transmutation and Augmentation roll at 55** (`CURRENCY_FLOOR`). `Rings/IncreasedLife`, best tier
+54, is now out of a Greater Transmute's reach as well as a Perfect one's, while a Greater Regal (35) still
+lands it — pinned in currency.test.ts beside `Rings/AllResistances` (68), which a Greater one reaches and a
+Perfect one does not.
+
+**The omen is paid on the reroll, so it is not in any up-front price.** It stays in `stepOmenIds` — a
+player without one must not get the step — but `stepCost` skips it (`ECHOES_OMEN`). The solver throws
+an offer back only while its best is worse than the omen plus a fresh three, c + τ, and adds the expected
+spend P(throw)·c to the action's value; the closed-form policy evaluation freezes that spend with the
+weights. On the synthetic case the arithmetic becomes E = 1 + ⅛·(c + ⅛·(1 + E)) = (65 + 8c)/63: 47/45 at
+c = 0.1, still rerolling at c = 1.9, and never above c = 2, where it meets the plain 9/7 exactly.
+
+**It changes the action space as well as the price.** An omen the player may decline to use cannot make a
+Desecration worse — keeping the best of three is always one of the choices — so the omened draw dominates
+the plain one in every state, provably, and REPLACES it wherever the omen is to hand. That halves a
+weapon's Desecration actions again, 12 → 6 per state. Where the reroll is never worth taking the step is
+published as the plain draw (`published`), because a player with no omen can play it at the same value;
+`PolicyNode.actionCost` carries each step's average spend, and the 100k-walk test reads it.
+
+**The Quick check** prices its Echoes rows the same way: the bone, plus the omen times the chance the first
+three miss.
+
+**Five anchors moved with the Greater floor.** The lattice-reduction anchors in markovFromItem.test.ts are
+exact from-white Wand costs, and a better Greater Transmute lowers them (55.10 → 51.19 ex on the first).
+Before re-pinning, each cross-family craft was solved again with the quotienting switched off —
+identical, but for the three-way group at two ulp — so the reduction is still exact and only the model
+moved. A synthetic probability test that pinned the Greater floor through a Transmute now pins it
+through a Greater Regal (35) and a Greater Transmute (55).
+
+**Mutation-checked nine ways**, each red: the throw-back threshold without the omen's price; the spend left
+out of the value, or out of the closed-form evaluation; the plain draw offered beside the omened one; the
+omen charged up front; the Quick check without the spend; the step never published as plain; and either
+Greater floor back at 35.
+
+**Measured** — the build on `main` against this one on the same sheet, from white at Standard (15 s), T2
+targets, run side by side:
+
+| craft | `main` | now |
+|---|---|---|
+| Wands, 3 | 4,111 ex, 0.7 s | 2,262 ex, 0.5 s |
+| Wands, 4 | 9,825 ex, 5.0 s | 4,878 ex, 4.3 s |
+| Wands, 5 | ≤ 95,750 ex, 15.7 s | 18,330 ex, 12.9 s |
+| Body_Armours_str, 3 | 1,533 ex, 0.4 s | 934 ex, 0.3 s |
+| Body_Armours_str, 4 | 5,661 ex, 2.3 s | 2,174 ex, 1.4 s |
+| Body_Armours_str, 5 | 8,873 ex, 7.6 s | 4,307 ex, 9.2 s |
+| Amulets, 3 | 8,940 ex, 0.9 s | 5,351 ex, 0.5 s |
+| Amulets, 4 | 24,918 ex, 7.2 s | 12,071 ex, 3.9 s |
+| Staves, 3 | 4,140 ex, 0.6 s | 2,278 ex, 0.5 s |
+| Staves, 4 | 10,081 ex, 6.0 s | 4,997 ex, 3.7 s |
+| Staves, 5 | 26,289 ex, 14.8 s | 18,007 ex, 13.1 s |
+
+Amulets at 5 runs past Standard in both. 32–62% cheaper (`main`'s Wands 5×T2 stopped at the budget with
+only a ceiling this time; an earlier run settled it at 27,006 ex in 15.9 s, so it sits on the edge), and
+faster on ten of the eleven.
+
+**fubgun's Aldur staff**, from white at Exhaustive, alone on this machine: **158,661 ex (596 div) in
+717 s**, exact — from 165,187 ex (621 div) in the entry above and 187,666 ex (705 div) with Preserved
+bones alone. The route now opens Greater Transmute → **Greater Augment** → Greater Regal: at a floor of 55
+a Greater Augment lands the Cold prefix 11.9% of the time, where the old ladder had made the Regal the
+better second step by 0.3 ex. It still ends on the omened bone (2.7% onward, 135 div to go). 717 s is
+inside the 900 s budget by less than the entry above's 664 s — machine variance between the two runs is
+not ruled out — so TODO 20 stands.
+
+## Start from an item you buy instead (2026-09-11)
+
+Asked on fubgun's staff: *"I enter how many mods on the item I would like to have (for example 2), and
+then you find the best way to go to the 6 mods on the streamer gear from the best first two mods."*
+
+**Two decisions were the player's.** If the bought item goes wrong, the plan may drop it and start over
+from a white base, but only when that is cheaper than repairing it: the price paid is spent either
+way, so finishing costs are read from the Lab's from-white solve, which has restart. The Item tab's
+"What to look for" answers the no-restart question from its own solve and stays as it was. And since
+poe.ninja prices no item with specific modifiers, each row takes a typed trade price and the list
+re-ranks by price plus finishing.
+
+**Nothing is solved twice.** The from-white solve already holds V for every item the craft passes
+through. A row is one cell of it, so switching the size or typing a price re-reads the table. A route
+from a row is a walk over the solved policy the result now carries (`RouteTable`, plain data: 1.54 MB
+for the staff's 21,561 states and 57,243 outcomes; the whole result goes from 5.44 to 6.98 MB and still
+clones in 37 ms).
+
+**Which cell a set of mods is read from** (`startCandidates`) had to be right before it could be ranked,
+and the old `holdings` read was wrong three ways, each now tested and mutation-checked:
+
+- **Slots, not candidates.** A Cold-or-Lightning slot plus Cast Speed gave 8 rows. "Cold + Lightning"
+  counted as two modifiers when it fills one slot, and Cold and Lightning appeared as two items at one
+  cost when the encoder had already made them one state. There are 4 rows.
+- **A desecrated-pool target is read at its flag cell.** A Desecration marks what it places, so the
+  unmarked cell is unreachable and priced an item that could still take a bone. The row now equals a
+  real solve from an item holding the mod.
+- **Magic as well as Rare.** Magic rows hold only normal-pool targets: below Rare the only adding moves
+  are Transmute, Augment and Regal.
+
+Every single and pair row equals a real from-item solve to 6 decimals.
+
+**Worth up to = `restartCost + V(white) − V(item)`**: a solve's `expectedCost` starts from a base you
+already hold, and only another base is charged. On a hand-built craft (prefixes T and J, suffix U,
+weight 1 each; Transmute 1, Augment 1, Regal 2, Exalt 1, Annulment and Chaos 1,000, base 3) the model
+gives exactly the derivation:
+
+- V(white) = 13.
+- A Rare holding T costs 9 and is worth up to 7.
+- A Magic holding T costs 10 and is worth up to 6.
+- With Exalts at 20, the Rare costs 16 and is worth nothing; its route is the single move "start over".
+
+On a real Wand craft:
+
+- no starting item costs more than a fresh base plus the craft;
+- walking every row's route as a Markov chain gives back the row's cost to 1e-6.
+
+**Every graph is `routeFrom(table, root)`.** It was proven equal to the walk it replaced, node for node
+and edge for edge, on five crafts (held Rare; from white with restart; a carved target with bones and
+Echoes; a slot with 7 goal states; a Magic start) before that walk was deleted. From a bought item the
+route ends at the white base, drawn once and not walked.
+
+The visit-rate cut is "restart edges, or edges into the restart state". From the craft's own start
+that is the old rule. It keeps an Annulment back onto a bought root as a revisit: with restart priced
+out, real Wand routes return to their root and count above one visit.
+
+**Measured on fubgun's staff**, from white at Exhaustive, sheet of 2026-09-10: **158,661 ex (596 div),
+exact, in 692.7 s and 684.3 s**, the same cost the previous entry recorded in 717 s. Starting items by
+how many targets they carry, with the best of each size:
+
+| on it | Magic | Rare | best | finishing | worth up to |
+|---|---|---|---|---|---|
+| 1 | 6 | 6 | Magic · Spell Damage | 595.4 div | 0.6 div |
+| 2 | 9 | 15 | Rare · Fire + Spell Damage | 588.4 div | 7.6 div |
+| 3 | 0 | 20 | Rare · Fire + Cold-or-Lightning + Spell Damage | 536.3 div | 59.7 div |
+| 4 | 0 | 15 | Rare · Spell Damage + Fire Spell levels + Int + Cast Speed | 452 div | 144 div |
+| 5 | 0 | 6 | Rare · all but Cold-or-Lightning | 25.5 div | 570.5 div |
+
+That is the back-loading this project first measured on 2026-09-03, on the item that asked. Two of six
+modifiers are worth at most 7.6 div, and 13 of the 24 two-mod items round to nothing at 0.1 div. Every
+pair worth a divine or more holds Spell Damage. The value is in the last modifiers: five of six, missing
+only the Cold-or-Lightning slot, leaves 25.5 div to finish.
+
+**Routes on the main thread.** The first build took **3.0 s** per route on the staff (5,906 states,
+24,849 edges from the best 2-mod item), all of it in the two visit-rate passes: Maps keyed by state
+strings, walked every sweep, and every staff route runs all 1,000 sweeps. Run over typed position
+arrays, with every sum in the same order, the result is bit-identical on 188 roots checked against the
+old walk. The time is **175 ms median, 228 ms max** across all 77 of the staff's starting items (9.0 s →
+0.65 s for every route of a 5-target Wand). The plan had set ~150 ms as the point to move routes into
+the solve worker. They stay on the main thread: the worker is cancelled by terminating it, and both
+tabs share it, so a route could not outlive any later Cancel. The panel shows "Drawing the route…" on
+the click, and ordinary crafts draw in about 20 ms.
+
+**Converging the visit rates was tried and rejected.** The 1,000-sweep cap is what stops every staff
+route, not convergence. A Gauss-Seidel solve with self-loops divided out still needed up to 1,978
+sweeps, and across 40 staff routes it changed nothing drawn: the same states at 90% and at 99%
+coverage, and no significant rate moved more than 0.3%. These numbers only decide what gets drawn.
+
+**The table costs the solve nothing measurable**: old build against new, interleaved, three runs each,
+medians, identical answers:
+
+| craft | old | new |
+|---|---|---|
+| Wands 4×T2 | 2.37 s | 2.37 s |
+| Body_Armours_str 5×T2 | 8.23 s | 8.44 s |
+| Amulets 4×T2 | 3.96 s | 3.90 s |
+
+The main bundle grows 4.4 kB gzip (132.95 → 137.33 kB) for the panel and the route walk.
+
+**The Item tab's "What to look for", before and after**, on the staff through *I have some of these*
+(an empty Rare of the same base, no restart, Exhaustive; both builds settled in ~705 s):
+
+- **Rows shrink from 120 to 64.** Two members of one slot and the duplicate spellings are gone.
+- **Nothing a buyer reads changes in value.** Every best-per-size row keeps its cost and its saving:
+  2.3% for one mod up to 98.5% for five.
+- **The 3- and 4-mod rows now say "Cold or Lightning".** The old read named whichever spelling the
+  encoder kept, "Cold", though a Lightning roll fills the same slot.
+
+The same run shows why the Lab reads the restart solve instead. Kept to the end, a bare Rare staff
+costs **1,760 div** to finish, three times crafting it from a white base.
+
+The carved correction is visible on a two-target Wand, frozen sheet, holding
+`Wands/Desecrated_WeaponDamageTypePrefix`. The old row said **605.08 ex**, while a real item holding that
+mod costs **647.14 ex** to finish: 6.5% low, because the old read assumed the item could still be
+desecrated. The row now reads 647.14 ex.
+
+## Every streamer item through "start from an item you buy instead" (2026-09-11)
+
+The panel was measured on the staff that asked for it. This entry puts **all 40 streamer items** through
+it with `scripts/start-items-sweep.mts`, which runs each item and checks it rather than only printing
+it. Each item is solved from white as the Lab solves it (free base, policy iteration, Exhaustive's 900 s),
+six at a time on a 16-core machine, on the sheet of 2026-09-10.
+
+**Outcome: 38 settled exactly.**
+
+- **One is corrupted** (Steelmage's Pandemonium Cowl), and the panel offers nothing, as it should.
+- **Two ran out of the 900 s under the six-way load**, and were run again alone.
+  - fubgun's Dire Spire settled in 739 s (596 div, as in the entry above).
+  - Zizaran's Maelström Twirl did not: 901 s alone. It is a 6-mod Ring asking T1 Cast Speed, T1
+    Cold Damage and a desecrated T1 suffix, and phase A does not converge within 900 s, nor within 2,400 s on a second
+    solo run. At
+    Exhaustive the Lab gives it no number at all, so the panel cannot appear: the solver's limit
+    (TODO 20), not the panel's. The Lab then prints the solver's reason verbatim, which ends "raise
+    Search effort and try again (a six-mod target at T1 needs the longest setting)". At Exhaustive that
+    is a dead end, and it is not yet fixed.
+
+**Every check is clean on all 38.** The checks:
+
+- No starting item costs more to finish than crafting from scratch.
+- Magic rows carry at most two modifiers, and no two rows read one state.
+- The largest row fills every slot and costs nothing.
+- For the best item at every size and the best Magic one (243 routes):
+  - the route starts at its row's cost;
+  - it ends at no more than one start-over terminal, which has no move out;
+  - a route from an item worth anything reaches the target;
+  - every state's outcomes sum to one;
+  - every state satisfies V(s) = cost of its move + Σ p·V(next). The worst mismatch is 5.9e-7
+    relative, inside the solver's stopping tolerance.
+
+A click on the best two-modifier row draws its route in 8 ms median. The staff (203 ms) is the
+outlier; next is fubgun's Damnation Circle at 72 ms.
+
+**What the panel says, across the 38**, is the back-loading, on every item, from 3-slot Rings to
+6-slot Spears. The best starting item, by how many target modifiers are still missing:
+
+| still missing | items | best start is worth, share of crafting from scratch |
+|---|---|---|
+| 1 | 38 | median 90.9% (8.0 – 99.8%) |
+| 2 | 38 | median 21.1% (0.5 – 78.7%) |
+| 3 | 36 | median 4.0% (0.2 – 21.6%) |
+| 4 | 34 | median 0.3% (0 – 1.6%) |
+| 5 | 21 | median 0.0% (0 – 0.3%) |
+
+At two modifiers already on (the example the question used) the best start is worth a median **0.8%**
+of crafting from scratch, 12.8% at most. The best two-modifier start is a Magic item on 10 of the 38;
+the best start is never Magic from three modifiers up, because a Magic item holds two. The low end of
+the first row, 8%, is spicysushi's 3-slot Onslaught Eye: 7.0 div from scratch, and still 6.4 div to
+finish from the best two-of-three. On the dear crafts the last one is almost everything: fubgun's Pain
+Collar is 2,041 div from scratch and 3.9 div from the four modifiers it has without its T1 "+# to Level
+of all Spell Skills".
+
+## Typing a trade price into "start from an item you buy instead" (2026-09-11)
+
+Reported the same day it shipped: "When I try to change the prices it does not work". Reproduced with
+Playwright driving Chromium against poe2htc.com, on a three-target Wand from scratch at Standard. Its
+table appeared after 3.9 s with three rows, in chaos. Two faults:
+
+- **A comma was dropped.** Typing `0,5` into a box that held `1` left `051` in it. `<input type="number">`
+  refuses the comma keystroke, in an `en-US` context and an `fr-FR` one alike, so a price typed on a
+  French keyboard was read ten times too big with nothing on screen to say so.
+- **The list moved under the cursor.** Typing `25` in the last row moved it to the top on the first
+  digit. The price was kept, and so was focus, but the box the player had been looking at now belonged
+  to another item, with an empty price.
+
+Fixed by keeping the rows in finishing order whatever is typed. `bestStart` tags the cheapest total
+instead, and a line under the table says whether it beats crafting from scratch. The price boxes are
+now `type="text"` read by `parsePrice`: a lone comma is the decimal point; with a dot present, commas
+are thousands; spaces are dropped; anything else turns the box red and is left out, never guessed.
+The route graph under the table is memoised on its route, so a key typed no longer rebuilds a graph of
+thousands of states on a big craft. Mutation-checked: letting `parsePrice` keep the comma, or sorting
+by total again, each turns its tests red.
+
+## A streamer's crafted modifiers, and the runes they socket (2026-09-16)
+
+The gear tab could not read a CRAFTED line at all, and the cause was in the data rather than in the
+code: **0 of 353 essence and 0 of 481 perfect-essence mods carry `tiers[].stats`, against 951 of 951
+normal ones.** The stat vocabulary is RePoE's and those pools are poe2db's, so `statIndex` holds none
+of them and `resolveByStats` answered nothing for every one. Nine lines across five characters were
+listed as unread, and an item missing a modifier is a different item — a cheaper one to finish.
+
+**The key that works is the game's own modifier id**, which the profile API sends
+(`{"id":"EssenceGlobalDefences1", …}`). `apply_codes.mjs` joins RePoE-fork's 16,784 modifiers to our
+pools by exclusion group, affix side and roll, and writes the matching ids onto the tier as `codes`.
+Matching TIER BY TIER is what makes it exact: one group holds Lesser, Greater and Perfect levels that
+differ only in what they roll, so `Amulets/Essence_IncreasedLife` takes `IncreasedLife2` /
+`IncreasedLife6` / `IncreasedLife7`. Because the id names the tier outright, nothing is fitted from
+the roll and a hybrid Alloy's two stats need no ordering.
+
+**It also re-points 18 lines the stats did resolve, and that is the half worth stating.** An Essence
+of Opulence forces the ordinary rarity modifier, so poe.ninja sends `ItemFoundRarityIncrease3` — a
+normal mod's id — filed under `crafted`. Read as the rolled mod it understates the item; read as the
+essence it occupies the crafted slot and sits in the crafted family namespace. Measured before
+committing: **9 newly resolved, 18 re-pointed, 0 items pushed over the one-crafted-modifier cap, 0
+crafted family clashes.** Nothing became unrepresentable, and no real item now falsely demands an
+Astrid's Creativity.
+
+Result on the shipped snapshot: **204 modifiers placed with 17 unresolved becomes 213 with 8.** The
+one crafted line still open is `GenesisTreeRingMinionCooldownRecoveryCrafted` — a Genesis Tree ring
+craft, a mechanic this app does not model — so it stays named rather than forced onto an essence that
+did not make it.
+
+**A bug the first revision shipped past the measurement, caught by measuring the other direction.**
+poe2db prints a fixed value inline instead of as a range, so a flat tier stores `ranges: []` where
+RePoE stores `min === max`; reading our value out of the text recovers those tiers. But a value alone
+cannot separate siblings — `IncreaseSocketedGemLevel` holds +3 to Melee, Spell, Projectile, Minion and
+Attack skills in ONE exclusion group — and the first rule matched all of them: **one Quarterstaves
+tier collected 116 game ids, `MinionGemLevelBelt1` among them.** It hid because ambiguity was measured
+only as "one id claimed by two tiers", never as "one tier hoovering up many ids"; 4,845 ids over 1,444
+tiers was the tell. A flat tier may now only be claimed by an id the game itself names as crafted
+(`Essence…`/`Alloy…`), which drops that tier to 2 and the worst in the data to 7 — and those 7 are one
+real essence outcome, since poe2db collapses the defence combinations into a single `DefencesPercent`
+family while RePoE lists each separately. A stat-identity rule was tried first and rejected: it left
+the 33-id case untouched and broke the hybrid Alloy, whose two stats no normal sibling shares.
+
+**Ambiguity is left unmatched rather than guessed.** Eight game ids — the four
+`Damage as Extra <element>` Perfect Essences on Bows and Crossbows — share a family AND identical
+ranges, so nothing in either dataset separates Abrasion from Flames but the essence's name. Those
+tiers get no code, and such a line stays honestly unresolved. Same stance as `breakTie`.
+
+**Socketed runes are read**, because an item cannot be explained without them: two crafted modifiers
+or four suffixes are illegal until you know an Astrid's Creativity or a Serle's Triumph is in there.
+The payload leaves `name` empty on a socketed item and puts the rune in `baseType`, spelled with an
+ASCII apostrophe where the game data uses a typographic one — eight of the twelve runes have one, so
+comparing raw strings would have found four and failed silently on the rest. fubgun's Chiming Staff
+carries a **Thrud's Might** today; no character wears a limit-changing rune at the moment, so that is
+the rune the reader is exercised against on real data.
+
+**`codes` never reaches the browser**: 0 occurrences in the built asset against 1,373 in the record,
+the same split `tiers[].stats` already has, and `shipMods.test.ts` now names it as a field the app
+never receives.
+
+Mutation-checked: dropping the code lookup fails 3 tests, removing the apostrophe fold fails 3, and
+forgetting `codes` in the wire guardrail fails 1. The second of those was written once in a form that
+never applied — the test suite stayed green and proved nothing — which is why each mutation now prints
+the count of occurrences it changed before the tests run.
+
+## The six rune pools, and a bug my own measurement hid (2026-09-16)
+
+The plan called for scraping poe2db's class pages for the "Can roll <X> modifiers" pools, and the cache
+those pages live in is fetch-once and gitignored — it was not on disk. It turned out not to be needed:
+**all six pools are real tags in RePoE's own `tags.json`** — `destruction`, `chronomancy`, `marksman`,
+`decay`, `berserking`, `soul` — and 128 modifiers carry one of them in `spawn_weights` beside
+`default: 0`, so they can never roll normally and do roll once the rune puts its tag on the item. That
+is the whole mechanic, and it means the join needs no new exclusion logic at all:
+`resolveWeight(mod, [...baseTags, poolTag])` answers it with the first-match rule `refresh.mjs` already
+uses.
+
+**The restrictions are encoded NEGATIVELY**, which is the part worth reading twice. A restricted
+modifier lists the bases it must NOT roll on at weight 0 BEFORE its pool tag at weight 1, so
+`DestructionInfluenceManaModifierEffect` names warstaff, crossbow, spear and seven more at 0: a
+Quarterstaff matches `warstaff` first and is blocked, a Bow matches nothing until `destruction` and
+rolls. Measured: **9 of 9 destruction modifiers on Bows, Sceptres, Staves and Wands; 8 of 9 on
+Crossbows, Quarterstaves, Spears and both Mace classes.**
+
+**Soul self-checks, and that is what proved the rule was read the right way round.** Each of its 12
+attribute-restricted modifiers lands on exactly ONE body-armour variant, and on the one its own name
+describes: `…HybridArmour` on str, `…HybridArmourEvasion` on str_dex, `…HybridEnergyShield` on int.
+Read backwards, each would appear on the five variants it actually excludes.
+
+**A bug my own measurement hid.** The first id scheme was `<base>/Rune_<family>`, which names neither
+the rune nor the affix side — and Gloves is the only base taking TWO pool runes. Kolr's Hunt's
+Mark-effect PREFIX and Katla's Gloom's curse-magnitude SUFFIX share RePoE's `CurseEffectiveness` group
+(correctly: a Mark is a curse), so the second collided and **6 real modifiers were dropped behind a
+warning line.** Katla's Gloom came out at 72 modifiers where the measurement said 78, which is what
+caught it. Ids are namespaced by pool now (`Rune_<tag>_<family>`), and a collision exits non-zero
+instead of warning — a dropped modifier is a pool that quietly offers less than the game does.
+
+That was the second time in this session that measuring one direction only hid something: the crafted
+`codes` join had a tier collecting 116 game ids because ambiguity was counted as "one id claimed by two
+tiers" and never as "one tier claiming many ids". Both are now counted both ways.
+
+**Two mixed-side families are baselined rather than fixed**, because both are faithful:
+`CurseEffectiveness` and `AilmentEffect` on Gloves (two pool runes, opposite sides), and `DodgeRoll` on
+Boots — "+# metres to Dodge Roll distance" exists as a desecrated SUFFIX and a chronomancy PREFIX, two
+routes to one stat, which is precisely why the game groups them. Family exclusion still holds in every
+case, so an item takes one or the other.
+
+**`refresh.mjs` was refactored and proved unchanged.** `pickVariant`, `resolveWeight`, `attributeTag`,
+`CATEGORY_CLASS` and `cleanText` moved to `variants.mjs` so `apply_runes.mjs` asks the same questions
+rather than keeping a second copy. It cannot be verified through `run.sh` (that needs the absent poe2db
+cache), so it was verified directly: the generator was run into a scratch directory before and after,
+and **both files came back byte-identical** (`mods.json` md5 `e658418b…`, `base_items.json`
+`33fdcdaf…`).
+
+**The assumed weight, and what it costs.** RePoE reports 1 for all 128 — the same placeholder poe2db
+gives the desecrated pool — so `RUNE_POOL_ASSUMED_WEIGHT` is 1000 (the maintainer's decision, 2026-09-15).
+Weight sits in the DENOMINATOR of every weighted draw, so a socketed pool rune qualifies the whole
+solve rather than the steps that land one of its modifiers: `usesAssumedPool` carries that to
+`assumedOdds`, and `assumedFrom` now names WHICH assumption applies. Before it, a craft with a pool rune
+and no Desecration in it was told "This plan uses a Desecration without a boss omen" — a sentence about
+a currency the player never touched.
+
+**Cost on the wire, measured rather than estimated.** 439 modifiers over 820 tier rows take the shipped
+total from 2,478 to 2,917. `mods.json` goes 1,070.30 kB → 1,225.14 kB (gzip **82.54 → 110.69 kB**) and
+`base_items.json` 156.97 → 181.14 kB (gzip **21.21 → 23.59 kB**): about **30.5 kB more gzipped**, which
+is roughly double the 10–15 kB estimated when the one-file option was chosen.
+
+## "Any prefix / any suffix" — a slot the target doesn't check (2026-09-17)
+
+A player asked for the Sceptre they had already decided about: five modifiers they wanted, and the
+sixth — a suffix — they explicitly did not care about. The app refused. The only way to SAY that was to
+name every remaining suffix as an alternative in one slot, and `MAX_CANDIDATES = 9` refuses past nine
+candidates. Five named plus four alternatives is exactly nine, which is why "strip it down to 4 choices"
+was the workaround they found by trial.
+
+**Raising the cap is not the fix.** The lattice runs ~2,916 states at six candidates and ~20,952 at
+nine — roughly doubling per candidate — so a Sceptre's twelve remaining suffixes (14 normal suffixes in
+14 distinct families, so `mergeSlots` collapses none of them) is seventeen candidates and millions of
+states before the desecration axis multiplies it.
+
+**The real gap was `isAccepting`.** A target list has always meant *these mods and nothing else*: the
+predicate demanded `jp === 0 && js === 0`, so any modifier the player had not named had to come off
+before the item counted as finished. Deleting the sixth target does not help either — the app then
+plans a five-mod item with an EMPTY suffix and prices annulling whatever lands there, which overstates
+the cost rather than answering the question.
+
+So "any" is not a bigger disjunction. It is a relaxation of the finish condition, expressed as a count
+per side (`Spare`), and it is **cheaper to solve than the thing it replaces**: the junk counters are
+already state axes `enumerateStates` fills in, so it adds no states, widens the accepting set, and lets
+a junk roll on that side count as a finish instead of a miss.
+
+Measured, from white on Sceptres, five named modifiers (`solver: 'policy'`, `restartCost: 0`):
+
+| target | cost | solve |
+|---|---|---|
+| five named, strict (today) | 366.84 ex | 4.5 s |
+| five named + **one free suffix** | **191.27 ex** | **3.7 s** |
+| five named + four alternatives (9 candidates) | 402.08 ex | 94.3 s |
+| five named + all twelve alternatives | refused — `MAX_CANDIDATES` | — |
+
+Note the third row: the workaround is not merely slower, it is **dearer than the strict craft**, and
+correctly so — it demands a sixth modifier from a shortlist, where the strict craft demands five and
+the free slot demands five and tolerates a sixth. Three different questions; the middle one was the
+only one nobody could ask.
+
+**Both planners act on it, so the Item tab's two panels agree.** For the model that is one predicate:
+`goalKeys` is built by TESTING the lattice, the heuristic policy levels states by backward BFS from
+those goals, and the absorbing-state check reads the same set — all three follow without being told.
+For the step planner, junk the player tolerates may be LEFT on the item, which makes it identical to a
+fractured mod (still there, still holding its slot and family, simply never removed) and so needed no
+new concept in `plan.ts`. Which junk to leave is a real choice rather than a greedy one — a junk mod is
+also a Chaos-swap partner, so keeping it can cost more than annulling it — so it became a second
+expansion dimension crossed with slot alternatives and merged by `mergeParetoRuns`, which is now
+generic in what a combination is. Measured on a held Sceptre wanting five modifiers with one missing:
+strict annuls the junk in all six frontier plans at P=0.00144; with one free suffix both surviving
+plans leave it, at **P=0.00865**.
+
+**The from-WHITE frontier is deliberately unchanged**, and this is the part most likely to be "fixed"
+later by someone who has not read why. A plan there is a fixed sequence in which every step names the
+mod it is aimed at. An extra "anything" step has probability ~1 but still costs an orb, and a miss on a
+NAMED step is a miss whatever is tolerated elsewhere — so no such sequence is cheaper. The slack only
+pays when the spare can be chosen AFTER the roll, which is the MDP's job. The app says so on screen
+rather than leaving it to look like an oversight.
+
+**Mutation-checked, and one of them failed honestly.** Twelve mutations were run against the new tests.
+Eleven were caught first time. The twelfth — "a below-tier named target is still refused, however free
+the slots are" — was NOT: that behaviour is carried by the slot test in `isAccepting`, not by its
+`blocked` clause, so the test was pinning something real while its comment claimed a different rule.
+The comment was corrected and a case that does rest on `blocked` was added (an off-tier roll of a named
+alternative, under a free slot), which the mutation then caught.
+
+**Cost on the wire:** main bundle gzip **141.97 → 143.75 kB (+1.78 kB)**. No data file changed.
+
+**Assumption, stated:** a free slot may be left EMPTY as well as filled — `isAccepting` tests an
+inequality — on the reading that "I don't care" includes "there isn't one". The app tells the player
+they can Exalt or Desecrate it afterwards and whatever lands counts, which is a claim about the game
+and the weak half of it: the only way an Exalt fails to fill a free slot is the side being full, which
+the picker prevents by counting free slots against the cap.
+
+## Throwaway steps — a Perfect Essence or Alloy gets something to eat (2026-09-18)
+
+**What changed.** A Perfect Essence (an Alloy is one to the engine) removes one of the item's modifiers
+at random as it adds its own. The step planner could only offer it a mod already there: junk from an
+item, or — from white — one of the TARGETS, re-exalted straight after. A route may now roll a
+**throwaway** — a Regal on a Magic item, an Exalt on a Rare, landing anything on a chosen side — right
+before the essence, which removes it. `ThrowawayStep` (plan.ts), `throwawayProbability` (probability.ts).
+
+**Why the odds are EXACT, not approximate.** A throwaway lives one step: `stepProbability` scores 0 for
+every step on an item holding one except the Perfect Essence that names it. That essence's removal
+odds count mods (`perfectEssenceProbability`) and its add is crafted, so no rolled family can block it
+(`familiesOf`); after it the throwaway is gone. Which modifier landed therefore changes no later factor,
+and the throwaway's own odds are the side's share of the ordinary per-mod add odds — every rule of an
+add (rarity, Magic 1+1, orb floor, omen side, D6) carried over by construction. The plan first worked
+out worst-case rules for a throwaway that lingers (a later throwaway draw would be *optimistic* if an
+earlier one's family were ignored); the one-step life made all of them unnecessary.
+
+**Tested, not argued** (`packages/optimizer/src/throwaway.test.ts`):
+- *Exactness*: each route with a throwaway is recomputed by branching at every throwaway over each
+  modifier it could really be — its own probability, its own family on the item, its real id in the step
+  that eats it. On the reported Sceptre (two throwaways, from an item) and a two-Alloy craft from white,
+  model / branched = 1 to 12 digits.
+- *Identity*: ten crafts with no Perfect Essence — both planners, tier targets, excluded currencies, an
+  essence, a desecration, a Magic start, junk, a free slot, a fractured mod — recorded at `62315a9`
+  before any change (`__fixtures__/pre-throwaway-frontiers.json`), replayed byte-identical, INCLUDING
+  `plansEvaluated`: the search is unchanged, not merely its winners.
+- *Never worse*: every old frontier point on two Perfect-Essence crafts is matched or beaten.
+- *Mutation-checked*, each caught: the one-step-life guard, `itemFamilies` skipping the placeholder,
+  the side filter, the Crystallisation side read off the ITEM (resolving `remove` throws on a
+  placeholder, past anything the type checker sees), throwaway pricing as its orb (its currency name
+  is no listing — unmapped it would be FREE), the Exaltation omen offer, the from-white branch, the
+  from-item victims, the Magic-start opener, the keep-set filter's removal, the Regal making the item Rare.
+
+**Measured** (frozen price sheet, this machine):
+
+| craft | before | after |
+|---|---|---|
+| Sceptre, one Alloy, from white | likeliest 1 in 47,059 · cheapest 11,731 ex | 1 in 7,837 · 2,595 ex — every surviving route uses a throwaway |
+| Spirit Star (6 mods, two Alloys), from white | likeliest 5.76e-7 | 3.15e-5 (55×) |
+| 5 mods, two Alloys, from white | 8.85e-6 | 5.64e-4 (64×) |
+| the reported Magic Sceptre, from an item | refused | 9 routes, likeliest 7.87e-4 |
+| Sceptre with one junk suffix, one Alloy | 2 routes (eat the junk) | unchanged — the junk is still the better meal |
+
+**Time, and a deviation from the plan.** Perfect-Essence crafts plan 5–7× slower: Spirit Star
+413 → 1,967 ms, the 5-mod craft 24 → 171 ms, its budget search 64 → 401 ms. The plan's guard said to
+restrict the throwaway to one side past ~3×. It was not, because the frontiers answer it: tallying the
+throwaways on every surviving route of four crafts, BOTH sides win, each with both orbs — restricting
+would delete routes that win. 2 s sits well inside the default effort's 15 s budget.
+
+**Not covered.** A throwaway for a Desecration from white (the Lab's "needs a Rare" case), a throwaway
+inside a Greater Exaltation (`fuse` requires two named Exalts, and would also refuse on the missing
+`add`), and a throwaway as filler for a free slot. The true expected cost already rolls junk freely.
+
+## A different mod of a target's family blocks it — and a replay that can tell (2026-09-21)
+
+**Found while planning tablets.** A family is an exclusion group. For most targets it is one mod at
+several tiers, and the lattice's `blocked` bit covers every collision. But a family can hold DIFFERENT
+mods: a Wand's five damage-type prefixes (`WeaponDamageTypePrefix`, 2,550 each in a 41,400 prefix pool),
+its six "+level to … spell skills" suffixes (`IncreaseSocketedGemLevel`), armour's
+`ReducedAilmentDuration`, belts' `BeltFlaskRecoveryRate` — and on Precursor Tablets six pairs, three of
+them ACROSS sides. `addOutcomes` put a sibling's weight into the junk bucket, and with it on the item the
+target kept rolling at full odds; `classifyStart` read a held one as junk too. In the game the family is
+taken until the sibling comes off. The MDP's v1 listed "junk never blocks a target's family" as an
+approximation; v2 above calls junk "*provably* only ever non-target-family weight", which holds only
+while a family is one mod. Per roll, a Wand prefix lands a sibling of a targeted damage-type prefix 25%
+of the time, and a suffix a sibling "+level" 18%.
+
+**The instrument: `markovReplay.ts`.** `policy-vs-mc` samples the solver's OWN edges, so it agrees with
+V on anything the lattice gets wrong. The replay plays the solved policy on concrete items — real mods at
+real tiers by weight, the game's family exclusion including the junk's — and asks the policy what to do
+by classifying each item exactly as a held item is classified (`classifyStart`, the solve's own
+encoder). Its mean is what following the policy really costs. It declines on a Desecration, an Essence
+or an Omen of Light rather than approximate them. Same seed, same numbers; `maxMillis` for the app.
+
+**Before the fix** (frozen 2026-08-22 sheet, bones excluded so the replay can play every route, 4,000
+crafts each):
+
+| craft (Wand, ilvl 82) | V | replayed | gap | z |
+|---|---|---|---|---|
+| held Mana \| Int → Mana + Spell Damage (no sibling) | 1,505.8 | 1,484.0 ± 21.5 | −1.5% | −1.0 |
+| held → Mana + Fire spell levels | 3,091.4 | 3,096.9 ± 45.7 | +0.2% | +0.1 |
+| held → Mana + Fire damage | 2,309.9 | 2,309.4 ± 33.3 | 0.0% | 0.0 |
+| held → Fire damage + Fire spell levels | 11,443.1 | 11,654.4 ± 180.6 | +1.8% | +1.2 |
+| white, base 30 ex → Spell Damage (no sibling) | 943.6 | 933.9 ± 12.8 | −1.0% | −0.8 |
+| white, base 30 ex → Fire spell levels | 1,440.6 | 1,502.1 ± 21.5 | **+4.3%** | **+2.9** |
+| white, base 30 ex → Fire damage + Fire spell levels | 8,546.5 | 9,079.0 ± 135.8 | **+6.2%** | **+3.9** |
+| white, free base → Spell Damage + Cast Speed (no sibling) | 44.4 | 44.5 ± 0.7 | +0.2% | +0.1 |
+
+Held items barely show it — the policy annuls junk before it adds again, so a sibling rarely sits under a
+roll — but a craft that keeps adding with junk on board does.
+
+**The fix — `markovSiblings.ts`.** Every mod the base can roll into a target's family without being a
+target. **Same side, blocking one target:** it is `blocked` — one slot on that side, one removal frees the
+family, exactly an off-tier roll — so its weight joins the below-tier share in `addOutcomes`,
+`desecrateAnyOutcomes` and the boss draw, and `classifyStart` marks a held one blocked. No state changes
+shape. A carved hybrid ("+Str +Dex" against a Strength target) folds the same way: its other family
+touches no target, and a family no target is in is never tracked — the junk approximation below.
+**Other side, or two targets at once:** `blocked` would count the wrong side's slot or mark one target,
+so the sibling becomes an OBSTACLE position after the targets — in no slot, conflicting with what it
+blocks, counted as junk by `isAccepting`, never offered in the starting-item table, labelled "In the
+way" rather than as a target. Carved siblings are only looked for when a Desecration is in play (an
+obstacle nothing can place would double the lattice for nothing). Symmetry never swaps a position that
+has a sibling.
+
+**After the fix:**
+
+| craft | V | replayed | gap | z |
+|---|---|---|---|---|
+| held → Mana + Fire spell levels | 3,092.4 | 3,096.9 ± 45.7 | +0.1% | +0.1 |
+| held → Fire damage + Fire spell levels | 11,447.3 | 11,605.3 ± 181.1 | +1.4% | +0.9 |
+| white, base 30 ex → Fire spell levels | 1,484.6 | 1,442.3 ± 21.5 | −2.9% | −2.0 |
+| white, base 30 ex → Fire damage + Fire spell levels | 9,224.2 | 8,589.2 ± 133.9 | **−6.9%** | **−4.7** |
+| white, base 30 ex → Fire damage + a lonely suffix (8,000 crafts) | 3,224.1 | 3,040.5 ± 32.0 | **−5.7%** | **−5.7** |
+
+The sign FLIPPED: V now runs high. That is the approximation the model still makes, visible on its own
+now — **a junk mod's own family is not removed from the next roll's pool**, because the lattice never
+knows which junk landed, so every roll with junk on board is priced at slightly worse odds than the game
+gives. Replayed with the SOLVER's rule instead (junk families left in the pool — a diagnostic edit,
+never committed), every craft agrees: Fire spell levels −2.0% (z −1.4), Fire damage + Fire spell levels
+−1.7% (z −1.1), the rest within ±1.6%. So the fix is exact within the model; before it, the two errors
+partly cancelled — which is how the sibling one hid. The number that remains is conservative.
+
+The PLAN got better too. What the fixed model's policy costs to follow, against the old one's:
+Fire damage + a lonely suffix **3,132.0 ± 34.1 → 3,040.5 ± 32.0**; Fire spell levels **1,481.6 ± 14.9
+→ 1,458.1 ± 15.4** (both base 30, replayed). It now avoids adding on top of a sibling it knows is there.
+
+**Held to it by:**
+- **Identity** — 11 gear crafts whose targets share a family with nothing the base can roll (from white
+  free and paid, a held Rare with junk, a Magic start, a tier target, excluded currencies, a desecrated
+  target, a regular and a Perfect Essence, a free slot, a fractured mod, cross-family alternatives),
+  fingerprinted at 32b3c3f — SHA-256 of cost, bound, the route's states, actions, odds and labels, and
+  the starting-item table — are byte-identical after (`siblings.test.ts`).
+- **Exactness where nothing is approximated** — synthetic pools holding only targets and siblings (no
+  junk): a same-side sibling and a cross-side one each match the replay within 3 SE over 20,000 crafts.
+- **Mutations**, each failing a test: sibling weight dropped from the rolls; a cross-side sibling left as
+  junk; an obstacle not counted as junk at the goal; a held sibling read as junk; the starting-item table
+  offering an obstacle; an obstacle labelled as a target.
+
+**The streamer items.** 17 of the 37 craftable ones name a target with a same-side sibling (none across
+sides). Solved from white at a free base, policy iteration, 2 minutes each, before and after:
+
+| item | base | before | after | change |
+|---|---|---|---|---|
+| TwitchTVSpicysushi #1 | Rings | 27,969.6 | 27,969.7 | +0.00% |
+| TwitchTVSpicysushi #3 | Helmets int | 71,122.3 | 71,122.3 | +0.00% |
+| Zizaran #2 | Boots int | 21,751.8 | 21,760.5 | +0.04% |
+| Zizaran #6 | Belts | 32,463.2 | 32,468.7 | +0.02% |
+| Zizaran #8 | Gloves int | 38,677.9 | 38,677.9 | +0.00% |
+| xthefarmerx #0 | Belts | 5,895.3 | 5,895.3 | +0.00% |
+| xthefarmerx #3 | Body Armours dex int | 16,909.5 | 16,926.9 | +0.10% |
+| xthefarmerx #4 | Amulets | 70,573.4 | 70,573.4 | −0.00% |
+| xthefarmerx #6 | Boots dex int | 33,103.4 | 33,103.4 | −0.00% |
+| xthefarmerx #7 | Gloves dex int | 55,511.6 | 55,512.0 | +0.00% |
+
+Ten settled both times; the largest move is **+0.10%**.
+
+Free restarts are why these barely move: the policy bins any item carrying junk, so a sibling rarely
+stays long enough to block anything. Six more (Amulets, Staves, Spears) settle in 2 minutes neither
+before nor after, so they are not compared here. Zizaran #9 (a Wand with a carved target) returns
+`expectedCost 0` with `bound: 'upper'` after 3 s — identically before and after, so not this change,
+but an upper bound of 0 on a from-white craft cannot be right. Logged in TODO.
+
+## Precursor Tablets — where the odds come from, and whether the model holds (2026-09-21)
+
+**No weight data exists for tablets except Morce Faster's.** RePoE and poe2db publish 1 for every tablet
+modifier. Morce Faster rolled three tablets and counted every modifier he saw — Ritual 10,947 (5,460
+prefixes, 5,487 suffixes), Overseer 5,000, Temple 3,200 — and shared the sheets; his Ritual
+sheet has a second tab of "suspected weights" on a ladder (1000 / 750 / 500 / 250 / 125 / 100 / 50 / 25).
+Every row of the three sheets matched exactly one RePoE mod of that tablet (by name; by text for the
+Temple suffixes, which have none), and no RePoE mod went unmatched: 13 shared prefixes; 11 shared
+suffixes plus 9 Ritual, 8 Overseer and 7 Temple ones — 48 mods.
+
+**The weights, and the one change.** The shared mods have the same weight on every tablet (RePoE's
+spawn tags make them one `default` weight), so all three sheets test them together. Against his ladder,
+pooled: every mod lands inside its 99% band except **of Undertaking** — seen 54 times where 25 predicts
+33.3 (z = +3.6). Ritual alone saw it 18 times, which is where 25 came from; Overseer (22) and Temple
+(14) saw it far more often. It takes the pooled estimate, **41**. Of Contest (z = −2.4), of Shrines
+(−2.5), Collector's (−2.1) and Abounding (+2.2) are the next furthest — about what fifty modifiers give
+by chance — and keep his values. The suffixes only Overseer or Temple roll are scaled against the shared
+mods at his weights and rounded to his ladder (Treasure / Conquering / Hoards 1000, Pathways 500,
+Worship / Crystals / Compartments / Wisps 100; Temple 1000 / 750 / 750 / 500 / 500 / 250 / 250). Every
+tablet side then fits its own counts at 99.9% (`tablets.test.ts`); `morce-faster.json` records the basis
+of each weight.
+
+**Six family pairs**, three across sides — Crystallised / of the Essence, Summoner's / of the Summoning,
+Exiled / of the Exile — and three on the suffix side (Shrines / Devoted, Strongboxes / Antiquarian,
+Temple's two extra-pack mods). This is what the family-sibling fix above was for.
+
+**No bone.** The first solves routed five of seven tablet crafts through a Desecration: an unmapped
+category fell through to the armour bone, and the sheet's flat `desecrate` key priced it. A Ritual 2+2
+read 530.9 ex that way; honestly, 1,587.3. Tablets are now named as having no bone and the price is
+stripped.
+
+**The gate: does the model's number hold on a pool this small?** One junk prefix of weight 1,000 is 14%
+of a tablet's prefix pool, so the junk approximation (TODO 23) was expected to bite harder than on gear.
+Replayed, 5,000 crafts each, a plain tablet at 1 ex, the live sheet:
+
+| craft | V | replayed | gap | z |
+|---|---|---|---|---|
+| Ritual — Gold, Rarity, of the Dogma, of Sacrifice | 1,587.3 | 1,614.1 ± 22.4 | +1.7% | +1.2 |
+| Ritual — Rarity, of Omens | 560.7 | 552.7 ± 7.8 | −1.4% | −1.0 |
+| Ritual — of Undertaking, of Prayers | 49,157.7 | 48,842.6 ± 577.0 | −0.6% | −0.5 |
+| Overseer — Experience, Rarity, of Treasure, of Hoards | 1,290.5 | 1,272.8 ± 17.4 | −1.4% | −1.0 |
+| Overseer — Crystallised (an obstacle across sides), of Hoards | 1,621.7 | 1,574.7 ± 21.1 | −2.9% | −2.2 |
+| Temple — Rarity, Monster Rarity, two Vaal Beacon suffixes | 2,887.6 | 2,850.9 ± 40.3 | −1.3% | −0.9 |
+| Temple — extra-packs chance (a same-side sibling), Rare Monsters | 660.4 | 665.6 ± 9.3 | +0.8% | +0.6 |
+
+Within 3% everywhere, so the Tablets tab shows the model's number as the cost. It does not bite harder
+here because a tablet side holds two mods: the policy rarely keeps rolling with junk on a side it still
+needs. The long craft is the one to watch for the watch list — 20,941 moves a craft, so its replay has
+to run to a clock.
+
+## A tablet's rarest four — each plan costed outright (2026-09-23)
+
+The ask was for the tablets a player wants, whatever they are, to compute. The four rarest on each tablet did
+not, at any Search effort: at Standard phase A spent its 100,000 sweeps in ~1.5 s; at Exhaustive the
+Ritual pair of extra modifiers and extra Favour reroll, with two common prefixes, took ~25 s. Tracing policy
+iteration on Ritual's four rarest (Rogue Exile, Summoning Circle, extra modifiers, Unique Monsters' extra
+Rare modifier — 458 states) showed why it can never finish: the closed form's Gauss-Seidel "settles"
+(each sweep moves less than `tol`) while still far from the answer, because a Chaos reroll among Rare
+states that lands the target one roll in millions is a loop other than restart, contracting at r ≈ 1.
+Comparing plans on those numbers, improvement flipped between two policies — V(start) 597,891,044 ↔
+324,179,777 — for all 200 rounds.
+
+`exactEvaluation` solves each policy's chain outright (`solveChainDirect` → `denseSolve.ts`, dense
+elimination, M³/3 at ≤ 1,000 states); with `heuristicSeed` it skips phase A. The Tablets tab asks for both
+(`smallLattice`). Measured, standard limits, plain tablet 100 ex, no Annul:
+
+| Ritual craft | before | after |
+|---|---|---|
+| Gold + extra Favour reroll | 84,720.9 | 84,720.9 |
+| Effectiveness, Rarity, Tribute, Reroll cost | 17,902.3 | 17,902.3 (replay 17,275 ± 420) |
+| Pack Size, Rare packs, free reroll, Omen chance | 443,809.5 | 443,809.5 (replay 428,005 ± 42,834) |
+| Essence, Rogue Exile, Tribute, Reroll cost | none (Exhaustive: 1,971,550.6) | 1,976,848.5 |
+| Effectiveness, Rarity, Unique extra Rare mod, extra reroll | none (Exhaustive: 5,038,390.4) | 5,049,392.5 |
+| extra modifiers + extra reroll (spare 0) | none | 1,828,693.9 |
+| the four rarest | none | ≈ 9.214×10⁸ (0.08 s) |
+
+Identical where sweeping truly settled. Where Exhaustive got a number, it is 0.2–0.3% LOW — the sweeps
+climb from zero, so stopping short undershoots — and the exact figure is above it, as it should be.
+Overseer's and Temple's four rarest: 7.10×10⁸ and 7.32×10⁸ ex, 46 ms and 34 ms. Gear is untouched: the
+option is off unless asked for.
+
+## Playing a gear plan out — every craft, for a few seconds (2026-09-24)
+
+The replay used to decline 6 of 8 gear crafts from white: their plans use a Desecration, which it could
+not play. It now plays a Desecration's offer (three draws; the one kept is the cheapest to finish; with an
+Omen of Abyssal Echoes the offer is thrown back once when even its best is above the plan's line, and the
+omen is charged only then), an Essence, a Perfect Essence and an Omen of Light — each held to a
+hand-computed craft in `markovReplay.test.ts` (9/7, 47/45, 1 + 0.1/8, 1.3, 15).
+
+`scripts/replay-coverage.mts`: live sheet, Standard, from white, the first prefixes and suffixes of each
+base at their second tier; each craft solved plain, then again with `playOut`. Single runs.
+
+| craft | solve | with play-out | crafts played | replay mean ± SE | solver | gap |
+|---|---|---|---|---|---|---|
+| Wands ×2 | 115 ms | 4,090 ms | 10,916 | 204.3 ± 1.9 | 204.1 | +0.1% |
+| Wands ×3 | 747 ms | 4,779 ms | 501 | 3,626.0 ± 158.9 | 3,699.6 | −2.0% |
+| Wands ×4 | 4,770 ms | 7,809 ms | 240 | 9,648.5 ± 552.8 | 10,176.8 | −5.2% |
+| Body Armour (str) ×3 | 308 ms | 4,295 ms | 1,337 | 1,300.3 ± 34.1 | 1,244.8 | +4.5% |
+| Body Armour (str) ×4 | 1,381 ms | 5,553 ms | 771 | 4,149.7 ± 147.9 | 4,277.8 | −3.0% |
+| Amulets ×3 | 910 ms | 4,932 ms | 226 | 7,674.1 ± 478.5 | 8,002.8 | −4.1% |
+| Rings ×3 | 308 ms | 4,349 ms | 582 | 3,102.2 ± 125.1 | 3,108.6 | −0.2% |
+| Staves ×3 | 834 ms | 4,860 ms | 481 | 3,756.4 ± 165.1 | 3,741.2 | +0.4% |
+
+All 8 played, every replay mean within 2 standard errors of the solver's cost (the widest, Body Armour ×3,
+1.6). Past two modifiers a play-out spends its whole 4 s clock — 20,000 crafts would take minutes — and
+a few hundred crafts pin the median and the tenths but not the far tail. Hence a button ("Play it out")
+rather than part of every solve, and "a rough read" under 500 crafts. The negative gaps lean the way of
+TODO 23's bias (the solver prices a roll with junk on the item slightly worse than the game), inside the
+noise at these counts.
+
+## Big crafts with bones: a ceiling instead of nothing (2026-09-24)
+
+`scripts/bone-fallback.mts`, live sheet, from white, the first prefixes and suffixes at their second tier,
+single runs. Before the fallback, at Standard (15 s):
+
+| craft | with bones | without bones |
+|---|---|---|
+| Wands ×3 / ×4 / ×5 | 3,700 (0.8 s) / 10,177 (3.8 s) / 53,292 (14.7 s) | 4,534 (0.3 s) / 16,935 (0.8 s) / 128,926 (6.2 s) |
+| Body Armour (str) ×3 / ×4 / ×5 | 1,245 (0.3 s) / 4,278 (1.6 s) / 12,534 (9.2 s) | 1,968 / 10,021 / 33,112 (2.1 s) |
+| Amulets ×3 / ×4 / ×5 | 8,003 / 26,788 (6.2 s) / **none (15.8 s)** | 8,975 / 55,595 (1.2 s) / 198,667 (5.0 s) |
+| Staves ×3 | 3,741 (0.9 s) | 4,534 (0.3 s) |
+| Rings ×4 / ×5 | 8,764 (2.7 s) / **none (15.9 s)** | 14,424 (0.6 s) / 49,234 (1.7 s) |
+
+Wands ×5 and Rings ×5 sit on Standard's edge: interleaved, Wands ×5 settled at 13.8 s once and gave
+nothing once; Rings ×5 gave nothing once and 27,451 at 14.2 s once. **The guessed seed does not help**:
+`heuristicSeed`, interleaved on seven of these (2 reps), was never faster, and gave no number for Body
+Armour ×5 (two-phase: 7.5 s, 9.8 s) and Wands ×5 where the two-phase solve settled.
+
+A reserved share of the clock fails the gate (no craft exact before may lose it): Wands ×5 needs up to
+15 s of 15, the Amulets ×5 fallback 5–6 s. So the solve without bones runs AFTER the budget. With it:
+every craft that settled gives the same number; **Amulets ×5 → "≤ 198,667 ex" in 21.5 s** and **Rings ×5
+→ "≤ 49,234 ex" in 17.6 s**, where both gave nothing. At Exhaustive they settle: Rings ×5 27,451 (19.7 s),
+Amulets ×5 57,105 (45.4 s) — so the ceilings are 1.8x and 3.5x the answer, and bones save 39–71% on the
+4- and 5-modifier crafts here. A real ceiling, not an estimate, which is how the page words it.
+
+**Then seeded, the same day.** The plan without bones is proper in the lattice with them, so it can seed
+policy iteration and skip phase A (`seedFrom`, `projectPlan`). Standard's limits, interleaved, 2 reps;
+"seeded" is the solve without bones + the seeded solve with them:
+
+| craft | two-phase | seeded |
+|---|---|---|
+| Wands ×4 | 3.4 s, 3.2 s | 0.8+0.3 s, 0.7+0.3 s |
+| Body Armour (str) ×5 | 6.8 s, 6.8 s | 1.7+0.8 s, 1.4+0.7 s |
+| Amulets ×4 | 5.8 s, 8.0 s | 1.1+0.3 s, 1.0+0.3 s |
+| Rings ×4 | 2.3 s, 2.2 s | 0.6+0.3 s, 0.5+0.3 s |
+| Wands ×5 | none (15.7 s), 13.8 s | 4.7+0.6 s, 3.7+0.7 s |
+| Rings ×5 | none, none | 1.4+0.8 s, 1.8+0.8 s |
+| Amulets ×5 | none, none | 5.7+1.1 s, 5.7+0.9 s |
+
+Every seeded cost identical to the two-phase one where that settled, and to Exhaustive's where it did
+not (Rings 27,451, Amulets 57,105). The Aldur staff (fubgun's, six targets with the Cold-or-Lightning
+slot, Exhaustive's limits, 4 interleaved reps): two-phase 28.7–38.0 s (median ~36 s), seeded 6.9–9.9 s
+(median ~8.7 s), 57,380.4 ex every time — the gate the plan set (1.5x on the median, identical costs)
+passed by a wide margin. (At today's prices the staff settles far faster than the ~450 s of 2026-09-10.)
+
+Through the app (`scripts/bone-fallback.mts`, Standard, the seeded path on): all twelve settle — Wands
+×3/×4/×5 0.4/1.7/8.0 s, Body Armour 0.4/1.0/3.2 s, Amulets 0.4/1.8/8.3 s (57,105), Staves ×3 0.3 s, Rings
+×4/×5 0.8/3.8 s (27,451) — same costs as above. The ceiling without bones now shows only when even the
+seeded solve runs out.
+
+## Example crafts on the empty Plan tab (2026-09-24)
+
+Chosen by measurement, live sheet, Standard, from white at item level 82 (`runSolve`, as the Lab):
+
+| example | targets (tier) | answer | time |
+|---|---|---|---|
+| A caster Wand | Spell Damage (T3), +Level of all Spell Skills (T2), Cast Speed (T3) | exact 16,245 ex | 1.2 s |
+| A life and resistances Ring | Life, Fire, Cold, Lightning Resistance (all T3) | exact 5,233 ex | 0.7 s |
+| An armour Body Armour | Life, Armour %, Fire, Lightning Resistance (all T3) | exact 1,660 ex | 1.3 s |
+| A Spirit Amulet | Spirit (T2), Life (T3), all Elemental Resistances (T3) | exact 7,712 ex | 0.3 s |
+
+Also measured and not taken: the Wand at T2 (58,420 ex, 1.2 s — steep for a first look), a Ring with
+three modifiers at T2 (3,619, 0.5 s), a Body Armour with three at T2 (1,277, 0.3 s). The costs move with
+the sheet; what the choice rests on is the settling, which `exampleCrafts.test.ts` checks on the frozen
+sheet and e2e 2c in the browser.
+
+## A junk mod's family, out of the next roll — measured, then fixed (2026-09-24, TODO 23)
+
+`scripts/junk-bias.mts`: frozen sheet, no clock on the solve, the plan replayed 20,000 times (fewer where a
+two-minute replay clock ran out); gap = replay − solver, z in standard errors. Gear from white at item
+level 82; tablets as the Tablets tab asks (a 100 ex plain tablet, free positions, filled at the end, no
+Annulment, the exact small-lattice solve).
+
+| craft | before | after (rolls) | after (rolls + Desecration) |
+|---|---|---|---|
+| Wand 2 (T1), base 30 | −2.6% (z −3.9) | −2.1% (−3.3) | **−1.4% (−2.2)** |
+| Wand 2 (T2), base 30 | −0.4% (−0.6) | +0.5% (0.8) | −0.8% (−1.2) |
+| Wand 3 (T2), base 30 | −7.8% (−13.9) | −0.5% (−0.9) | +0.1% (0.2) |
+| Wand 3 (T2), base 0 | +0.3% (0.3) | +0.3% (0.4) | +0.6% (0.7) |
+| Ring 3 (T2), base 30 | −4.5% (−7.7) | −0.5% (−0.8) | +0.3% (0.5) |
+| Ring 2 (T1), base 30 | −4.0% (−6.4) | −1.8% (−2.8) | −0.6% (−1.0) |
+| Amulet 3 (T2), base 30 | −8.8% (−11.6) | +2.2% (2.5) | +1.8% (2.1) |
+| Body Armour 3 (T2), base 30 | −6.0% (−10.5) | −1.1% (−1.8) | −0.7% (−1.1) |
+| Body Armour 2 (T1), base 30 | −5.0% (−7.9) | −2.4% (−3.7) | **−0.5% (−0.7)** |
+| Staff 3 (T2), base 30 | −6.9% (−12.0) | +0.4% (0.7) | +1.5% (2.4) |
+| Staff 2 (T1), base 0 | +0.7% (0.9) | +0.7% (0.9) | +0.7% (0.9) |
+| Amulet 2 (T1), base 10 | −4.5% (−7.2) | −1.2% (−1.8) | +0.1% (0.2) |
+| Ritual 1 prefix | −10.0% (−13.0) | −1.4% (−1.7) | (no bones) |
+| Ritual 1+1 | −10.7% (−16.6) | +0.1% (0.1) | |
+| Ritual 2 prefixes | −2.0% (−2.8) | −0.4% (−0.5) | |
+| Overseer 1+1 | −12.0% (−18.8) | +0.4% (0.5) | |
+| Temple 1+1 | −12.2% (−19.1) | −0.4% (−0.5) | |
+| Temple 2+1 | −7.3% (−11.1) | +0.2% (0.2) | |
+
+The gate the plan set — every craft within 2% or 3 SE — failed on the first cut for the two bolded
+crafts, both of which Desecrate; the Desecration draw built its own pool without the correction.
+Corrected there too, every craft is inside it (largest 1.8%, 2.4 SE), and it became the default. A free
+base's crafts barely move: the policy bins every miss, so junk rarely stays. Tablets were worse than
+the 5% TODO 23 guessed, and the correction alone closed them, so no exact small-pool solver was built.
+
+Pinned numbers that moved with it, each on purpose: the sibling recordings now run on the model they were
+recorded with (`junkFamilies: false`, since they lock the sibling fix, not this); a test whose only
+suffix was one junk family (the Sinistral omen), and one whose "long" craft had a single junk family
+(the replay's too-long refusal), relied on the old model's error — once that junk lands, the game makes
+the target certain — and were rebuilt on several families; a Serle's Triumph test pinned a 1.5e-9
+DIRECTION the replay does not support (22,326 ± 134 without the rune, 22,362 ± 132 with it) and now
+pins "within 1%, not identical"; the Ritual reroll's route gained an Exalt after its Chaos.
+
+## Still deferred
+- **Confirm the Omen of Whittling TIE rule in game** (2026-09-02): when two or more modifiers share
+  the lowest item level, which does the Chaos Orb remove? Modelled as uniform — 50/50 on two — by the
+  user's ruling rather than by observation, so it stays here until someone sees a tie resolve in play.
+  (The price is no longer outstanding: poe.ninja serves omens under `type=Ritual`, so the mechanic is
+  live at ~4,700ex.)
+- **Cross-check the BELT weights against Craft of Exile** (added 2026-09-02, table above). CoE is
+  client-rendered and `scripts/coe-verify.mts` takes hand-entered numbers, so this needs a browser.
+  Every other shipped category has had this check; belts have not.
+- **Resolve the baselined data findings** (16 mis-slots, 4 mixed families on 0.5; CompanionDamage +
+  8 desecrated/perfect cross-source families on 0.5.0, plus `Thorns on Belts` and
+  `FlaskChargeGeneration on Belts` added 2026-09-02) — domain/CoE ruling on `type` vs pool.
+- ~~UI for budget alternatives~~ DONE 2026-07-17 — optional Budget field in the Engine Lab, 📌 pins on
+  target rows, and an `AlternativesView` panel below the frontier. Rendering is covered by a component
+  test driven by **real engine output** (`AlternativesView.test.tsx`) rather than a hand-made fixture,
+  so the panel can't render a shape the engine never produces. Both flows wired (a fractured craft routes
+  its alternatives through the from-item planner). The panel shows the odds bracket verbatim when
+  `exact: false`, and badges "stopped early" when `truncated` (worded "search capped" until the 2026-08-22 jargon pass) — the honesty the engine reports is
+  surfaced, not swallowed.
+- ~~Human CoE numeric spot-check of the new pools~~ DONE 2026-07-13 — essence value ranges confirmed
+  against CoE (see above). Desecrated/perfect value spot-checks beyond the sampled set remain optional.
+- **Broaden CoE cross-validation beyond wands** — other bases' families/weights, tier-target and omen
+  numbers. Wands is clean; the rest of the pool is the remaining Phase-3 work.
+- **Confirm the assumed desecrated spawn weight (D4) — now TODO 1, not a background item.** Since a
+  bone became the cheapest way to add an ORDINARY mod (2026-08-24), the assumption prices every craft
+  on armour and weapons, not only carved ones: on crafts with no carved target at all it swings a
+  Wands craft 995 ex → 4,074 ex across the plausible range. The same change made it observable —
+  `scripts/desecrate-weight.mts` turns "how many of N bone offers held a carved mod" into a
+  maximum-likelihood weight, and the candidates predict 0.02% / 20.69% / 94.35% on a Body Armour, so
+  twenty bones separates them. Needs a human in the game; there is no data source. Original note:
+- **Confirm the assumed desecrated spawn weight (D4).** 1000 was chosen for plausibility, not measured:
+  poe2db publishes none and reports 1 for every row. It moves every unomened desecration by ~900x
+  (Body Armour 1-in-121,510 → 1-in-132). The app discloses it (`assumedOdds` → `PriceBasisNote`), which
+  makes it honest, not correct. **The single largest unverified number in the app.**
+- **Cross-check the CHANGED mechanics against Craft of Exile.** `coe-verify` covers normal-pool weights
+  (Rings / Body_Armours_int / Quivers: all MATCH as of 2026-08-23) and `coe-newpools-check` covers pool
+  structure — neither touches what changed above. The unomened desecration denominator, the
+  one-essence-per-item cap and the from-white perfect-essence route are backed by user rulings plus
+  hand-computed tests, with no independent signal. `coe-newpools-check` writes
+  `/tmp/coe-newpools-worksheet.md` for exactly this hand-check.
+- **Nothing shipped since 2026-08-21 has been seen in a browser.** The Search effort selector, the
+  assumption note, the "≥ x" unconverged display, the stacked mobile columns, the warm-start fetch and
+  the cache headers are verified by jsdom and reading only. jsdom has no layout engine and no network,
+  so responsive behaviour and caching in particular are untested by anything here.

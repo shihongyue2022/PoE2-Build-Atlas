@@ -1,0 +1,32 @@
+{
+  "names": {
+    "Morior Invictus": {
+      "japanese": "不屈なる者として死す",
+      "aliases": [],
+      "url": "https://poe2db.tw/jp/Morior_Invictus"
+    },
+    "Grand Regalia": {
+      "japanese": "荘厳なレガリア",
+      "aliases": [],
+      "url": "https://poe2db.tw/jp/Morior_Invictus"
+    }
+  },
+  "modifiers": {
+    "Hits against you have {0}% reduced Critical Damage Bonus per Socket filled": {
+      "japanese": "嵌められているソケットごとにプレイヤーに対するヒットのクリティカルダメージボーナスが{0}%減少する",
+      "url": "https://poe2db.tw/jp/Morior_Invictus"
+    },
+    "{0} to Armour": {
+      "japanese": "アーマー +{0}",
+      "url": "https://poe2db.tw/jp/Bonded_Modifiers"
+    },
+    "{0}% to Quality of all Skills": {
+      "japanese": "全てのスキルの品質 +{0}%",
+      "url": "https://poe2db.tw/jp/Bonded_Modifiers"
+    }
+  },
+  "bonded": {
+    "japanese": "絆",
+    "url": "https://poe2db.tw/jp/Bonded_Modifiers"
+  }
+}

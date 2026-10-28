@@ -1,0 +1,68 @@
+import '@testing-library/jest-dom';
+import { afterEach } from 'vitest';
+import { cleanup } from '@testing-library/react';
+
+// Cleanup after each test
+afterEach(async () => {
+  cleanup();
+  // The workspace and currency prefs are MODULE-level stores shared by every component, so without
+  // this a test that builds an item leaks it into the next one — order-dependent failures that look
+  // like flakiness. Imported lazily so this file stays free of app imports at module scope.
+  const [{ setWorkspace, defaultWorkspace }, { setExclusions }] = await Promise.all([
+    import('../lib/workspace'),
+    import('../lib/currencyPrefs'),
+  ]);
+  setWorkspace(defaultWorkspace());
+  setExclusions({});
+  localStorage.clear();
+});
+
+/**
+ * jsdom has no `Worker`, and the app now runs every solve in one (the from-item planner blocks for
+ * seconds, which used to freeze the tab). Without a stand-in, merely MOUNTING EngineLab or ItemActions
+ * throws, because both prewarm the worker on load.
+ *
+ * So: a Worker that isn't one. It speaks the same message protocol as `engine.worker.ts` but runs the
+ * solve in-process. That keeps the component tests exercising the real path — `runSolve`, the request
+ * shapes, the progress messages, the id-keyed replies — rather than mocking the whole thing away, and
+ * it lets `vi.mock('../../lib/engine')` in those tests still reach the planners, since this resolves
+ * the same module specifier they do.
+ *
+ * The imports are dynamic and deliberately deferred to postMessage time: at module scope they would
+ * load before a test file's `vi.mock` factories are registered, and the tests' engine stubs would be
+ * bypassed.
+ */
+class InProcessWorker implements Partial<Worker> {
+  onmessage: ((e: MessageEvent) => void) | null = null;
+  onerror: ((e: ErrorEvent) => void) | null = null;
+  private alive = true;
+
+  async postMessage(msg: { id: number; req: unknown }): Promise<void> {
+    const emit = (data: unknown): void => {
+      // A terminated worker is silent — that is what makes cancellation work in the real client.
+      if (this.alive) this.onmessage?.({ data } as MessageEvent);
+    };
+    try {
+      // A deliberate tick of real delay. A Worker is never synchronous, and a test that asserts on a
+      // solve without awaiting it should therefore fail — not pass by luck because the hops happened
+      // to fit in one tick. Exactly that hid three missing `waitFor`s until a slower CI runner failed
+      // on them, so this makes the asynchrony non-negotiable and local runs representative.
+      await new Promise((r) => setTimeout(r, 5));
+      const [{ runSolve }, { loadEngine }] = await Promise.all([
+        import('../lib/solve'),
+        import('../lib/engine'),
+      ]);
+      const eng = await loadEngine();
+      const result = runSolve(eng, msg.req as never, (progress) => emit({ id: msg.id, type: 'progress', progress }));
+      emit({ id: msg.id, type: 'done', result });
+    } catch (err) {
+      emit({ id: msg.id, type: 'error', message: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  terminate(): void { this.alive = false; }
+  addEventListener(): void {}
+  removeEventListener(): void {}
+}
+
+(global as any).Worker = InProcessWorker;

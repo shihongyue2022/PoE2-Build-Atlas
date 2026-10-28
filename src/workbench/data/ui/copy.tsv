@@ -1,0 +1,1482 @@
+我的全身装备	My equipment	装備一覧
+角色快照 · 全身配装	Character snapshot · Loadout	キャラクタースナップショット · 装備構成
+角色全身装备	Character loadout	キャラクターの装備
+更新角色 → 点选装备 → 查价或找升级 → 比较候选 → 确认替换。	Update character → Select an item → Search prices or upgrades → Compare → Confirm swap.	キャラクター更新 → 装備を選択 → 価格・上位装備を検索 → 比較 → 交換を確定。
+当前联盟	Current league	現在のリーグ
+独立保存在此浏览器	Saved in this browser	このブラウザーに保存
+配装提升流程	Equipment upgrade workflow	装備更新の手順
+导入角色	Import character	キャラクターをインポート
+读取 PoB2 / 本机 BD	Read PoB2 / Local build	PoB2・ローカルビルドの読込
+确认方向	Choose a focus	方針を確認
+定义实际使用的技能组	Define the skills you use	実際に使うスキルを設定
+校准抗性	Calibrate resistances	耐性値を補正
+补齐角色总值与上限	Enter character totals and caps	キャラクターの合計値・上限を入力
+寻找升级	Find upgrades	上位装備を探す
+先点选已装备栏位	Select an equipped slot first	装備済みのスロットを選択
+比较候选	Compare candidate	候補を比較
+候选已就位 · 确认后替换	Candidate ready · Confirm to swap	候補選択済み · 確認後に交換
+粘贴或从市场加入	Paste or add from trade	貼り付け、または市場から追加
+整套装备导入	Import loadout	装備一式をインポート
+参考 BD 与本机游戏资料	Reference build & local game data	参考ビルド・ローカルゲームデータ
+能直接连接官方账号同步吗？	Can I sync directly with my game account?	公式アカウントと直接同期できますか？
+查看 GGG 官方注册说明 ↗	GGG application registration ↗	GGGのアプリ登録案内 ↗
+当前整套抗性	Current loadout resistances	現在の装備全体の耐性
+上限未导出	Cap not exported	上限未出力
+依据：	Basis:	根拠：
+缺少角色基准	Character baseline missing	キャラクター基準値なし
+· 武器组	· Weapon set	· 武器セット
+PoB2 保存的角色总值	Character totals saved in PoB2	PoB2に保存された合計値
+游戏面板基准	In-game stat baseline	ゲーム内ステータスの基準値
+抗性读取与推算依据	Resistance sources & calculation basis	耐性の読込・推定根拠
+确认我的四项抗性上限均为 75%	Confirm all four resistance caps are 75%	4耐性の上限がすべて75%であることを確認
+当前武器组	Active weapon set	使用中の武器セット
+武器组	Weapon set	武器セット
+空	Empty	空
+待导入／可粘贴	Import or paste an item	インポート・貼り付け可能
+装备栏位	Equipment slots	装備スロット
+点击栏位	Select a slot	スロットを選択
+点击导入	Click to import	クリックしてインポート
+粘贴游戏物品文字	Paste copied item text	ゲーム内アイテム文を貼り付け
+药剂与护符栏位	Flask & charm slots	フラスコ・チャームスロット
+角色来源与更新记录	Character source & update history	キャラクターの取得元・更新履歴
+装备贡献合计（非角色面板）	Equipment contributions (not character stats)	装備の寄与合計（キャラクター最終値ではありません）
+配装设置	Loadout settings	装備設定
+设置升级目标	Set upgrade goals	装備更新の目標設定
+四抗封顶 · 伤害优先	Cap all resistances · Prioritize damage	4耐性を上限まで確保 · ダメージ優先
+配装评分标准	Upgrade criteria	装備の評価基準
+四抗封顶后，主技能伤害优先	Prioritize main-skill damage after capping resistances	4耐性を確保してから主力スキルのダメージを優先
+自定义属性方向	Custom stat priorities	優先ステータスを指定
+角色总抗性额外下限（至少达到各自上限）	Additional total resistance minimums (at least each cap)	合計耐性の追加下限（各上限以上）
+角色未封顶总抗性下限	Minimum uncapped character resistance	キャラクターの上限適用前耐性の下限
+装备合计抗性下限	Minimum equipment resistance total	装備耐性合計の下限
+（待确认）	(Unconfirmed)	（要確認）
+不加额外下限	No additional minimum	追加下限なし
+导入 / 导出整套方案	Import / Export loadout	装備構成のインポート・エクスポート
+全身装备方案 JSON	Loadout JSON	装備構成JSON
+导出后复制保存，或在此粘贴先前保存的 JSON	Copy exported JSON to save it, or paste an earlier backup here	出力したJSONをコピーして保存、または保存済みJSONを貼り付け
+导出 JSON	Export JSON	JSONを出力
+载入整套方案	Load saved loadout	装備構成を読込
+选择装备栏位	Select equipment slot	装備スロットを選択
+原名：	Original name:	元の名前：
+未鉴定	Unidentified	未鑑定
+未鉴定 · 词缀未知	Unidentified · Modifiers unknown	未鑑定 · モッド不明
+确认此复制文本的实际镶嵌数	Confirm filled sockets for this item snapshot	このアイテム文の実際の装着数を確認
+本栏装备实际镶嵌数量	Filled sockets in this slot	この装備の実際の装着数
+尚未确认	Not confirmed	未確認
+估价这件装备	Price-check this item	この装備の相場を検索
+寻找这件的升级	Find an upgrade for this item	この装備の上位候補を検索
+从本栏当前装备开始规划制作	Plan crafting from this equipped item	この装備からクラフトを計画
+送入工艺台	Send to crafting planner	クラフト計画へ送る
+移除此栏装备	Unequip this slot	このスロットの装備を外す
+原始物品文字	Original item text	元のアイテム文
+替换此栏装备	Replace this slot	このスロットを交換
+导入此栏装备	Import into this slot	このスロットにインポート
+在游戏内复制物品，粘贴完整文字（支持中 / 英文）	Paste the full item text copied in game (Chinese / English)	ゲームでコピーした全文を貼り付け（中国語・英語対応）
+放入	Equip	装備する
+比较候选装备 · 替换	Compare replacement candidate	交換候補を比較
+比较替换装备	Compare replacement	交換装備を比較
+候选对照 · 全身抗性约束	Candidate comparison · Loadout resistance constraints	候補比較 · 装備全体の耐性条件
+这件候选，值得换吗？	Is this candidate worth equipping?	この候補に交換する価値はありますか？
+替换	Replace	交換
+粘贴候选装备	Paste candidate item	候補装備を貼り付け
+换装结论摘要	Swap assessment	交換の評価結果
+当前配置不能装备这件候选	This candidate cannot be equipped in the current configuration	現在の構成ではこの候補を装備できません
+相同装备，无需重复替换	Same item; no swap needed	同じ装備のため交換不要
+这件有取舍，不是全面升级	Trade-offs; not an upgrade in every stat	一長一短があり、すべての値が向上するわけではありません
+已确认属性下降，建议先保留现装	Confirmed stat loss; keep current gear for now	確認済みステータスが低下。現在の装備を推奨
+已确认属性有提升，再核对技能收益与抗性	Stats improve; verify skill benefits and resistances	ステータス向上を確認。スキル効果と耐性を要確認
+已确认属性没有提升	No confirmed stat improvement	確認済みステータスの向上なし
+有待确认数值，先核对插槽与物品面板	Unconfirmed values; check sockets and item stats first	未確認の値があります。ソケットと装備数値を先に確認
+正在比较	Comparing	比較中
+尚未导入	Not imported	未インポート
+空栏位	Empty slot	空きスロット
+待识别	Unrecognized	未識別
+发生变化	Changed	変更あり
+保持一致	Unchanged	変更なし
+当前：	Current:	現在：
+候选：	Candidate:	候補：
+无此效果	Effect absent	この効果なし
+单件属性	Item stat	単体ステータス
+当前单件	Current item	現在の装備
+候选单件	Candidate item	候補装備
+贡献变化	Contribution change	寄与の変化
+玩家优先属性	Your priority stats	優先ステータス
+优先	Priority	優先
+缺少伤害面板	Damage baseline missing	ダメージ基準値なし
+待确认镶嵌	Socket confirmation needed	装着数の確認が必要
+替换后的全套抗性目标	Resistance goals after the swap	交換後の装備全体の耐性目標
+% / 目标	% / Target	% / 目標
+无需替换：相同装备文本	No swap needed: identical item text	交換不要：アイテム文が同一
+估价候选	Price-check candidate	候補の相場を検索
+更新 PoB2 角色快照	Update PoB2 character snapshot	PoB2キャラクター情報を更新
+从 PoB2 导入整套装备	Import loadout from PoB2	PoB2から装備一式をインポート
+· 分享代码 / XML	· Share code / XML	· 共有コード・XML
+也可以粘贴分享代码或选择 XML	Paste a share code or choose an XML file	共有コードの貼り付け・XMLの選択も可能
+PoB2 分享代码或 XML	PoB2 share code or XML	PoB2共有コード・XML
+粘贴 PoB2 分享代码或 XML（暂不支持分享网址）	Paste a PoB2 share code or XML (share URLs are not supported yet)	PoB2共有コードまたはXMLを貼り付け（共有URLは未対応）
+正在解析…	Parsing…	解析中…
+预览 PoB2 装备	Preview PoB2 equipment	PoB2装備をプレビュー
+选择 XML 文件	Choose XML file	XMLファイルを選択
+PoB2 XML 文件	PoB2 XML file	PoB2 XMLファイル
+文件超过 3 MB。	File exceeds 3 MB.	ファイルが3 MBを超えています。
+无法读取文件。	Could not read the file.	ファイルを読み込めません。
+无法读取此 PoB2 文件。	Could not read this PoB2 file.	このPoB2ファイルを読み込めません。
+装备组	Item set	装備セット
+PoB2 装备组	PoB2 item set	PoB2装備セット
+导入后启用第二套武器	Activate weapon set II after import	インポート後に武器セットIIを有効化
+两套武器预览	Preview both weapon sets	両武器セットのプレビュー
+· 启用	· Active	· 使用中
+· 备用	· Inactive	· 控え
+可导入	Ready to import	インポート可能
+未指定	Not specified	未指定
+技能方案	Skill set	スキルセット
+组	groups	組
+件	items	個
+项	entries	件
+条	entries	件
+次	uses	回
+秒	seconds	秒
+当前装备	Current item	現在の装備
+候选装备	Candidate item	候補装備
+未确认	Unconfirmed	未確認
+未记录	Not recorded	未記録
+已确认	Confirmed	確認済み
+已记录	Recorded	記録済み
+待核对	Needs review	要確認
+待确认	Pending confirmation	確認待ち
+导入游戏物品	Import game item	ゲーム内アイテムをインポート
+游戏物品文本	Item text	アイテム文
+识别并导入	Parse & import	解析してインポート
+打开全身装备栏	Open equipment slots	装備スロットを開く
+试用戒指示例	Try ring example	指輪のサンプルを試す
+试用项链示例	Try amulet example	アミュレットのサンプルを試す
+导入核对	Import review	インポート内容の確認
+重新识别当前原文	Reparse original text	元のテキストを再解析
+我已补齐并核对当前词缀	I have completed and verified the current modifiers	現在のモッドを補完・確認しました
+成品目标规划	Plan a target item	目標装備を計画
+制作中 · 继续核对底装	Craft in progress · Continue item checks	制作中 · ベース装備の確認を続ける
+起点	Starting point	開始状態
+修改底座、稀有度与物等	Edit base, rarity & item level	ベース・レアリティ・アイテムレベルを変更
+装备类型	Item category	装備カテゴリ
+装备底座	Item base	装備ベース
+当前稀有度	Current rarity	現在のレアリティ
+（特殊规则未支持）	(Special rules unsupported)	（特殊ルール未対応）
+普通 · 从空白底座开始	Normal · Start from a clean base	ノーマル · 空のベースから開始
+魔法 · 已有装备	Magic · Existing item	マジック · 既存装備
+稀有 · 已有装备	Rare · Existing item	レア · 既存装備
+手动编辑当前词缀	Edit current modifiers manually	現在のモッドを手動編集
+使用方式	How to use	使い方
+每做一步，更新一次。	Update after every crafting step.	操作ごとに装備を更新。
+更新装备状态	Update item state	装備の状態を更新
+基于	Based on	基盤：
+词缀参考 PoE2DB / PoE2 Wiki	Modifier references: PoE2DB / PoE2 Wiki	モッド資料：PoE2DB / PoE2 Wiki
+本工具为个人制作辅助，价格并非成交保证。	Personal crafting aid; listed prices do not guarantee a trade.	個人用クラフト支援ツールです。表示価格での取引は保証されません。
+你想把它做成什么？	What do you want to craft?	どのような装備を作りますか？
+载入目标示例	Load sample goals	目標サンプルを読込
+从下方词缀库添加目标	Add goals from the modifier library below	下のモッド一覧から目標を追加
+以当前词缀为目标	Use current modifiers as goals	現在のモッドを目標にする
+编辑目标词缀 · 底座词缀库	Edit target modifiers · Base modifier pool	目標モッドを編集 · ベースのモッドプール
+底座词缀库	Base modifier pool	ベースのモッドプール
+添加到目标	Add to goals	目標に追加
+添加到当前	Add to current item	現在の装備に追加
+搜索词缀	Search modifiers	モッドを検索
+搜索生命、抗性、施法速度…	Search life, resistance, cast speed…	ライフ・耐性・キャストスピードなどを検索…
+词缀类型	Modifier type	モッドの種類
+全部词缀	All modifiers	すべてのモッド
+仅前缀	Prefixes only	プレフィックスのみ
+仅后缀	Suffixes only	サフィックスのみ
+词缀来源	Modifier source	モッドの取得元
+普通词缀	Regular modifiers	通常モッド
+所有来源	All sources	すべての取得元
+普通精华专属	Essence exclusive	エッセンス限定
+完美精华专属	Perfect Essence exclusive	完全なるエッセンス限定
+合金专属	Alloy exclusive	合金限定
+亵渎专属	Desecration exclusive	冒涜限定
+符文词缀	Rune modifiers	ルーンモッド
+词缀 / 来源	Modifier / Source	モッド・取得元
+最高可用阶级	Best available tier	選択可能な最高Tier
+物等	Item level	アイテムレベル
+已添加	Added	追加済み
+计算通货顺序	Calculate crafting steps	クラフト手順を計算
+搜索精度	Search effort	探索精度
+快速 · 约 5 秒	Quick · About 5 seconds	高速 · 約5秒
+标准 · 约 15 秒	Standard · About 15 seconds	標準 · 約15秒
+深入 · 约 60 秒	Deep · About 60 seconds	詳細 · 約60秒
+通货范围与计算选项	Currencies & calculation options	カレンシー・計算オプション
+高阶／完美通货	Greater / Perfect currencies	上位・完全なるカレンシー
+预兆	Omens	お告げ
+精华／合金	Essences / Alloys	エッセンス・合金
+亵渎（含估计权重）	Desecration (includes estimated weights)	冒涜（推定ウェイトを含む）
+同时抽样验证成本分布与材料消耗（额外计算时间）	Also sample cost distribution and material use (extra calculation time)	費用分布・素材消費量もサンプリング検証（追加計算時間が必要）
+每次重新购买底座的成本	Cost per replacement base	ベースを買い直す際の費用
+底座成本	Base cost	ベース費用
+取消计算	Cancel calculation	計算をキャンセル
+计算制作策略	Calculate crafting strategy	クラフト戦略を計算
+正在	In progress:	実行中：
+搜索制作路线	Searching crafting routes	クラフトルートを探索
+验证成本分布	Validating cost distribution	費用分布を検証
+求解后续决策	Solving subsequent decisions	後続の判断を計算
+你的制作方案	Your crafting plan	クラフト計画
+后续期望成本	Expected remaining cost	以降の期待費用
+暂无结果	No result yet	結果なし
+尚未获得有效结果	No valid result yet	有効な結果なし
+下一步建议	Suggested next step	推奨される次の手順
+目标已达成	Goal reached	目標達成
+查看下方说明	See details below	下の説明を参照
+包含允许的重试策略	Includes permitted retry strategies	許可した再試行戦略を含む
+从当前装备状态继续	Continue from the current item state	現在の装備状態から継続
+规则与价格口径	Rules & price basis	ルール・価格の算定基準
+含假设权重	Includes assumed weights	仮定のウェイトを含む
+快照权重计算	Snapshot-based weights	スナップショットのウェイト
+含手动价格	Includes custom prices	手動価格を含む
+设置这一步的制作锚点 ↑	Set a checkpoint for this step ↑	この手順のチェックポイントを設定 ↑
+固定制作路线对照 ·	Fixed-route comparison ·	固定ルートの比較 ·
+路线	Route	ルート
+单次分支命中	Single-attempt success	1回の分岐成功率
+抽样校验与材料消耗	Sampling validation & material use	サンプリング検証・素材消費
+策略抽样验证	Strategy sampling validation	戦略のサンプリング検証
+成本	Cost	費用
+抽样均值	Sample mean	標本平均
+平均	Average	平均
+模拟操作	Simulate action	操作をシミュレート
+花虚拟通货，试真实规则。	Try real crafting rules with virtual currency.	仮想カレンシーで実際のルールを試す。
+已知模拟消耗	Known simulated cost	判明しているシミュレーション費用
+本次模拟消耗	Simulation cost	今回のシミュレーション費用
+撤销	Undo	元に戻す
+重做	Redo	やり直す
+显示当前不可用的通货	Show unavailable currencies	現在使えないカレンシーも表示
+价格缺失	Price missing	価格なし
+操作记录	Action history	操作履歴
+仅保留当前会话	This session only	現在のセッションのみ
+从第一步开始试做	Try your first crafting step	最初のクラフトを試す
+← 角色装备	← Character equipment	← キャラクター装備
+粘贴其他物品	Paste another item	別のアイテムを貼り付け
+查看套装汇总	View loadout summary	装備全体の集計を表示
+每个数字，都有来处。	Every number has a source.	すべての数値に根拠を。
+本地价格覆盖	Local price overrides	ローカル価格の上書き
+制作规则快照	Crafting rule snapshot	クラフトルールのスナップショット
+内置材料价格	Bundled material prices	内蔵素材価格
+游戏内快捷查价与步骤校验	In-game price hotkeys & crafting checks	ゲーム内価格検索・手順確認
+戒指 Wiki	Ring wiki	指輪Wiki
+项链 Wiki	Amulet wiki	アミュレットWiki
+PoE2DB 词缀	PoE2DB modifiers	PoE2DB モッド一覧
+材料市场	Material market	素材市場
+自定义材料价格 ·	Custom material prices ·	素材価格の指定 ·
+内置价 / Ex	Default / Ex	内蔵価格 / Ex
+你的价格 / Ex	Your price / Ex	指定価格 / Ex
+使用内置价	Use default price	内蔵価格を使用
+恢复全部内置价格	Restore all default prices	すべて内蔵価格に戻す
+把每一步做明白。	Understand every crafting step.	各手順を理解してクラフト。
+个人本地工坊	Personal local workbench	個人用ローカル工房
+原始诊断信息	Original diagnostics	元の診断情報
+加载中	Loading	読込中
+规则	Rules	ルール
+数据加载失败：	Data loading failed:	データ読込エラー：
+武器	Weapon	武器
+头盔	Helmet	ヘルメット
+胸甲	Body armour	ボディアーマー
+手套	Gloves	グローブ
+鞋靴	Boots	ブーツ
+腰带	Belt	ベルト
+珠宝	Jewel	ジュエル
+药剂	Flask	フラスコ
+护符	Charm	チャーム
+圣物	Relic	レリック
+通货	Currency	カレンシー
+宝石	Gem	ジェム
+生命	Life	ライフ
+魔力	Mana	マナ
+精魂	Spirit	スピリット
+护甲	Armour	アーマー
+闪避	Evasion	回避力
+闪避值	Evasion Rating	回避力
+能量护盾	Energy Shield	エナジーシールド
+火焰抗性	Fire resistance	火耐性
+冰冷抗性	Cold resistance	冷気耐性
+闪电抗性	Lightning resistance	雷耐性
+混沌抗性	Chaos resistance	混沌耐性
+全元素抗性	All elemental resistances	全元素耐性
+力量	Strength	筋力
+敏捷	Dexterity	器用さ
+智慧	Intelligence	知性
+智力	Intelligence	知性
+移动速度	Movement speed	移動スピード
+攻击速度	Attack speed	アタックスピード
+施法速度	Cast speed	キャストスピード
+暴击率	Critical hit chance	クリティカル率
+暴击伤害	Critical damage	クリティカルダメージ
+物理伤害	Physical damage	物理ダメージ
+元素伤害	Elemental damage	元素ダメージ
+混沌伤害	Chaos damage	混沌ダメージ
+攻击	Attack	アタック
+法术	Spell	スペル
+投射物	Projectile	投射物
+近战	Melee	近接
+闪电	Lightning	雷
+火焰	Fire	火
+冰冷	Cold	冷気
+物理	Physical	物理
+混沌	Chaos	混沌
+召唤物	Minion	ミニオン
+范围	Area	範囲
+辅助机制	Support mechanics	サポートの仕組み
+增伤词缀	Damage modifiers	ダメージモッド
+装备赋予	Granted by equipment	装備による付与
+天赋赋予	Granted by passives	パッシブによる付与
+宝石配置	Gem setup	ジェム構成
+主技能	Main skill	主力スキル
+命中 DPS	Hit DPS	ヒットDPS
+平均命中伤害	Average hit damage	平均ヒットダメージ
+命中率 / 暴击率	Hit chance / Critical chance	命中率・クリティカル率
+点燃	Ignite	発火
+流血	Bleeding	出血
+中毒	Poison	毒
+未保存	Not saved	未保存
+技能伤害构成	Skill damage breakdown	スキルダメージの内訳
+装备构成	Equipment breakdown	装備構成
+按属性查看来源	View sources by stat	ステータス別に取得元を表示
+装备贡献属性	Equipment contribution stat	装備が寄与するステータス
+逐件装备与机制	Items & mechanics	装備・仕組みの詳細
+PoB 原始快照与装备构成	Original PoB snapshot & equipment	元のPoBスナップショット・装備構成
+正在补读…	Reading additional data…	追加データ読込中…
+补读原 PoB2 的技能与伤害	Read skills & damage from original PoB2	元のPoB2からスキル・ダメージを読込
+选择原 XML	Choose original XML	元のXMLを選択
+补读技能与伤害 XML	Skills & damage XML	スキル・ダメージのXML
+主技能与辅助宝石	Main skill & support gems	主力スキル・サポートジェム
+游戏角色面板基准	In-game character stat baseline	ゲーム内キャラクターステータスの基準値
+尚未录入	Not entered	未入力
+未录入	Not entered	未入力
+（未封顶总值）	(Uncapped total)	（上限適用前の合計）
+抗性上限档位	Resistance cap preset	耐性上限の設定
+标准 75%（确认后使用）	Standard 75% (confirm before use)	標準75%（確認後に使用）
+更正面板数值／导入记录（高级）	Correct stats / Import record (advanced)	ステータスの修正・記録のインポート（詳細）
+填入可核对的 PoB2 面板值	Fill verified PoB2 stats	確認可能なPoB2数値を入力
+导入面板记录 JSON	Import stat JSON	ステータスJSONをインポート
+导入角色面板记录	Import character stats	キャラクターステータス記録をインポート
+未封顶总值	Uncapped total	上限適用前の合計
+游戏面板值	In-game stat	ゲーム内ステータス
+保存当前游戏面板基准	Save current stat baseline	現在の基準値を保存
+清除面板基准	Clear stat baseline	基準値をクリア
+属性	Stat	ステータス
+装备合计	Equipment total	装備の合計
+游戏物品值	In-game item value	ゲーム内装備値
+已录入角色值	Entered character value	入力済みキャラクター値
+配装规则 ·	Loadout rules ·	装備構成のルール ·
+Boss 持续	Boss sustain	ボス継続火力
+Boss 爆发	Boss burst	ボス瞬間火力
+清图	Mapping	マップ周回
+只换一件	Swap one item	1点のみ交換
+整套规划	Plan loadout	装備全体を計画
+联动换两件	Swap two items together	2点をまとめて交換
+输出场景	Damage scenario	戦闘シナリオ
+Boss 持续输出	Sustained boss damage	ボスへの継続ダメージ
+换装范围	Swap scope	交換範囲
+默认换装范围	Default swap scope	既定の交換範囲
+总购买预算	Total purchase budget	購入予算の合計
+预算通货	Budget currency	予算の通貨
+总预算通货	Total budget currency	合計予算の通貨
+神圣	Divine	神のオーブ
+崇高	Exalted	高貴なオーブ
+旋风效果	Twister effect	ツイスターの効果
+燃烧地面	Burning ground	燃焼領域
+旋风效果覆盖	Twister uptime	ツイスターの稼働率
+燃烧地面覆盖	Burning ground uptime	燃焼領域の稼働率
+常驻	Always active	常時
+偶尔	Sometimes	時々
+不用	Not used	使用しない
+传奇机制保护	Protect unique mechanics	ユニークの固有効果を保護
+· 保留同名传奇	· Keep the same unique	· 同名ユニークを維持
+应用默认流程与三技能组合	Apply default workflow & three-skill setup	既定の手順・3スキル構成を適用
+配装标准：四抗达到各自上限后，优先提高主技能伤害	Upgrade criteria: cap all four resistances, then prioritize main-skill damage	評価基準：4耐性をそれぞれ上限まで確保してから、主力スキルのダメージを優先
+请导入 PoB2 总抗性或录入当前游戏面板	Import total resistances from PoB2 or enter current in-game stats	PoB2の合計耐性をインポートするか、現在のゲーム内数値を入力
+。抗性溢出、生命和防御不增加伤害分；最终技能伤害用 PoB2 换装计算验证。	. Overcapped resistance, life, and defence do not raise the damage score. Verify final skill damage by recalculating the swap in PoB2.	。上限超過の耐性・ライフ・防御はダメージ評価に加算しません。最終ダメージはPoB2で装備を交換して再計算してください。
+更新游戏角色 → PoB2 → 工坊	Update game character → PoB2 → Workbench	ゲーム内キャラクター更新 → PoB2 → 工房
+① PoB2 重新导入角色 → ② Ctrl+S 保存 → ③ 工坊重新读取并确认。只读本项目便携版 Builds 中的方案。	① Reimport the character in PoB2 → ② Save with Ctrl+S → ③ Reload and confirm in the workbench. Reads builds only from this project's portable PoB2 Builds folder.	① PoB2でキャラクターを再インポート → ② Ctrl+Sで保存 → ③ 工房で再読込・確認。本プロジェクトのポータブル版PoB2のBuildsのみを読み込みます。
+打开 PoB2	Open PoB2	PoB2を開く
+保存后重新读取	Reload after saving	保存後に再読込
+刷新已保存角色	Refresh saved characters	保存済みキャラクターを更新
+取下护符／药剂后仍显示旧装备？	Removed a charm/flask but the old item still appears?	チャーム・フラスコを外しても古い装備が残りますか？
+读取与预览不会替换现有装备；下方确认后才导入。这里只检查 PoB2 保存文件，不直接监控游戏换装。	Reading and previewing do not replace equipment. Import only occurs after confirmation below. Only saved PoB2 files are checked; in-game swaps are not monitored.	読込・プレビューでは現在の装備を変更しません。下で確認してからインポートします。PoB2保存ファイルのみを確認し、ゲーム内の交換は監視しません。
+拖入实际使用的技能	Drag in the skills you actually use	実際に使うスキルをドラッグして追加
+按默认开始	Start with defaults	既定の設定で開始
+收起技能库	Close skill library	スキル一覧を閉じる
+编辑技能组	Edit skill setup	スキル構成を編集
+实际使用的技能组	Your active skill setup	実際に使用するスキル構成
+点 ＋ 打开技能库，再拖入图标；也可点击添加。	Press ＋ to open the skill library, then drag an icon or click to add.	＋でスキル一覧を開き、アイコンをドラッグ、またはクリックして追加します。
+来源与校验	Sources & validation	取得元・検証
+全身伤害词缀排行	Equipment modifier damage ranking	全装備のダメージモッドランキング
+· PoB 逐词缀重算	· PoB modifier-by-modifier recalculation	· PoBによるモッド別再計算
+分析技能	Skill to analyze	分析するスキル
+贡献分析技能	Contribution analysis skill	寄与分析の対象スキル
+先定义实际输出技能组	Define your active skill setup first	先に使用スキル構成を設定
+计算全身词缀贡献	Calculate modifier contributions	全装備のモッド寄与を計算
+请重新导入并确认完整 PoB2 快照。	Reimport and confirm a complete PoB2 snapshot.	完全なPoB2スナップショットを再インポートして確認してください。
+装备或来源已变化时，旧快照不能代表当前套装；手动换装后需先在 PoB 更新并保存。	An old snapshot no longer represents the loadout after equipment or source changes. Update and save in PoB after manual swaps.	装備や取得元が変わると、古いスナップショットは現在の構成を表しません。手動交換後はPoBで更新・保存してください。
+计算口径与依据	Calculation scope & basis	計算の範囲・根拠
+两组主副手独立保存，防具与饰品共用。当前查看武器组	Each weapon set saves its main/off hand separately; armour and accessories are shared. Viewing weapon set	両武器セットのメイン・オフハンドは個別保存し、防具・アクセサリーは共有します。表示中の武器セット：
+；切换不控制游戏，另一组不计入当前属性。	; switching here does not control the game. The other set is excluded from current totals.	。ここで切り替えてもゲームには反映されず、もう一方の武器は現在の合計に含めません。
+左戒指	Left ring	左の指輪
+右戒指	Right ring	右の指輪
+药剂 {0}	Flask {0}	フラスコ {0}
+护符 {0}	Charm {0}	チャーム {0}
+药剂与护符为记录栏，效果不加入常驻属性。可用护符栏位、唯一装备限制、属性需求和特殊天赋请在游戏内核对。	Flasks and charms are recorded only; their effects are excluded from permanent stats. Verify charm capacity, unique restrictions, attribute requirements, and special passives in game.	フラスコ・チャームは記録専用で、効果を常時ステータスに含めません。チャーム枠、ユニーク制限、要求能力値、特殊パッシブはゲーム内で確認してください。
+候选组合 ·	Candidate combinations ·	候補の組み合わせ ·
+联动两件	Two-item swap	2点同時交換
+联动两件核对	Two-item swap checks	2点交換の確認
+单件	One item	1点
+整套装备已记录的挂牌参考	Recorded listing prices for this loadout	この装備一式の記録済み出品価格
+件已记录 ·	items recorded ·	件記録済み ·
+。尚未记录报价，导入角色和查价历史不会自动填入这里。查价后点击“记录到套装汇总”，即可更新此处。	. No prices recorded yet. Imports and price history do not fill this automatically. After a price check, choose “Record in loadout summary”.	。価格は未記録です。キャラクターのインポートや検索履歴からは自動入力しません。検索後に「装備全体の集計に記録」を選択してください。
+先导入角色装备，再逐件查价。	Import character equipment, then price-check each item.	キャラクターの装備をインポートしてから、1点ずつ相場を確認してください。
+未知项不按 0 估值，各币种独立合计；挂牌参考不代表成交价。	Unknown prices are not treated as zero. Currencies are totaled separately; listings are not completed sale prices.	不明な価格は0と扱いません。通貨別に集計し、出品価格を成約価格とはみなしません。
+这个栏位尚未放入装备。先选好栏位，再粘贴一件完整物品；两枚戒指和两瓶药剂分别记录。	This slot is empty. Select a slot, then paste one complete item. The two rings and two flasks are recorded separately.	このスロットは空です。スロットを選択してアイテムの全文を貼り付けてください。指輪2個とフラスコ2個は個別に記録します。
+全物品查价	Item price search	アイテム相場検索
+请粘贴完整物品文本，包括稀有度和名称。支持装备、地图、碑牌、宝石、通货及材料的繁体、简体和英文文本。	Paste the full item text, including rarity and name. Supports equipment, maps, tablets, gems, currencies, and materials in English, Traditional Chinese, and Simplified Chinese.	レアリティ・名前を含むアイテム全文を貼り付けてください。装備・マップ・タブレット・ジェム・カレンシー・素材の英語・繁体字・簡体字テキストに対応します。
+查价历史与收藏 ·	Search history & favorites ·	検索履歴・お気に入り ·
+条记录 ·	searches ·	件の履歴 ·
+条收藏	favorites	件のお気に入り
+· 与 0.5.5e 差异待核验 · 价格	· Differences from 0.5.5e unverified · Prices	· 0.5.5eとの差分は未検証 · 価格
+成品样例 → 底装 → 词缀来源 → 制作手顺	Target item → Base item → Modifier sources → Crafting steps	完成品サンプル → ベース装備 → モッド取得元 → クラフト手順
+我想做出这样的装备	I want to craft an item like this	このような装備を作りたい
+目标研究 · 不读取角色装备	Target research · Independent of character equipment	目標の調査 · キャラクター装備とは独立
+复制一件市场成品，先研究底座、词缀池与阶层上限，再调整想做的目标。已识别的装备均可调查；通货成本与逐步执行暂支持常规戒指和项链。	Copy a finished market item, inspect its base, modifier pool, and tier limits, then adjust your goals. Recognized equipment can be researched; cost calculations and step-by-step crafting currently support regular rings and amulets.	市場の完成品をコピーし、ベース・モッドプール・Tier上限を調べてから目標を調整します。識別できる装備を調査でき、費用計算と段階的なクラフトは現在、通常の指輪・アミュレットに対応しています。
+解析成品目标	Parse target item	完成品目標を解析
+戒指目标示例	Ring target example	指輪の目標サンプル
+60% 品质裂痕戒指	60% quality Breach Ring	品質60%のブリーチの指輪
+项链目标示例	Amulet target example	アミュレットの目標サンプル
+交易追踪器	Trade tracker	取引トラッカー
+· 收入与支出	· Income & spending	· 収入・支出
+点金石	Orb of Alchemy	錬金術のオーブ
+剥离石	Orb of Annulment	消去のオーブ
+富豪石	Regal Orb	王者のオーブ
+蜕变石	Orb of Transmutation	変成のオーブ
+增幅石	Orb of Augmentation	増強のオーブ
+高阶崇高石	Greater Exalted Orb	高貴なオーブ (上級)
+完美崇高石	Perfect Exalted Orb	高貴なオーブ (完全)
+高阶混沌石	Greater Chaos Orb	カオスオーブ (上級)
+完美混沌石	Perfect Chaos Orb	カオスオーブ (完全)
+高阶富豪石	Greater Regal Orb	王者のオーブ (上級)
+完美富豪石	Perfect Regal Orb	王者のオーブ (完全)
+高阶蜕变石	Greater Orb of Transmutation	変成のオーブ (上級)
+完美蜕变石	Perfect Orb of Transmutation	変成のオーブ (完全)
+高阶增幅石	Greater Orb of Augmentation	増強のオーブ (上級)
+完美增幅石	Perfect Orb of Augmentation	増強のオーブ (完全)
+亵渎材料	Desecration materials	冒涜素材
+今天	Today	今日
+最近 7 天	Last 7 days	過去7日間
+最近 30 天	Last 30 days	過去30日間
+全部时间	All time	全期間
+官方成交同步	Official trade-history sync	公式取引履歴の同期
+点击同步即可；需要登录时会打开官网，返回这里自动继续。	Click sync. If login is needed, the official site opens; syncing resumes when you return.	同期をクリックしてください。ログインが必要な場合は公式サイトが開き、戻ると自動で続行します。
+首次需加载同步扩展	Load the sync extension before first use	初回は同期拡張機能の読込が必要
+同步官方成交	Sync official trades	公式取引を同期
+打开官网／切换账号	Open official site / Switch account	公式サイトを開く・アカウント切替
+安装同步桥（只需一次）	Install sync bridge (once)	同期ブリッジのインストール（初回のみ）
+打开扩展安装入口与目录	Open extension setup & folder	拡張機能の設定・フォルダーを開く
+Chrome／Edge 扩展管理页 → 开发者模式。已安装时点击 PoE2 同步扩展卡片上的重新加载按钮。	Chrome/Edge extensions → Developer mode. If already installed, click Reload on the PoE2 sync extension card.	Chrome・Edgeの拡張機能管理 → デベロッパーモード。導入済みならPoE2同期拡張機能の再読込をクリックします。
+首次安装选择「加载已解压的扩展程序」→ 项目下	On first install, choose “Load unpacked” and select the project folder	初回は「パッケージ化されていない拡張機能を読み込む」でプロジェクト内のフォルダーを選択：
+目录。	folder.	フォルダー。
+刷新工坊后点击「同步官方成交」。官网已有登录态时直接读取，需要登录时返回这里自动继续。	Refresh the workbench, then select “Sync official trades”. An existing official-site login is reused; otherwise return here after logging in to continue.	工房を更新して「公式取引を同期」を選択。公式サイトにログイン済みなら直接読み込み、未ログインならログイン後に戻ると続行します。
+登录由官网完成，扩展不读取或保存 Cookie、密码。仅转发这次历史接口返回的成交字段。	Login takes place on the official site. The extension does not read or store cookies or passwords; it forwards only trade fields returned by this history request.	ログインは公式サイトで行います。拡張機能はCookie・パスワードを読取・保存せず、今回の履歴APIが返した取引項目のみ転送します。
+打开官方成交历史 ↗	Open official trade history ↗	公式取引履歴を開く ↗
+当前接入的是近期商人成交历史，尚未验证完整个人买入流水。未读取到买入时标记为支出未记录，不能将卖出收入视作利润；本地已确认记录会逐次积累。	This reads recent merchant trade history. Complete personal purchase coverage is unverified. Missing purchases are marked as unrecorded spending; sale income is not treated as profit. Confirmed local records accumulate over time.	最近の商人取引履歴を読み込みます。個人の購入履歴全体は未検証です。購入が取得できない場合は支出未記録とし、売却収入を利益とはみなしません。確認済みローカル記録は蓄積します。
+其他交易来源 · 密语线索与 CSV	Other sources · Whispers & CSV	その他の取得元 · ウィスパー・CSV
+已记录收入	Recorded income	記録済み収入
+已记录支出	Recorded spending	記録済み支出
+没有可计入的已确认支出，不表示实际花费为 0	No confirmed spending recorded does not mean you spent zero	確認済み支出が未記録でも、実際の支出が0とは限りません
+已记录差额	Recorded balance	記録済み収支差額
+待补支出	Spending records needed	支出の記録が必要
+支出记录缺失，暂不将卖出收入当作利润	Spending is missing; sale income is not shown as profit	支出記録が不足しているため、売却収入を利益として表示しません
+买入密语只作为报价线索，确认实际成交后才计入支出。收支按当前通货／时间／搜索条件统计；其他币种分别列在下方。	Purchase whispers are quote leads only; spending is recorded after confirming the actual trade. Totals follow the selected currency, time, and search filters; other currencies are listed separately below.	購入ウィスパーは価格情報であり、実際の成約確認後に支出へ計上します。選択した通貨・期間・検索条件で集計し、その他の通貨は下に個別表示します。
+自动读取交易线索	Read trade leads automatically	取引情報を自動読込
+正在读取交易线索…	Reading trade leads…	取引情報を読込中…
+待确认交易	Pending trades	確認待ちの取引
+交易记录	Trade records	取引記録
+笔 ·	trades ·	件 ·
+笔	trades	件
+当前筛选下还没有已确认记录。	No confirmed trades match the current filters.	現在の条件に一致する確認済み取引はありません。
+先确认一笔交易，或展开下方手动记账。	Confirm a trade, or open manual bookkeeping below.	取引を確認するか、下の手動記帳を開いてください。
+按所选通货统计已确认账目，不跨币种相加。账本差额不代表完整利润；持有资产的价格涨跌在下方独立查看。	Confirmed entries are totaled in the selected currency, without combining currencies. The ledger balance is not complete profit; changes in held-asset values are shown separately below.	確認済み記録を選択通貨で集計し、通貨をまたいで加算しません。収支差額は全体の利益とは限らず、保有資産の価格変動は下に個別表示します。
+场次与手动记账	Sessions & manual bookkeeping	セッション・手動記帳
+持有资产估值涨跌 · 下线前后对比	Held-asset value changes · Before/after logout	保有資産の評価額変動 · ログアウト前後の比較
+导入 / 导出本地账本	Import / Export local ledger	ローカル台帳のインポート・エクスポート
+GGG 官方图片 ↗	Official GGG image ↗	GGG公式画像 ↗
+目前没有显式词缀。可以粘贴装备，或从词缀库手动补充。	No explicit modifiers yet. Paste an item or add modifiers from the library.	明示モッドがありません。装備を貼り付けるか、モッド一覧から追加してください。
+操作会更新左侧装备。首版模拟词缀与阶级，左侧显示阶级数值范围；不生成范围内的具体数值。完成后可切回制作策略，计算下一步。	Actions update the item on the left. The simulator models modifiers and tiers, showing tier ranges without rolling exact values. Return to the crafting planner to calculate the next step.	操作すると左の装備が更新されます。モッドとTierをシミュレートし、Tierの数値範囲を表示しますが、範囲内の具体値は生成しません。クラフト計画に戻って次の手順を計算できます。
+GGG 官方通货图标 · 查看来源	Official GGG currency icons · View source	GGG公式カレンシーアイコン · 出典
+上方会根据当前稀有度、槽位与物等启用可用通货。	Available currencies depend on current rarity, modifier slots, and item level.	現在のレアリティ・モッド枠・アイテムレベルに応じて使えるカレンシーを表示します。
+来自 POE2_HTC，普通词缀权重为 PoE2DB 社区数据。版本号不代表已自动匹配最新游戏补丁。	From POE2_HTC, with regular modifier weights from PoE2DB community data. The version number does not imply automatic compatibility with the latest game patch.	POE2_HTC由来のデータで、通常モッドのウェイトはPoE2DBのコミュニティデータです。バージョン番号は最新パッチへの自動対応を意味しません。
+· poe.ninja 价格快照；部分材料可能包含估计值。	· poe.ninja price snapshot; some material prices may be estimates.	· poe.ninja価格スナップショット。一部素材は推定価格の場合があります。
+用 start-workbench.cmd 启动时会同时打开快捷键助手。鼠标停在游戏装备上，按 Alt + E 查价；执行通货后按 Ctrl + Alt + G 校验已锁定的制作锚点。请保持工坊网页打开，使用窗口化或无边框模式查看置顶结果。Esc 收起助手面板，托盘菜单可退出。也可单独运行 start-hotkeys.cmd。	start-workbench.cmd also launches the hotkey helper. Hover an item in game and press Alt+E to check prices; after crafting, press Ctrl+Alt+G to verify the locked checkpoint. Keep the workbench open and use windowed/borderless mode for the overlay. Esc hides it; exit from the tray menu. start-hotkeys.cmd launches it separately.	start-workbench.cmdはホットキー補助も起動します。ゲーム内で装備にカーソルを合わせAlt+Eで相場検索、クラフト後はCtrl+Alt+Gで設定済みチェックポイントを検証。工房を開いたままウィンドウ・ボーダーレスで使用してください。Escで非表示、トレイメニューで終了。start-hotkeys.cmdで個別起動も可能です。
+项覆盖	price overrides	件上書き
+保存范围：装备、目标、赛季、制作选项与价格覆盖保存在当前浏览器。模拟操作记录与价格情景仅保留在当前页面。	Equipment, goals, league, crafting options, and price overrides are saved in this browser. Simulation history and temporary price scenarios exist only on the current page.	装備・目標・リーグ・クラフト設定・指定価格はこのブラウザーに保存します。シミュレーション履歴と一時的な価格条件は現在のページ内のみ保持します。
+成品目标制作规划	Target-item crafting plan	目標装備のクラフト計画
+成品样例与可调目标	Reference item & editable goals	完成品サンプル・編集可能な目標
+成品参考 ·	Reference item ·	参考の完成品 ·
+样例物等	Reference item level	サンプルのアイテムレベル
+· 目标可调整	· Goals are editable	· 目標を調整可能
+未提供品质信息	Quality not provided	品質情報なし
+更换／查看成品样例原文	Change / View reference item text	完成品サンプルの変更・原文確認
+成品样例文本	Reference item text	完成品サンプルのテキスト
+底装购买与来源	Base purchase & sources	ベース装備の購入・取得元
+1 · 调查底装	1 · Research the base	1 · ベース装備を調査
+不继承成品词缀	Does not inherit reference modifiers	完成品のモッドを引き継ぎません
+原生英文底座待核对	Native English base needs verification	元の英語ベース名を要確認
+· 目标所需物等至少	· Goals require item level at least	· 目標に必要な最低アイテムレベル：
+底装物等	Base item level	ベース装備のアイテムレベル
+规划底装物等	Planned base item level	計画するベースのアイテムレベル
+按目标最低需求 ·	Minimum for goals ·	目標の最低要件 ·
+稀有度	Rarity	レアリティ
+底材稀有度	Base rarity	ベースのレアリティ
+非传奇 · 白／蓝／黄	Non-unique · Normal / Magic / Rare	ユニーク以外 · ノーマル・マジック・レア
+普通 · 白装	Normal · White	ノーマル · 白
+魔法 · 蓝装	Magic · Blue	マジック · 青
+稀有 · 黄装	Rare · Yellow	レア · 黄
+官网搜索底材 · 物等	Search bases on official trade · Item level	公式トレードでベースを検索 · アイテムレベル
+按目标最低物等	Use minimum item level for goals	目標の最低アイテムレベルで検索
++ 搜 ↗	+ Search ↗	以上で検索 ↗
+底座掉落／获取来源原文 ↗	Original base drop / Acquisition sources ↗	ベースのドロップ・取得元の原文 ↗
+已读取的底座资料 ·	Loaded base reference ·	読込済みベース資料 ·
+资料掉落等级：	Listed drop level:	資料のドロップレベル：
+（不等于制作所需物等）。	(Not the item level needed for crafting).	（クラフトに必要なアイテムレベルとは異なります）。
+目标词缀来源调查	Research target modifier sources	目標モッドの取得元を調査
+2 · 调整成品目标与词缀池	2 · Adjust goals & modifier pool	2 · 完成品目標・モッドプールを調整
+· 精华／合金	· Essences / Alloys	· エッセンス・合金
+按目标购买底装	Buy a base for these goals	目標に合わせてベースを購入
+购买底装	Buy base item	ベース装備を購入
+条目标同时满足 · 物等 ≥	goals required together · Item level ≥	件の目標を同時に満たす · アイテムレベル ≥
+按已选词缀购买 ↗	Shop selected modifiers ↗	選択モッドで購入候補を検索 ↗
+按已选词缀购买	Shop selected modifiers	選択モッドで購入候補を検索
+仅按底座购买 ↗	Shop base only ↗	ベースのみで検索 ↗
+联合购买链接未生成：	Combined purchase link unavailable:	複合条件の購入リンクを生成できません：
+核对官网检索条件	Review official search filters	公式検索条件を確認
+· 存在此属性	· Stat must exist	· このステータスが必要
+固定／符文／附魔 ·	Implicit / Rune / Enchantment ·	暗黙・ルーン・エンチャント ·
+未识别原文：	Unrecognized original text:	未識別の原文：
+实际底装核对	Check the actual base item	実物のベース装備を確認
+3 · 导入底装并对照目标	3 · Import base & compare goals	3 · ベースをインポートして目標と比較
+已核对 · 用于下方计算	Verified · Used for calculations below	確認済み · 下の計算に使用
+已导入 · 可微调目标	Imported · Goals can be adjusted	インポート済み · 目標を調整可能
+先导入，再对比	Import first, then compare	インポートしてから比較
+实际底装原文／重新导入	Actual base text / Reimport	実物ベースの原文・再インポート
+实际购买底装文本	Text of the purchased base	購入した実物ベースのテキスト
+复制实际底装的完整文本；带已有词缀的底材也可以。	Copy the full actual base text; bases with existing modifiers are supported.	実物ベースの全文をコピーしてください。既存モッド付きのベースも使えます。
+导入底装	Import base item	ベース装備をインポート
+核对底装	Verify base item	ベース装備を確認
+已核对：	Verified:	確認済み：
+· 已有	· Existing	· 既存
+条破裂锁定	fractured modifiers locked	件のフラクチャーモッド固定
+从底装计算制作手顺	Calculate crafting steps from the base	ベースからクラフト手順を計算
+4 · 计算具体通货与预兆手顺	4 · Calculate currency & omen steps	4 · カレンシー・お告げの具体的手順を計算
+目标路线搜索精度	Target-route search effort	目標ルートの探索精度
+可用机制与规则来源	Available mechanics & rule sources	使用する仕組み・ルールの出典
+通货、预兆与阶段限制原文 ↗	Currency, omen & stage restrictions ↗	カレンシー・お告げ・段階制限の原文 ↗
+当前引擎规则	Current engine rules	現在のエンジンルール
+停止计算	Stop calculation	計算を停止
+生成制作手顺	Generate crafting steps	クラフト手順を生成
+% · 正在比较路线	% · Comparing routes	% · ルートを比較中
+底装、目标、机制或价格已变化，请重新计算手顺。	Base, goals, mechanics, or prices changed. Recalculate the crafting steps.	ベース・目標・仕組み・価格が変わりました。手順を再計算してください。
+材料期望：	Expected material cost:	素材の期待費用：
+尚无可用成本	No usable cost estimate	有効な費用推定なし
+（策略上界）	(Strategy upper bound)	（戦略の上界）
+（成本下界）	(Cost lower bound)	（費用の下界）
+· 未含底装买价	· Excludes base purchase price	· ベース購入費を除く
+路线依赖尚未验证的权重，成本为快照参考。	This route depends on unverified weights; costs are snapshot estimates.	このルートは未検証のウェイトに依存し、費用はスナップショットの参考値です。
+动态策略与结果分支	Dynamic strategy & outcome branches	動的戦略・結果分岐
+路线涉及的通货／预兆 ·	Currencies / Omens in this route ·	このルートのカレンシー・お告げ ·
+种操作	action types	種類の操作
+在本页开始逐步核对	Start step-by-step checks here	このページで手順ごとの確認を開始
+请先核对当前底装与目标。	Verify the current base and goals first.	現在のベースと目標を先に確認してください。
+底装与目标词缀对比	Base vs target modifiers	ベース・目標モッドの比較
+实际底装词缀校正	Correct actual base modifiers	実物ベースのモッドを補正
+实际底装 ·	Actual base ·	実物のベース ·
+· 已识别	· Recognized	· 識別済み
+前 /	prefixes /	プレフィックス /
+前	prefixes	プレフィックス
+后	suffixes	サフィックス
+破裂锁定	Fractured lock	フラクチャー固定
+当前已达目标阶层	Already meets target tier	目標Tierに到達済み
+破裂不可升阶，请调整右侧目标	Fractured modifiers cannot be upgraded; adjust the goal on the right	フラクチャーモッドはTier変更不可。右側の目標を調整してください
+需要升级到目标阶层	Upgrade to target tier needed	目標Tierへの更新が必要
+必须保留，占用一个词缀槽位	Must be retained; occupies one modifier slot	保持必須。モッド枠を1つ使用
+未选为目标，可参与后续替换	Not a goal; may be replaced later	目標ではないため、後の操作で置換可能
+选择原文匹配属性…	Choose a stat matching the original text…	原文に一致するステータスを選択…
+选择原文阶层…	Choose the original tier…	原文のTierを選択…
+按两条词缀分别识别	Parse as two separate modifiers	2つのモッドとして個別に識別
+无显式词缀，从当前空余槽位规划。	No explicit modifiers; plan from the current free slots.	明示モッドなし。現在の空き枠から計画します。
+待识别原文：	Original text to identify:	識別が必要な原文：
+。请补齐游戏原文后重新导入。	. Complete the original game text, then reimport.	。ゲーム原文を補完して再インポートしてください。
+读取提示 ·	Import notes ·	読込の注意事項 ·
+必须保留：	Must retain:	保持必須：
+本次制作目标微调	Adjust this crafting target	今回のクラフト目標を調整
+目标装备 · 锁定本次要做的词缀	Target item · Select required modifiers	目標装備 · 今回作るモッドを選択
+含破裂的目标槽位	Target slots including fractured modifiers	フラクチャーを含む目標枠
+最终需占用 前缀	Final required prefix slots	最終的に必要なプレフィックス枠
+· 后缀	· Suffixes	· サフィックス
+（含底装破裂）	(Includes base fractures)	（ベースのフラクチャーを含む）
+未选为本次目标	Not selected as a goal	今回の目標に未選択
+· 破裂	· Fractured	· フラクチャー
+· 破裂不可升阶	· Fractured; tier cannot change	· フラクチャーのためTier変更不可
+· 需升级	· Upgrade needed	· 更新が必要
+与底装破裂词缀同组冲突	Conflicts with a fractured modifier group	ベースのフラクチャーモッドとグループが競合
+底装尚无 · 需要新增	Not on base · Must add	ベースにないため追加が必要
+＋ 添加词缀条目	＋ Add modifier row	＋ モッド行を追加
+筛选可选词缀	Filter available modifiers	選択可能なモッドを絞り込む
+查找属性，如混沌、点伤、魔力	Search stats, e.g. chaos, added damage, mana	混沌・追加ダメージ・マナなどを検索
+恢复样例词缀	Restore reference modifiers	サンプルのモッドを復元
+使用	Use	使用
+前后缀	Affix side	プレフィックス・サフィックス
+属性分类	Stat category	ステータス分類
+目标词缀 · 按来源分组	Target modifier · Grouped by source	目標モッド · 取得元別
+阶层与范围	Tier & range	Tier・範囲
+来源／详情	Source / Details	取得元・詳細
+全部分类 ·	All categories ·	すべての分類 ·
+选择	Choose	選択
+属性…	stat…	ステータス…
+当前所选	Currently selected	選択中
+请选择属性	Choose a stat	ステータスを選択
+请选择阶层	Choose a tier	Tierを選択
+选择目标阶层…	Choose target tier…	目標Tierを選択…
+待选择	Not selected	未選択
+范围与依据	Ranges & basis	範囲・根拠
+上限 T	Best tier T	上限Tier T
+本词池最高 T	Best in this pool T	このプールの最高Tier T
+删除条目	Delete row	行を削除
+点击「添加词缀条目」开始选择，或恢复样例词缀。	Click “Add modifier row” to begin, or restore reference modifiers.	「モッド行を追加」で選択を開始、またはサンプルのモッドを復元してください。
+底材与做装建议	Base & crafting advice	ベース・クラフトの提案
+这件装备，值得继续做吗？	Is this item worth crafting further?	この装備のクラフトを続ける価値はありますか？
+规则快照	Rule snapshot	ルールのスナップショット
+查看已有词缀的提升上限	View existing modifier limits	既存モッドの更新上限を確認
+词缀方向	Modifier direction	モッドの方向性
+此装备最高	Best for this item	この装備の上限
+· 锁定	· Locked	· 固定
+T1 需物等	T1 requires item level	T1の必要アイテムレベル
+查物等	Search item level	アイテムレベルで検索
+个方案	plans	案
+追加材料预算	Additional material budget	追加の素材予算
+先比较成本，不限制预算	Compare costs without a budget limit	予算制限なしで費用を比較
+停止评估	Stop evaluation	評価を停止
+评估加工成本	Evaluate crafting cost	加工費用を評価
+正在评估：	Evaluating:	評価中：
+准备中	Preparing	準備中
+先解决限制	Resolve restrictions first	先に制限を解消
+现有／自定目标	Existing / Custom goals	既存・独自の目標
+破裂保留	Retain fractured mods	フラクチャーを保持
+后续材料期望成本	Expected remaining material cost	以降の素材の期待費用
+当前条件不可达	Unreachable with current conditions	現在の条件では到達不可
+尚无可靠成本	No reliable cost estimate	信頼できる費用推定なし
+当前模型已收敛	Current model converged	現在のモデルは収束済み
+仅得到成本下界	Cost lower bound only	費用の下界のみ
+当前策略成本上界	Current strategy cost upper bound	現在の戦略費用の上界
+需要进一步核对或搜索	Further review or search needed	追加確認・探索が必要
+抽样 P95：	Sample P95:	標本P95：
+建议下一步：	Suggested next step:	推奨される次の手順：
+查看抽样平均材料消耗	View sampled average material use	標本の平均素材消費を表示
+查看通货顺序	View currency steps	カレンシーの手順を表示
+单独评估此方案	Evaluate this plan separately	この案を個別に評価
+采用此目标	Use these goals	この目標を採用
+对比此目标的成品 ↗	Compare finished items for these goals ↗	この目標の完成品を比較 ↗
+制作步骤校验	Crafting step verification	クラフト手順の検証
+制作锚点 ·	Crafting checkpoint ·	クラフトのチェックポイント ·
+本步已锁定	Step locked	この手順を固定済み
+用通货后核对结果	Verify after using currency	カレンシー使用後に結果を確認
+设置制作锚点	Set crafting checkpoint	クラフトのチェックポイントを設定
+当前快照：	Current snapshot:	現在のスナップショット：
+本步目标类型	Step goal type	この手順の目標タイプ
+移除一条指定词缀	Remove one specified modifier	指定したモッドを1つ削除
+增加一条目标词缀	Add one target modifier	目標モッドを1つ追加
+达成指定阶段目标	Reach specified stage goals	指定した段階目標を達成
+计划使用的通货	Planned currency	使用予定のカレンシー
+锁定本步目标	Lock this step's goal	この手順の目標を固定
+取消设置	Cancel setup	設定をキャンセル
+本步锚点已锁定	Checkpoint locked	チェックポイント固定済み
+重新设定锚点	Reset checkpoint	チェックポイントを再設定
+操作后装备文本	Item text after the action	操作後の装備テキスト
+校验本步结果	Verify this step's result	この手順の結果を検証
+重新计算后续策略	Recalculate next strategy	以降の戦略を再計算
+从当前状态开始	Start from current state	現在の状態から開始
+如果出现这个结果	If this outcome occurs	この結果が出た場合
+回到起点	Return to start	開始状態へ戻る
+下一步	Next step	次の手順
+已满足所选条件	Selected conditions met	選択条件を達成
+推荐下一步	Recommended next step	推奨される次の手順
+可以停止制作	You can stop crafting	クラフトを終了可能
+暂无可执行动作	No available action	実行可能な操作なし
+达到目标	Reach goal	目標達成
+转到后续状态	Go to next state	次の状態へ
+当前路线	Current route	現在のルート
+攻略与制作准备	References & preparation	参考資料・制作準備
+5 · 制作材料与总成本	5 · Materials & total cost	5 · 素材・総費用
+统一币种	Display currency	表示通貨
+制作成本显示币种	Crafting cost currency	クラフト費用の表示通貨
+当前路线材料	Materials for current route	現在のルートの素材
+· 制作耗材	· Crafting materials	· クラフト素材
+补记耗材	Add material use	消費素材を追加記録
+补记其他耗材	Add other materials	その他の素材を追加記録
+选择准备或其他消耗…	Choose preparation or other materials…	準備・その他の消費素材を選択…
+补记／此前用量	Additional / Previous use	追加・以前の使用量
+数量	Quantity	数量
+未选	Not selected	未選択
+缺单价／汇率	Missing unit price / Exchange rate	単価・為替レート不足
+手填	Manual	手動
+汇率	Exchange rate	為替レート
+快照	Snapshot	スナップショット
+调整单价	Adjust unit price	単価を調整
+单价	Unit price	単価
+填写单价	Enter unit price	単価を入力
+留空使用参考价；手填金额保留原币种。	Leave blank for reference price; manual amounts retain their currency.	空欄なら参考価格を使用。手動金額は元の通貨を保持します。
+未计入	Excluded	未計上
+待补齐	Incomplete	補完が必要
+准备材料预算	Preparation budget	準備素材の予算
+选择材料并调整数量，即可计算预算	Select materials and quantities to calculate the budget	素材・数量を選択して予算を計算
+已计价部分	Priced portion	価格判明分
+材料预算	Material budget	素材予算
+种材料	material types	種類の素材
+清空材料预算	Clear material budget	素材予算をクリア
+用量由你填写，不自动叠加求解器期望。	Enter actual quantities; solver expectations are not added automatically.	使用量を入力してください。ソルバーの期待値は自動加算しません。
+本地价格表	Local price table	ローカル価格表
+日期未知	Date unknown	日付不明
+材料价格表与所选赛季不同，需补填单价。	The price table is for another league. Enter unit prices.	価格表が選択リーグと異なります。単価を入力してください。
+制作成本汇总	Crafting cost summary	クラフト費用の集計
+成本汇总 ·	Cost summary ·	費用集計 ·
+正在查询汇率…	Fetching exchange rates…	為替レートを取得中…
+刷新汇率	Refresh rates	為替レートを更新
+1 神圣石 ≈	1 Divine Orb ≈	神のオーブ1個 ≈
+混沌石 ≈	Chaos Orbs ≈	カオスオーブ ≈
+汇率未补齐，无法完整换算	Exchange rates incomplete; full conversion unavailable	為替レート不足のため、完全換算できません
+查询缓存 5 分钟	Rates cached for 5 minutes	為替レートは5分間キャッシュ
+当前使用	Currently using	現在使用中
+手填／核对汇率	Enter / Verify exchange rates	為替レートを入力・確認
+恢复来源汇率	Restore source rates	取得元の為替レートに戻す
+poe.ninja 汇率来源 ↗	poe.ninja exchange-rate source ↗	poe.ninjaの為替レート出典 ↗
+计入底装买价	Include base purchase price	ベース購入費を含める
+底装购买金额	Base purchase amount	ベース購入金額
+实际支付金额	Actual amount paid	実際の支払金額
+底装买价币种	Base purchase currency	ベース購入時の通貨
+材料	Materials	素材
+＋ 底装	＋ Base item	＋ ベース装備
+制作总成本	Total crafting cost	クラフトの総費用
+选择材料或填写底装买价	Select materials or enter the base purchase price	素材を選択、またはベース購入費を入力
+已计价合计	Known-price total	価格判明分の合計
+总成本	Total cost	総費用
+· 待补齐	· Incomplete	· 補完が必要
+底座准备参考 · 通用攻略（按需查阅）	Base preparation reference · General guide	ベース準備資料 · 一般ガイド（必要時に参照）
+社区实作	Community example	コミュニティの実例
+游戏数据	Game data	ゲームデータ
+图示制作路线	Illustrated crafting route	図解クラフトルート
+制作路线 · 步骤图示	Crafting route · Step diagram	クラフトルート · 手順の図解
+参考分支	Reference branch	参考分岐
+选择图示路线	Choose illustrated route	図解ルートを選択
+手填汇率	Manual exchange rates	手動為替レート
+待补汇率	Exchange rates needed	為替レートの補完が必要
+· 样例	· Reference	· サンプル
+前缀 /	prefixes /	プレフィックス /
+操作	Action	操作
+点伤／额外伤害	Added / Extra damage	追加ダメージ
+增伤／转伤	Increased damage / Conversion	ダメージ増加・変換
+攻击／施法／投射物速度	Attack / Cast / Projectile speed	アタック・キャスト・投射物スピード
+暴击	Critical strikes	クリティカル
+技能等级／技能效果	Skill levels / Effects	スキルレベル・効果
+异常／穿透／诅咒	Ailments / Penetration / Curses	状態異常・貫通・呪い
+抗性	Resistances	耐性
+生命／回复	Life / Recovery	ライフ・回復
+魔力／回复	Mana / Recovery	マナ・回復
+防御／格挡	Defence / Block	防御・ブロック
+力量／敏捷／智慧	Strength / Dexterity / Intelligence	筋力・器用さ・知性
+移动／行动速度	Movement / Action speed	移動・アクションスピード
+药剂／护符	Flasks / Charms	フラスコ・チャーム
+掉落／稀有度	Drops / Rarity	ドロップ・レアリティ
+品质／词缀效果	Quality / Modifier effect	品質・モッド効果
+其他机制	Other mechanics	その他の仕組み
+物等 {0}+	Item level {0}+	アイテムレベル {0}以上
+普通随机词池 ↗	Regular modifier pool ↗	通常のランダムモッドプール ↗
+默认搜同底座的白／蓝／黄非传奇，未腐化、未复制，不要求成品词缀。带词缀底材需导入核对后按实际状态计算；资料读取仅核对底座与来源，当前赛季是否有挂牌以官网结果为准。	Searches the same base, normal/magic/rare, uncorrupted and unmirrored, without requiring finished-item modifiers. Import and verify bases with existing mods before calculation. Reference data checks the base and source only; current-league listings must be checked on official trade.	同じベースのノーマル・マジック・レア、未コラプト・未ミラー品を検索し、完成品モッドは要求しません。既存モッド付きベースはインポート・確認後に実際の状態で計算します。資料ではベースと取得元のみを確認し、現在リーグの出品は公式トレードで確認してください。
+按前后缀、属性分类选择目标，再选阶层。这里显示原始词池范围，品质不改变阶层；样例原文保留在上方。	Choose goals by affix side and stat category, then select tiers. Ranges are from the original modifier pool; quality does not change tiers. The reference text remains above.	プレフィックス・サフィックスと分類から目標を選び、Tierを設定します。元のモッドプールの範囲を表示し、品質はTierを変更しません。サンプル原文は上に保持します。
+每行选属性与阶层；来源在属性菜单内分组。前后缀槽位、同组互斥与精华／合金限制按当前底座校验。	Choose a stat and tier per row; sources are grouped within the stat menu. Affix slots, group conflicts, and essence/alloy limits are checked against the selected base.	行ごとにステータスとTierを選択します。取得元はメニュー内で分類し、モッド枠・同グループの競合・エッセンスや合金の制限を現在のベースで検証します。
+按所选阶层的最低数值联合检索，同底座、未腐化、未复制，价格升序。只想买部分词缀底材时，取消其余目标；买到后粘贴实际底装再计算手顺。	Searches selected tier minimums together on the same base, uncorrupted and unmirrored, cheapest first. Deselect goals to buy a partly completed base, then paste the purchased item before calculating steps.	選択Tierの最低値を同時条件に、同ベース・未コラプト・未ミラー品を価格昇順で検索します。一部モッド付きベースを買う場合は他の目標を解除し、購入後の実物を貼り付けてから手順を計算してください。
+先导入真正买到的底装，再左右对比已有词缀与目标，勾选本次要做的属性。目标冲突也能先导入；调整后核对通过才可计算。	Import the actual purchased base, compare existing modifiers against goals, and select the stats to craft. Conflicting goals do not prevent import, but must be resolved and verified before calculation.	購入した実物ベースをインポートし、既存モッドと目標を左右で比較して作るステータスを選びます。目標が競合していても読込可能ですが、調整・確認後に計算してください。
+从已核对的实际底装开始，按其真实物等、稀有度、已有词缀与破裂状态求解。自动比较普通／高阶／完美通货、预兆、精华、合金与亵渎。	Solves from the verified actual base, using its item level, rarity, existing modifiers, and fractures. Compares regular/greater/perfect currencies, omens, essences, alloys, and desecration.	確認済みの実物ベースのレベル・レアリティ・既存モッド・フラクチャー状態から計算します。通常・上位・完全なるカレンシー、お告げ、エッセンス、合金、冒涜を比較します。
+目标是所选阶层或更好，不保证样例的具体 roll。	Goals require the chosen tier or better, not the reference item's exact rolls.	選択Tier以上を目標とし、サンプルと同じ具体値は保証しません。
+请先粘贴实际底装并点击“核对底装”，再生成制作手顺。	Paste the actual base and click “Verify base item” before generating crafting steps.	実物ベースを貼り付けて「ベース装備を確認」を選び、その後に手順を生成してください。
+装备已导入。选择目标后，就可以计算下一步。	Item imported. Choose your goals to calculate the next step.	装備をインポートしました。目標を選択して次の手順を計算できます。
+装备提升检索	Equipment upgrade search	装備更新の検索
+交易方式	Trade method	取引方法
+一口价购买及当面交易	Instant buyout & in-person trade	即時購入・対面取引
+一口价购买	Instant buyout	即時購入
+当面交易（当前赛季在线）	In-person (online in current league)	対面取引（現在リーグでオンライン）
+当面交易（在线）	In-person (online)	対面取引（オンライン）
+任何	Any	すべて
+交易赛季	Trade league	取引リーグ
+升级预算上限	Upgrade budget limit	装備更新の予算上限
+不限预算	No budget limit	予算制限なし
+自定义精确数值	Custom exact value	具体値を指定
+精确数值（高级）	Exact value (advanced)	具体値（詳細）
+自动／不限制	Automatic / Unrestricted	自動・制限なし
+从角色装备栏打开检索，可核对换装后的整套火、冰、雷、混沌抗性。	Open search from an equipment slot to check loadout fire, cold, lightning, and chaos resistances after the swap.	装備スロットから検索を開くと、交換後の装備全体の火・冷気・雷・混沌耐性を確認できます。
+底座与腐化筛选	Base & corruption filters	ベース・コラプトの絞り込み
+核心属性	Core stats	主要ステータス
+已选	Selected	選択済み
+项 · 同时满足	stats · All required	項目 · すべて必須
+属性与提升幅度	Stat & improvement threshold	ステータス・向上率
+· 当前 {0}	· Current {0}	· 現在 {0}
+≥ 当前（0%）	≥ Current (0%)	現在値以上（0%）
+相同数值（0%）	Exact current value (0%)	現在値と同じ（0%）
+% 及以上	% or higher	%以上
+添加属性	Add stat	ステータスを追加
+全部条件同时满足；↓ 选择降序优先属性。	All conditions must match; ↓ chooses the stat to sort descending.	すべての条件が必要です。↓で降順ソートするステータスを選択します。
+核心属性降序	Sort core stat descending	主要ステータスの降順
+检索提升候选	Search upgrade candidates	更新候補を検索
+官网核对联合条件 ↗	Review combined filters on official trade ↗	公式で複合条件を確認 ↗
+官网按核心属性降序 ↗	Official trade · Core stat descending ↗	公式で主要ステータスの降順検索 ↗
+核心属性降序 ↗	Core stat descending ↗	主要ステータスの降順 ↗
+官网检索提升候选 ↗	Find upgrades on official trade ↗	公式で更新候補を検索 ↗
+核心属性档位估价	Core-stat price comparison	主要ステータスの数値帯別相場
+核心属性降序市场参考	Market listings sorted by core stat	主要ステータス降順の出品参考
+挂牌参考	Listing reference	出品参考
+查询失败。	Search failed.	検索に失敗しました。
+正在读取…	Loading…	読込中…
+符合要求的挂牌	Matching listings	条件に一致する出品
+挂牌价	Listing price	出品価格
+物品	Item	アイテム
+换入后的整套四抗	Loadout resistances after swap	交換後の装備全体の4耐性
+比较这件	Compare this item	この装備を比較
+官网	Official site	公式サイト
+记录到套装汇总	Record in loadout summary	装備全体の集計に記録
+联合检索要求	Combined search requirements	複合検索の条件
+基本条件只作筛选	Base conditions filter only	基本条件は絞り込みにのみ使用
+当前按此属性降序	Currently sorting this stat descending	このステータスで降順ソート中
+设为降序优先属性	Sort this stat descending	このステータスを降順に設定
+全装备交易赛季	Equipment trade league	装備の取引リーグ
+全装备查价预设	Equipment search preset	装備検索のプリセット
+相似查价	Similar-item prices	類似装備の相場
+全部已识别属性	All recognized stats	識別済みの全ステータス
+实际属性	Actual stats	実際のステータス
+同档物品查价	Compare similar rolls	同程度の数値の相場を検索
+只查底座	Base only	ベースのみ
+综合找升级	Weighted upgrade search	総合評価で更新候補を検索
+同类全词缀 T1	Same category, all modifiers T1	同カテゴリ・全モッド T1
+全词缀 T1 条件	All-T1 modifier filters	全モッド T1の条件
+已调整为自定义条件，不再要求全词缀 T1	Custom filters; no longer requires all modifiers at T1	独自条件に変更済み。全モッド T1は要求しません
+全词缀 T1 条件待核对	All-T1 filters need review	全モッド T1の条件を要確認
+重新应用全部 T1 门槛	Reapply all T1 thresholds	全T1の条件を再適用
+传奇装备	Unique item	ユニーク装備
+只查同名传奇	Same unique name only	同名ユニークのみ
+加入装备比较	Add to equipment comparison	装備比較に追加
+寻找同类升级装备	Find upgrades in this category	同カテゴリの上位装備を検索
+全 T1 数值参考	All-T1 value reference	全T1の数値参考
+T1 条件待核对	T1 filters need review	T1条件を要確認
+四抗封顶伤害目标	Damage goal with capped resistances	4耐性を確保したダメージ目標
+配装目标：四抗达到上限，再追求伤害	Goal: cap all four resistances, then improve damage	目標：4耐性を上限まで確保し、ダメージを向上
+尚无有效角色抗性基准	No valid character resistance baseline	有効なキャラクター耐性基準値なし
+待导入技能资料	Skill data not imported	スキル情報未インポート
+当前全部达标	All requirements met	すべての条件を達成
+当前仍有缺口	Requirements not yet met	不足あり
+需要补齐数据	Additional data needed	データ補完が必要
+传奇与稀有补抗替代	Unique vs rare resistance alternatives	耐性を補うユニーク・レアの代替候補
+返回同名传奇检索	Return to same-unique search	同名ユニークの検索に戻る
+检索同部位稀有替代	Search rare alternatives for this slot	同部位のレア代替品を検索
+未设置	Not set	未設定
+预算币种	Budget currency	予算の通貨
+升级预算币种	Upgrade budget currency	装備更新予算の通貨
+限定当前物品类型	Same item type only	現在のアイテム種類のみ
+限定当前底座	Same base only	現在のベースのみ
+限定同名传奇	Same unique name only	同名ユニークのみ
+已腐化	Corrupted	コラプト
+未腐化	Uncorrupted	未コラプト
+参与搜索的属性	Stats included in search	検索に使うステータス
+清空属性条件	Clear stat filters	ステータス条件をクリア
+装备显示属性	Displayed item stats	装備の表示ステータス
+已核对官方属性	Verified official stats	確認済みの公式ステータス
+· 仅搜索是否存在	· Existence filter only	· 存在のみを検索
+手动调整（高级）	Manual adjustments (advanced)	手動調整（詳細）
+最低要求	Minimum requirement	最低要件
+下限	Minimum	下限
+上限	Maximum	上限
+不限	Unrestricted	制限なし
+不设硬门槛	No hard minimum	必須の下限なし
+综合权重	Combined weight	総合ウェイト
+伤害方向权重	Damage-priority weight	ダメージ評価のウェイト
+装备背景文字	Item flavor text	フレーバーテキスト
+物品说明	Item description	アイテムの説明
+打开同类全 T1 搜索	Open all-T1 category search	同カテゴリの全T1検索を開く
+打开升级候选搜索	Open upgrade search	更新候補の検索を開く
+打开官方交易搜索	Open official trade search	公式トレード検索を開く
+查询全 T1 市场	Search all-T1 listings	全T1の市場を検索
+检查官方查询条件	Review official search filters	公式検索条件を確認
+整套抗性约束	Loadout resistance constraints	装備全体の耐性条件
+整套四抗目标	Loadout resistance goals	装備全体の4耐性目標
+配装方式	Swap mode	装備交換モード
+整套规划 · 可跨部位补抗	Loadout plan · Resistances may be balanced across slots	装備全体を計画 · 別部位で耐性を補完可能
+只换这一件 · 四抗必须达标	Single-item swap · All four resistances must pass	1点のみ交換 · 4耐性を満たす必要あり
+限定相同腐化状态	Same corruption state	同じコラプト状態
+整套四抗达标	All loadout resistances pass	装備全体の4耐性を達成
+需补抗 · 待组合	Needs resistances · Combine with another item	耐性不足 · 組み合わせ待ち
+抗性待核对	Resistances need review	耐性を要確認
+匹配	Matches	一致
+件 · 读取	items · Read	個 · 読込
+件 ·	items ·	個 ·
+缓存	Cached	キャッシュ
+采样	Sampled	サンプリング
+低价	Low price	低価格
+官网搜索	Official search	公式検索
+打开原条件	Open original filters	元の条件を開く
+物品搜索	Item search	アイテム検索
+收藏当前搜索条件	Save current search	現在の検索条件を保存
+收藏名称	Favorite name	お気に入りの名前
+收藏搜索名称	Saved search name	保存する検索名
+分组	Group	グループ
+收藏搜索分组	Saved search group	保存する検索グループ
+保存搜索	Save search	検索を保存
+最近查价	Recent searches	最近の相場検索
+搜索收藏	Saved searches	保存済み検索
+显示其他赛季	Show other leagues	他リーグも表示
+收藏分组	Favorite group	お気に入りグループ
+筛选收藏分组	Filter favorite groups	お気に入りグループを絞り込む
+全部分组	All groups	すべてのグループ
+清除未收藏历史	Clear unsaved history	お気に入り以外の履歴を削除
+加入收藏	Add to favorites	お気に入りに追加
+删除记录	Delete record	記録を削除
+已保存的搜索条件	Saved search filters	保存済みの検索条件
+收起原条件	Hide original filters	元の条件を閉じる
+重新载入原物品并调整条件	Reload original item & edit filters	元の装備を再読込して条件を調整
+查看保存的完整查询	View saved full query	保存済みの完全なクエリを表示
+已清除未收藏的历史，收藏已保留。	Unsaved history cleared; favorites retained.	お気に入り以外の履歴を削除しました。お気に入りは保持しています。
+已加入收藏。	Added to favorites.	お気に入りに追加しました。
+装备估价	Item price check	装備の相場検索
+相似物品挂牌参考	Similar-item listing reference	類似アイテムの出品参考
+到官网查看挂牌 ↗	View listings on official trade ↗	公式トレードで出品を確認 ↗
+正在查询官方挂单…	Fetching official listings…	公式の出品を検索中…
+获取挂牌估价	Fetch listing prices	出品価格を取得
+各币种挂牌参考	Listings by currency	通貨別の出品参考
+低价样本中间 50% 区间	Middle 50% of low-price samples	低価格サンプルの中央50%区間
+卖家	Seller	出品者
+明细	Details	詳細
+记录	Record	記録
+统计	Statistics	統計
+样本中位数	Sample median	標本中央値
+当前勾选条件	Selected filters	選択中の条件
+低置信	Low confidence	信頼度低
+仅为挂牌参考	Listing reference only	出品参考のみ
+查询条件与样本说明	Filters & sample notes	検索条件・サンプルの説明
+两分钟内的缓存	Cached within two minutes	2分以内のキャッシュ
+实时请求	Live request	リアルタイムリクエスト
+在官方交易网站核对挂单 ↗	Verify listings on official trade ↗	公式トレードで出品を確認 ↗
+全身四抗换装检查	Loadout resistance swap check	装備交換時の4耐性確認
+整套装备换完后的四抗	All resistances after the swap	装備交換後の全耐性
+尚未读取角色总抗性	Character total resistances not loaded	キャラクター合計耐性が未読込
+满孔镶嵌情景	All sockets filled scenario	全ソケット装着の想定
+有效：	Effective:	有効値：
+· 上限	· Cap	· 上限
+总值：	Total:	合計：
+溢出：	Overcap:	上限超過：
+抗性计算依据与待核对项	Resistance calculation basis & review items	耐性計算の根拠・要確認項目
+可上传 PoB2 XML／分享代码、定义技能组、比较装备、生成官网检索并计算制作路线。自动读档、日志、快捷键、后台挂牌读取与成交同步请用本地版。记录保存在当前浏览器，不会同步到你的本地工坊。	Upload PoB2 XML/share codes, define skill setups, compare equipment, generate official trade searches, and calculate crafting routes. Use the local edition for automatic file reads, logs, hotkeys, background listings, and trade-history sync. Records stay in this browser and do not sync to your local workbench.	PoB2 XML・共有コードの読込、スキル構成、装備比較、公式検索、クラフトルート計算に対応します。自動読込・ログ・ホットキー・出品取得・取引履歴同期はローカル版をご利用ください。記録はこのブラウザーに保存され、ローカル工房とは同期しません。
+支持繁体中文、简体中文与英文；无法确认的词缀会保留提示。	Supports Traditional Chinese, Simplified Chinese, and English item text. Unconfirmed modifiers remain flagged.	繁体字・簡体字・英語のアイテム文に対応。確認できないモッドは警告を保持します。
+在游戏中复制装备、地图、宝石、通货或材料，将完整物品文本粘贴到这里。整套装备可在“角色装备”按槽位保存。	Copy equipment, a map, gem, currency, or material in game and paste the full text here. Save a complete loadout by slot under “Character equipment”.	ゲームで装備・マップ・ジェム・カレンシー・素材をコピーし、全文を貼り付けてください。装備一式は「キャラクター装備」でスロット別に保存できます。
+所选词缀的官方查询暂未生成。	The official search for the selected modifiers is not available yet.	選択モッドの公式検索はまだ生成されていません。
+请确认交易赛季。	Confirm the trade league.	取引リーグを確認してください。
+成品样例未能解析。	Could not parse the reference item.	完成品サンプルを解析できません。
+实际底装未能核对，请重新复制。	Could not verify the actual base. Copy it again.	実物ベースを確認できません。コピーし直してください。
+实际底装未能核对。	Could not verify the actual base.	実物ベースを確認できません。
+制作路线未能完成。	Crafting route calculation did not complete.	クラフトルートの計算が完了しませんでした。
+未读到完整底装，请包含稀有度、底座与物品等级。	Incomplete base text; include rarity, base, and item level.	ベースのテキストが不完全です。レアリティ・ベース・アイテムレベルを含めてください。
+成品文本超过 64 KB，请只复制一件完整装备。	Reference text exceeds 64 KB. Copy only one complete item.	サンプルが64 KBを超えています。装備1点の全文のみコピーしてください。
+先核对操作后的装备文本	Verify the post-action item text first	操作後の装備テキストを先に確認
+破裂锁定状态与操作前不一致	Fractured locks differ from the pre-action state	操作前とフラクチャー固定の状態が異なります
+英文来源暂未读到，可打开底座原文核对。	English source not loaded; open the original base reference to verify.	英語資料が未読込です。ベースの原文を開いて確認できます。
+目标研究暂未保存到浏览器；页面内仍可继续。	Target research was not saved to browser storage; you can continue on this page.	目標調査をブラウザーに保存できませんでした。このページ内では続行できます。
+底材搜索	Base search	ベース検索
+不限制物等	No item-level limit	アイテムレベル制限なし
+不限物等	Any item level	アイテムレベル不問
+非传奇	Non-unique	ユニーク以外
+全部戒指	All rings	すべての指輪
+全部项链	All amulets	すべてのアミュレット
+不限词缀	Any modifiers	モッド不問
+自定义条件	Custom filters	独自の条件
+可继续调整	Filters are editable	条件を調整可能
+在官方交易网站搜索 ↗	Search on official trade ↗	公式トレードで検索 ↗
+制作目标	Crafting goals	クラフト目標
+底材	Base item	ベース装備
+查看发往官网的搜索条件	View query sent to official trade	公式へ送る検索条件を表示
+低置信参考：当前只有同名、底座或类别条件。	Low-confidence reference: only name, base, or category filters are active.	信頼度の低い参考値：現在の条件は名前・ベース・カテゴリのみです。
+范围伤害按交易网站的平均值搜索。	Damage ranges use the trade site's average-value filter.	ダメージ範囲はトレードサイトの平均値条件で検索します。
+查询失败，不代表没有符合联合条件的物品。	A failed request does not mean no items match the combined filters.	検索失敗は、複合条件に一致するアイテムがないことを意味しません。
+尚无已核对的官方交易编号	No verified official trade ID	確認済み公式トレードIDなし
+可作为可选检索条件	Available as an optional search filter	任意の検索条件として使用可能
+待核对的原文	Original text requiring review	要確認の原文
+统一词缀资料	Modifier reference	モッド資料
+词缀资料 · 已识别	Modifier reference · Recognized	モッド資料 · 識別済み
+PoE2DB 核对 ↗	Verify on PoE2DB ↗	PoE2DBで確認 ↗
+查看资料 ↗	View reference ↗	資料を表示 ↗
+正在读取英文词缀资料…	Loading English modifier references…	英語モッド資料を読込中…
+重新核对英文词缀资料	Recheck English modifier references	英語モッド資料を再確認
+补查英文词缀资料	Load additional English modifier references	英語モッド資料を追加読込
+英文资料暂不可用。	English references are temporarily unavailable.	英語資料を現在利用できません。
+保留此机制	Keep this mechanic	この仕組みを維持
+系统择优，不设单项门槛	Choose automatically; no individual minimum	自動選択・個別下限なし
+不低于当前装备	No lower than current item	現在の装備以上
+T1 起步	T1 minimum	T1以上
+传奇高 roll · 已知范围 90%	High-roll unique · 90% of known range	高数値ユニーク · 既知範囲の90%
+T1 高 roll · 阶层范围 90%	High-roll T1 · 90% of tier range	高数値T1 · Tier範囲の90%
+传奇满 roll	Perfect-roll unique	最大値ユニーク
+T1 满 roll	Perfect-roll T1	最大値T1
+搜索档位	Search threshold	検索の数値設定
+当前方案／高级数值	Current plan / Advanced values	現在の設定・詳細数値
+词缀位与前后缀	Modifier slots & affix side	モッド枠・プレフィックスとサフィックス
+技能增伤与装备检索	Skill damage & equipment search	スキルのダメージ・装備検索
+技能	Skill	スキル
+· 增伤与装备	· Damage & equipment	· ダメージ・装備
+收起增伤与装备	Hide damage & equipment	ダメージ・装備を閉じる
+技能原文 ↗	Original skill reference ↗	スキル原文 ↗
+原文 ↗	Original reference ↗	原文 ↗
+当前检索重点	Current search focus	現在の検索対象
+作为装备检索重点	Use as equipment search focus	装備検索の対象に設定
+当前主输出	Current main damage skill	現在の主力スキル
+保存联动方案	Save linked-skill setup	連携スキル構成を保存
+设为主要输出技能	Set as main damage skill	主力スキルに設定
+查阅辅助机制	Inspect support mechanics	サポートの仕組みを確認
+组合联动 ·	Linked setup ·	連携構成 ·
+联动	Linked effect	連携
+技能与辅助机制 ·	Skills & support mechanics ·	スキル・サポートの仕組み ·
+依据 ↗	Source ↗	根拠 ↗
+其余技能与辅助机制 ·	Other skills & support mechanics ·	その他のスキル・サポートの仕組み ·
+伤害快照待核对 ·	Damage snapshot needs review ·	ダメージスナップショットを要確認 ·
+增伤方向	Damage priorities	ダメージを伸ばす方向性
+筛选技能增伤方向	Filter skill damage priorities	スキルのダメージ方向を絞り込む
+全部方向 ·	All priorities ·	すべての方向 ·
+前后缀／需解锁词池 · 规则	Affix side / Unlock requirements · Rules	モッド種別・プール解放条件 · ルール
+正在加载装备词池与官方交易映射。	Loading equipment modifier pools and official trade mappings.	装備モッドプール・公式トレード対応を読込中です。
+技能增伤词缀检索表	Skill damage modifier search table	スキルのダメージモッド検索表
+词缀 · 点开机制	Modifier · Open mechanics	モッド · 仕組みを開く
+部位 / 前后缀	Slot / Affix side	部位・モッド種別
+档位 / 物等	Tier / Item level	Tier・アイテムレベル
+T1 范围	T1 range	T1の範囲
+检索	Search	検索
+· 需符文解锁	· Requires rune unlock	· ルーンによる解放が必要
+可出现：	Available on:	出現部位：
+词池依据 ↗	Modifier pool source ↗	モッドプールの根拠 ↗
+本部位 T1 roll：	T1 rolls for this slot:	この部位のT1数値：
+检索这条词缀	Search this modifier	このモッドを検索
+按此技能检索	Search for this skill	このスキルで検索
+以此为主输出并检索	Set as main damage skill & search	主力スキルにして検索
+收起更多词缀	Hide additional modifiers	追加モッドを閉じる
+数据来源与适用边界	Data sources & limitations	データの出典・適用範囲
+英文词缀资料 ↗	English modifier references ↗	英語モッド資料 ↗
+GGG 技能更新说明 ↗	GGG skill update notes ↗	GGGスキル更新情報 ↗
+PoB2 技能数据 ↗	PoB2 skill data ↗	PoB2スキルデータ ↗
+GGG 图标来源 ↗	GGG icon source ↗	GGGアイコン出典 ↗
+暂无对应图标	No matching icon	対応アイコンなし
+GGG 官方美术	Official GGG artwork	GGG公式アート
+· 未启用	· Inactive	· 無効
+联动技能组	Linked skill group	連携スキルグループ
+选择联动技能组	Choose linked skill group	連携スキルグループを選択
+主输出与智能配装	Main skills & equipment planning	主力スキル・装備計画
+查看增伤词缀与部位	View damage modifiers & slots	ダメージモッド・部位を表示
+已失效技能	Unavailable skill	無効なスキル
+检索重点 ·	Search focus ·	検索対象 ·
+前移	Move earlier	前へ移動
+后移	Move later	後ろへ移動
+移出技能组	Remove from setup	スキル構成から外す
+添加技能到技能组	Add skill to setup	スキル構成に追加
+筛选技能库	Filter skill library	スキル一覧を絞り込む
+搜索技能	Search skills	スキルを検索
+技能库来源方案	Skill library source set	スキル一覧の取得元セット
+PoB 方案	PoB skill set	PoBスキルセット
+采用旋风三技能组合	Use the three-skill Twister setup	ツイスターの3スキル構成を使用
+采用组合	Use this setup	この構成を採用
+可拖入的技能库	Drag skills from this library	ドラッグ可能なスキル一覧
+PoB 保存的主技能：	Main skill saved in PoB:	PoBに保存された主力スキル：
+参考 BD：	Reference build:	参考ビルド：
+镶嵌数量与联动效果	Filled sockets & linked effects	装着数・連携効果
+确认镶嵌数量，再比较插槽收益	Confirm filled sockets before comparing benefits	装着数を確認してからソケット効果を比較
+按两件全部镶嵌比较	Compare with both items fully socketed	両装備を全装着として比較
+无每插槽联动词缀。	No per-socket modifier.	ソケット数に連動するモッドはありません。
+已镶嵌数量	Filled socket count	装着済みソケット数
+数量来自 PoB2 完整的 Rune 列表。	Count is from PoB2's complete Rune list.	PoB2の完全なRune一覧から装着数を取得しています。
+词缀	Modifier	モッド
+装备	Equipment	装備
+多选词缀	Select multiple modifiers	複数のモッドを選択
+DPS 损失	DPS loss	DPS減少
+损失率	Loss percentage	減少率
+只查存在	Existence only	存在のみ
+已算部分	Calculated portion	計算済みの部分
+整件词缀	All item modifiers	装備全体のモッド
+零或负向 ·	Zero / Negative ·	ゼロ・マイナス ·
+待核对 ·	Needs review ·	要確認 ·
+· 联动／增益	· Linked skill / Buff	· 連携・バフ
+作用于	Applies to	適用先
+联动作用的输出技能	Damage skill affected by this link	連携効果を適用する攻撃スキル
+PoB 正在逐条重算…	PoB is recalculating each modifier…	PoBでモッドごとに再計算中…
+打开本地版说明 ↗	Open local edition instructions ↗	ローカル版の説明を開く ↗
+词缀联合市场检索	Combined modifier trade search	複数モッドの複合トレード検索
+全选可检索的正贡献词缀	Select all searchable positive-contribution modifiers	検索可能なプラス寄与モッドをすべて選択
+全选可检索	Select all searchable	検索可能なものを全選択
+门槛	Threshold	下限条件
+词缀市场检索门槛	Modifier trade threshold	モッドトレード検索の下限
+≥ 当前	≥ Current	現在値以上
+至少 +3%	At least +3%	少なくとも+3%
+至少 +5%	At least +5%	少なくとも+5%
+只要求存在	Require existence only	存在のみ必須
+搜	Search	検索
+其余装备 ·	Other equipment ·	その他の装備 ·
+PoB 原生计算依据 ↗	Native PoB calculation basis ↗	PoBネイティブ計算の根拠 ↗
+核对	Review	確認
+尚未记录报价，导入角色和查价历史不会自动填入这里。	No prices recorded yet. Character imports and search history do not populate this automatically.	価格は未記録です。キャラクターのインポートや検索履歴からは自動入力しません。
+查价后点击“记录到套装汇总”，即可更新此处。	After a price check, choose “Record in loadout summary” to update this section.	相場検索後に「装備全体の集計に記録」を選ぶと、ここを更新できます。
+买入密语只作为报价线索，确认实际成交后才计入支出。	Purchase whispers are price leads only; spending is recorded after confirming the actual trade.	購入ウィスパーは価格情報であり、実際の成約確認後に支出へ計上します。
+收支按当前通货／时间／搜索条件统计；其他币种分别列在下方。	Totals follow the selected currency, time, and search filters; other currencies are listed separately below.	選択した通貨・期間・検索条件で集計し、その他の通貨は下に個別表示します。
+已确认收支	Confirmed entries	確認済みの収支
+开始本场记录	Start session	セッション記録を開始
+结束本场 / 下线记账	End session / Record before logout	セッション終了・ログアウト前の記帳
+尚未开始记录	Session not started	記録未開始
+类型	Type	元素属性
+收支类型	Entry type	収支の種類
+物品 / 材料说明	Item / Material description	アイテム・素材の説明
+收支说明	Entry description	収支の説明
+例如：出售烈焰之击	Example: Sold a skill gem	例：スキルジェムの売却
+通货数量	Currency amount	通貨数量
+收支数量	Entry amount	収支金額
+收支通货	Entry currency	収支の通貨
+加入待确认	Add as pending	確認待ちに追加
+查看场次	View sessions	セッションを表示
+查看收支场次	View bookkeeping sessions	収支セッションを表示
+暂无记录	No records	記録なし
+已结束	Ended	終了済み
+记录中	Recording	記録中
+开始：	Started:	開始：
+；结束：	; Ended:	；終了：
+进行中	In progress	進行中
+收入	Income	収入
+购买支出	Purchase spending	購入支出
+制作消耗	Crafting spending	クラフト消費
+净收支	Net balance	収支差額
+记录时间	Recorded at	記録日時
+项目	Entry	項目
+状态 / 操作	Status / Action	状態・操作
+已确认 · 撤回确认	Confirmed · Undo confirmation	確認済み · 確認を取り消す
+确认已成交	Confirm completed trade	成約済みと確認
+删除	Delete	削除
+物品 / 项目	Item / Entry	アイテム・項目
+金额	Amount	金額
+时间	Time	日時
+方向	Direction	取引方向
+总金额	Total amount	合計金額
+联盟	League	リーグ
+卖出	Sale	売却
+买入	Purchase	購入
+卖出收入	Sale income	売却収入
+买入支出	Purchase spending	購入支出
+出售收入	Sale income	売却収入
+导入交易记录	Import trade records	取引記録をインポート
+导入已有成交记录	Import completed trades	成約済み取引をインポート
+交易 CSV 文件	Trade CSV file	取引CSVファイル
+文件不能超过 2 MB。	File must not exceed 2 MB.	ファイルは2 MB以下にしてください。
+CSV 无法读取。	Could not read CSV.	CSVを読み込めません。
+列对应与交易方向	Column mapping & trade direction	列の対応・取引方向
+不提供	Not provided	指定なし
+请选择	Please select	選択してください
+无方向列时整份文件为	Default direction when no direction column exists	方向列がない場合のファイル全体の取引方向
+导入默认交易方向	Default import direction	インポート時の既定の取引方向
+必须提供方向列	Direction column required	取引方向の列が必要
+无法解析交易。	Could not parse trades.	取引を解析できません。
+正在预览…	Preparing preview…	プレビューを準備中…
+预览交易	Preview trades	取引をプレビュー
+笔可导入 ·	trades ready to import ·	件インポート可能 ·
+行需处理。重复来源会跳过。	rows need review. Duplicate source records are skipped.	行を要確認。同じ取得元の重複記録はスキップします。
+未导入行与原因	Skipped rows & reasons	未インポート行・理由
+这些是已完成的交易，实际金额与通货已经核对	These trades are complete; actual amounts and currencies have been checked	成約済みの取引で、実際の金額・通貨を確認しました
+确认并导入已成交记录	Confirm & import completed trades	確認して成約済み取引をインポート
+加入待确认列表	Add to pending list	確認待ち一覧に追加
+玩家待核对	Player needs review	プレイヤーを要確認
+方向待确认	Direction unconfirmed	取引方向未確認
+金额待确认	Amount unconfirmed	金額未確認
+币种待核对	Currency needs review	通貨を要確認
+收起	Collapse	閉じる
+补全	Complete	補完
+更正	Correct	修正
+确认成交	Confirm trade	成約を確認
+原通货：	Original currency:	元の通貨：
+，请核对币种。	; verify the currency.	。通貨を確認してください。
+买入 / 卖出	Purchase / Sale	購入・売却
+实际总金额	Actual total amount	実際の合計金額
+尚未读取游戏日志	Game log not read yet	ゲームログ未読込
+游戏日志	Game log	ゲームログ
+没有找到游戏日志	Game log not found	ゲームログが見つかりません
+读取失败，可手动粘贴密语。	Read failed; paste a trade whisper manually.	読込に失敗しました。取引ウィスパーを手動で貼り付けできます。
+玩家	Player	プレイヤー
+物品数量	Item quantity	アイテム数量
+来源交易ID	Source trade ID	取得元の取引ID
+交易统计通货	Trade report currency	取引集計の通貨
+交易统计时间	Trade report period	取引集計の期間
+交易数据来源	Trade data sources	取引データの取得元
+日志已连接	Log connected	ログ接続済み
+日志未找到	Log not found	ログなし
+正在检查日志	Checking log	ログを確認中
+日志读取失败	Log read failed	ログ読込エラー
+尚未检查日志	Log not checked yet	ログ未確認
+已有交易账本	Existing trade ledger	既存の取引台帳
+导入已有成交 CSV	Import completed trade CSV	成約済み取引CSVをインポート
+搜索交易记录	Search trade records	取引記録を検索
+搜索物品或玩家	Search items or players	アイテム・プレイヤーを検索
+读取最近 30 天日志	Read last 30 days of logs	過去30日間のログを読込
+粘贴交易密语	Paste trade whisper	取引ウィスパーを貼り付け
+导入成交 CSV	Import trade CSV	取引CSVをインポート
+手动添加收支	Add entry manually	収支を手動追加
+导出当前筛选交易 CSV	Export filtered trades as CSV	絞り込んだ取引をCSV出力
+各通货收支	Income & spending by currency	通貨別の収支
+支出未记录	Spending not recorded	支出未記録
+显示已有记录	Show existing records	既存の記録を表示
+交易密语文字	Trade whisper text	取引ウィスパー文
+识别交易	Parse trade	取引を識別
+待确认交易方向	Pending trade direction	確認待ち取引の方向
+全部	All	すべて
+已计入成交记录。	Added to completed trade records.	成約済み取引に記録しました。
+未能确认。	Could not confirm.	確認できませんでした。
+当前方向没有待确认线索。	No pending leads for this direction.	この取引方向の確認待ち情報はありません。
+已记差额	Recorded balance	記録済み差額
+更正这笔成交方向	Correct this trade's direction	この取引の方向を修正
+已更正成交方向，收支已重新统计。	Trade direction corrected; totals recalculated.	取引方向を修正し、収支を再集計しました。
+方向未能更正。	Could not correct trade direction.	取引方向を修正できませんでした。
+已撤回确认，可在场次记账中重新确认。	Confirmation undone; confirm again in session bookkeeping.	確認を取り消しました。セッション記帳で再確認できます。
+仅为已确认账目的收入减支出，不是完整利润	Confirmed income minus spending only; not complete profit	確認済み収入から支出を引いた差額であり、全体の利益ではありません
+官网同步未读取到买入，尚未覆盖游戏市集买入支出。	Official sync returned no purchases; in-game market spending is not covered yet.	公式同期で購入を取得できておらず、ゲーム市場での購入支出は未対応です。
+首次打开读取最近 30 天；开启自动读取后每 10 秒检查。识别报价后仍需确认实际成交。	Reads the last 30 days on first opening; automatic mode checks every 10 seconds. Parsed quotes still require confirmation of the actual trade.	初回は過去30日間を読み込み、自動読込は10秒ごとに確認します。価格を識別しても実際の成約確認が必要です。
+可导入其他工具导出的成交 CSV，与官网记录分来源去重；跨来源重复仍需核对。	Import completed-trade CSVs from other tools. Deduplication is per source; duplicates across sources still need review.	他ツールの成約済みCSVをインポートできます。取得元ごとに重複除外し、異なる取得元間の重複は確認が必要です。
+搜索市场综合候选	Search weighted market candidates	市場の総合評価候補を検索
+市场综合候选	Weighted market candidates	市場の総合評価候補
+正在搜索综合候选…	Searching weighted candidates…	総合評価候補を検索中…
+加入换装比较	Add to swap comparison	交換比較に追加
+不符合约束	Constraints not met	条件未達成
+资料待核对	Data needs review	情報を要確認
+四抗与预算通过 · 待 PoB	Resistances & budget pass · Verify in PoB	耐性・予算を達成 · PoBで要検証
+采用此组合	Apply this combination	この組み合わせを採用
+加入当前候选到组合	Add current candidate to combinations	現在の候補を組み合わせに追加
+购买价	Purchase price	購入価格
+未计算	Not calculated	未計算
+复核	Recheck	再確認
+挂牌	Listing	出品
+先检索两个不同部位，把候选送回比较。缺少报价的粘贴装备可记录，但不会当作零成本。	Search two different slots and send candidates back for comparison. Pasted items without prices can be recorded, but are not treated as free.	異なる2部位を検索し、候補を比較に戻してください。価格なしの貼り付け装備も記録できますが、費用0とは扱いません。
+市场候选送回比较时自动带入挂牌价；这里枚举已收藏的一件／两件组合，检查最终整套四抗和总购买成本。伤害方向分不等于 DPS，未重算的联动仍需 PoB 验证。	Market candidates retain listing prices when returned for comparison. Saved one/two-item combinations are checked against final loadout resistances and total purchase cost. Damage-direction scores are not DPS; uncalculated interactions still require PoB verification.	市場候補を比較に戻すと出品価格も保持します。保存した1点・2点の組み合わせで最終耐性と購入費合計を確認します。ダメージ方向のスコアはDPSではなく、未計算の連携はPoBで検証してください。
+私有赛季名称（高级）	Private league name (advanced)	プライベートリーグ名（詳細）
+实际底装不能为空。	The actual base item cannot be empty.	実物のベース装備を入力してください。
+当前装备已有同组词缀。	The item already has a modifier from this group.	現在の装備に同じグループのモッドがあります。
+目标中已经有同组词缀，请先移除冲突词缀。	A goal already uses this modifier group. Remove the conflicting goal first.	目標に同じグループのモッドがあります。競合する目標を先に削除してください。
+每侧最多选择三条目标词缀。	Select at most three goals per affix side.	プレフィックス・サフィックスそれぞれ最大3つまで選択できます。
+这一侧的词缀槽位已满。	No free modifier slots on this side.	この側のモッド枠はすべて使用済みです。
+物品等级不足，无法选择这个词缀。	Item level is too low for this modifier.	アイテムレベルが不足しているため、このモッドを選べません。
+这件装备的状态不允许继续制作。	This item's state does not allow further crafting.	この装備の状態ではクラフトを続けられません。
+没有识别到装备，请粘贴游戏中复制的完整文本。	No equipment recognized. Paste the complete text copied in game.	装備を識別できません。ゲームでコピーした全文を貼り付けてください。
+当前状态无法添加这个目标。	This goal cannot be added in the current state.	現在の状態ではこの目標を追加できません。
+无法识别：	Unrecognized:	識別できません：
+本步结果尚未确认	This step's result is unconfirmed	この手順の結果は未確認
+已保留原制作状态，请重新复制完整装备文本。	Original crafting state retained. Copy the complete item text again.	元のクラフト状態を保持しました。装備の全文をコピーし直してください。
+导入内容需要核对，请补齐当前词缀后确认。	The import needs review. Complete and verify the current modifiers.	インポート内容を要確認。現在のモッドを補完して確認してください。
+已导入能确认的部分，请核对下方提示并补齐当前词缀。	Recognized parts imported. Review the notes below and complete current modifiers.	確認できた部分をインポートしました。下の注意事項を確認して現在のモッドを補完してください。
+没有匹配词缀，试试其他关键词或检查物品等级。	No matching modifiers. Try other keywords or check the item level.	一致するモッドがありません。別の語句、またはアイテムレベルを確認してください。
+正在读取本地词缀数据…	Loading local modifier data…	ローカルモッドデータを読込中…
+默认展示普通词缀。精华、完美精华与亵渎为不同来源；普通精华需要魔法装备，不能在稀有装备上新增其专属词缀。	Regular modifiers are shown by default. Essences, Perfect Essences, and desecration are separate sources. Regular Essences require magic items and cannot add their exclusive modifiers to rare items.	通常モッドを既定で表示します。エッセンス・完全なるエッセンス・冒涜は別の取得元です。通常エッセンスにはマジック装備が必要で、レア装備へ専用モッドを追加できません。
+粘贴游戏或官网复制的完整成品文本，建议使用高级复制。	Paste the full finished-item text copied from the game or official trade. Advanced copy is recommended.	ゲームまたは公式トレードから完成品の全文を貼り付けてください。詳細コピーを推奨します。
+粘贴完整候选物品，自动定位对应栏位；戒指沿用当前选择的左右栏	Paste the full candidate text to locate its slot automatically; rings use the selected left/right slot	候補の全文を貼り付けると部位を自動判定します。指輪は選択中の左右スロットを使います
+如：冰法升级、做装底材	For example: caster upgrades, crafting bases	例：キャスター装備更新、クラフト用ベース
+粘贴完整游戏物品文本	Paste the full copied item text	コピーしたアイテム全文を貼り付け
+粘贴 PoB2 分享代码或 XML	Paste a PoB2 share code or XML	PoB2共有コード・XMLを貼り付け
+成品目标	Target item	目標の完成品
+准备步骤	Preparation steps	準備手順
+记录已填入；请确认对应当前游戏装备，再保存基准。	Record loaded. Confirm it matches your current in-game equipment before saving the baseline.	記録を読み込みました。現在のゲーム内装備と一致することを確認してから基準値を保存してください。
+旋风、爆炸长矛、回旋斩	Twister, Explosive Spear, Whirling Slash	ツイスター、エクスプローシブスピア、ワーリングスラッシュ
+本组辅助：	Supports in this group:	このグループのサポート：
+浏览器版未连接本机服务。自动读取 PoB2、日志及后台查价请使用本地版；此处可上传 XML、比较装备并打开官网检索。	The browser edition is not connected to local services. Use the local edition for automatic PoB2 imports, logs, and background price checks. Here you can upload XML, compare equipment, and open official trade searches.	ブラウザー版はローカルサービスに接続していません。PoB2の自動読込、ログ、バックグラウンド価格検索にはローカル版を使用してください。ここではXMLのアップロード、装備比較、公式トレード検索ができます。
+物品底座、已收录传奇名称与词缀以简体中文显示。PoB2 不提供稀有随机名称的中文对照，因此使用「稀有＋底座」作标题；英文原名保留在详情和原始文字中。	Item bases, known unique names, and modifiers use the selected interface language where available. PoB2 does not provide translations for randomly generated rare names, so rare items use “Rare + base” as the title. Original English names remain in the details and raw text.	アイテムのベース、収録済みユニーク名、モッドは対応する表示言語で表示します。PoB2にはランダムなレア名の対訳がないため、見出しには「レア＋ベース名」を使用します。英語の原名は詳細と原文に残します。
+PoB2 打开“导入／导出”（Import/Export），使用官网授权（Authorize with Path of Exile），选择角色后导入装备（Items and Skills）。	In PoB2, open Import/Export, choose Authorize with Path of Exile, select your character, then import Items and Skills.	PoB2でImport/Exportを開き、Authorize with Path of Exileで認証します。キャラクターを選び、Items and Skillsから装備とスキルをインポートしてください。
+在 Build Sharing 点击 Generate，再点击 Copy，取得这次角色数据的分享代码；也可保存本地 XML。	Under Build Sharing, click Generate, then Copy to copy the share code for this character snapshot. You can also save a local XML file.	Build SharingでGenerate、続いてCopyをクリックすると、このキャラクターの共有コードをコピーできます。ローカルXMLとして保存することもできます。
+在下方粘贴代码或选择 XML，预览栏位，再确认替换整套装备。换装后请在 PoB2 更新角色并重新导出。	Paste the code below or choose an XML file, preview the slots, then confirm replacing the loadout. After changing equipment, update the character in PoB2 and export it again.	下にコードを貼り付けるかXMLを選択し、スロットをプレビューしてから装備一式の置き換えを確定してください。装備変更後はPoB2でキャラクターを更新し、再度エクスポートしてください。
+先预览，再替换本页整套装备；原有角色面板基准会清除。同时读取主技能、辅助宝石及 PoB2 保存的伤害快照，工坊换装不会自动重算技能伤害。	Preview before replacing this page’s loadout; the previous character baseline will be cleared. The import also reads the main skill, support gems, and saved PoB2 damage snapshot. Changing equipment here does not automatically recalculate skill damage.	プレビュー後にこのページの装備一式を置き換えます。以前のキャラクター基準値はクリアされます。メインスキル、サポートジェム、PoB2に保存されたダメージも読み込みますが、ここで装備を変更してもスキルダメージは自動再計算されません。
+两套主副手都会保存。这里选择导入后启用哪套；装备栏可随时切换，属性不会叠加。	Both main-hand and off-hand weapon sets are saved. Choose which set to activate after import; you can switch sets in the equipment panel. Their stats do not stack.	両方の武器セットのメインハンドとオフハンドを保存します。インポート後に有効にするセットを選んでください。装備欄でいつでも切り替えられ、両セットのステータスは重複加算されません。
+件。未导入的栏位将留空，不会保留旧装备混入新方案。	items. Slots not imported will be empty; old equipment will not be mixed into the new loadout.	件。インポートしないスロットは空になり、以前の装備が新しい構成に混在することはありません。
+药剂与护符 · 本次文件中的实际栏位	Flasks & charms · Actual slots in this file	フラスコとチャーム · このファイルの実際のスロット
+空栏 · 确认导入后清除此栏旧物品	Empty slot · Import confirmation clears the previous item	空きスロット · インポート確定時に以前のアイテムを削除
+按所选装备组的 Slot 引用读取，不导入物品库中的闲置护符。这里若还有旧物品，需要回 PoB2 勾选 Delete equipment 重新导入并保存。	Reads Slot references from the selected item set, excluding unused charms in the item library. If old items remain, enable Delete equipment in PoB2, import again, and save.	選択した装備セットのSlot参照から読み込み、アイテム一覧の未装備チャームは除外します。古いアイテムが残る場合は、PoB2でDelete equipmentを有効にして再インポートし、保存してください。
+套 · 保存时主技能：	sets · Main skill when saved:	セット · 保存時のメインスキル：
+· 保存的伤害见“输出技能组 → 来源与校验 → PoB 原始快照与装备构成”。	· See “Output skill group → Sources & validation → Original PoB snapshot & equipment” for saved damage.	· 保存済みダメージは「出力スキルグループ → 出典と検証 → PoB元スナップショットと装備構成」で確認できます。
+确认替换整套装备（	Confirm loadout replacement (	装備一式の置き換えを確定（
+件）	items)	件）
+未选择文件	No file selected	ファイル未選択
+文件超过 3 MB。	The file exceeds 3 MB.	ファイルが3 MBを超えています。
+无法读取文件。	Unable to read the file.	ファイルを読み込めません。
+无法读取此 PoB2 文件。	Unable to read this PoB2 file.	このPoB2ファイルを読み込めません。
+方案等级 {0}	Build level {0}	ビルドレベル {0}
+· 保存于 {0}	· Saved at {0}	· 保存日時 {0}
+本工坊目前未接入官方账号授权。GGG 官方角色接口支持 PoE2 装备读取，但截至 2026-10-22，官网暂停受理新应用注册，尚不能为本项目开通新的账号直连。当前可用方式为 PoB2 代码或 XML 导入；导入的是导出时的快照，不会随游戏自动同步。	This workbench does not currently support official account authorization. GGG’s character API supports PoE2 equipment, but as of 2026-10-22, new application registration was paused, preventing a new direct account connection for this project. Use a PoB2 share code or XML import. Imports are snapshots at export time and do not automatically sync with the game.	この工房は現在、公式アカウント認証に対応していません。GGGのキャラクターAPIはPoE2装備に対応していますが、2026-10-22時点では新規アプリ登録が停止されており、本プロジェクト用の直接接続を開設できません。PoB2共有コードまたはXMLを使用してください。インポートはエクスポート時点の状態であり、ゲームとは自動同期されません。
+四抗约束最终整套；旧装备卖出前不抵扣购买成本。辅助保留导入配置。场景与覆盖状态会记录为验证条件，尚未接入完整 PoB 计算，不据此虚增伤害。	All four resistance constraints apply to the final loadout. Old gear does not offset purchase costs until sold. Imported support setups are preserved. Scenarios and uptime are recorded for validation; they do not inflate damage estimates without full PoB calculations.	4種類の耐性条件は最終装備一式に適用します。旧装備は売却するまで購入費用から差し引きません。インポートしたサポート構成を保持します。状況と稼働率は検証条件として記録しますが、完全なPoB計算なしにダメージへ加算しません。
+默认保留已穿传奇的身份与独有机制，允许同名传奇更好 roll。需要换成其他装备时，在这里解除对应部位保护。	By default, equipped uniques and their exclusive mechanics are preserved, allowing better rolls of the same unique. Unlock a slot here to allow other equipment.	初期設定では装備中のユニークと固有メカニクスを維持し、同名ユニークのより良いロールを許可します。別の装備に変更する場合は、ここで該当スロットの保護を解除してください。
+未读取	Not loaded	未読込
+。这是一份计算快照，不代表实际使用的输出循环；请在上方定义。	. This is a calculation snapshot, not your actual damage rotation; define that above.	。これは計算時点のスナップショットで、実際の攻撃サイクルを表すものではありません。上で設定してください。
+每个技能保留自己的辅助；跨技能联动按触发条件核对。整套四抗约束不变，最终组合 DPS 仍需 PoB 重算。	Each skill keeps its own supports. Cross-skill interactions are checked against their trigger conditions. All four loadout resistance constraints remain; final combined DPS still requires PoB recalculation.	各スキルのサポートを維持し、スキル間の連動は発動条件に照らして確認します。装備一式の4耐性条件は変わりません。最終的な組み合わせDPSはPoBでの再計算が必要です。
+这里只核对导入文件。实际输出与联动请在上方技能组定义；保存时主技能的伤害不会套用到其他技能。	This section only checks the imported file. Define actual output and interactions in the skill groups above. The saved main-skill damage is not applied to other skills.	ここではインポートファイルのみを確認します。実際の出力と連動は上のスキルグループで設定してください。保存時のメインスキルのダメージを他のスキルに流用しません。
+先从上方整套导入 PoB2，即可读取主技能、辅助宝石和保存时伤害。	Import a complete PoB2 loadout above to read the main skill, support gems, and saved damage.	上でPoB2の装備一式をインポートすると、メインスキル、サポートジェム、保存時のダメージを読み込めます。
+件（不计入常驻合计）	items (excluded from the active total)	件（常時合計には含めません）
+仅展示可读取的装备贡献。全域百分比单独列出；武器 DPS 分件展示，不能作为各装备对角色 DPS 的贡献比例。	Only readable equipment contributions are shown. Global percentages are listed separately. Weapon DPS is shown per item and does not represent each item’s share of character DPS.	読み取れる装備の寄与のみを表示します。グローバル割合は別記します。武器DPSはアイテムごとの値であり、各装備がキャラクターDPSに占める割合ではありません。
+影响伤害的装备词缀 ·	Damage-related equipment modifiers ·	ダメージに影響する装備モッド ·
+按词缀原生英文归类，显示中文说明；列出伤害来源与机制，不把不同乘区和条件效果直接相加。	Modifiers are grouped by their native English meaning, with localized descriptions. Damage sources and mechanics are listed separately; different multipliers and conditional effects are not simply added together.	モッドの英語原文の意味に基づいて分類し、対応する言語で説明します。ダメージ源とメカニクスを示し、異なる乗算区分や条件付き効果を単純加算しません。
+精确排行需要本机 PoB 原生引擎；浏览器版不会用方向分伪装贡献。	Accurate rankings require the local native PoB engine. The browser edition does not present heuristic scores as measured contributions.	正確な順位にはローカルのPoBエンジンが必要です。ブラウザー版では方向性スコアを実測の寄与として表示しません。
+装备汇总同时移除本件全部词缀重算，保留底座、品质和孔数，按独立计算的 DPS 损失降序排列。组内词缀分别移除并排序，不能累加成装备总值。含待核对词缀时标记“已算部分”；整件效果无法隔离或所选技能失效时标为待核对，旧版无汇总结果需重新计算。	Item totals are recalculated with all modifiers on that item removed, preserving its base, quality, and socket count, then ranked by independently calculated DPS loss. Individual modifier removals are ranked separately and cannot be summed into an item total. Unverified modifiers are marked as partially calculated; items whose effects cannot be isolated or whose selected skill is invalid need review. Older results without item totals require recalculation.	装備の全モッドを同時に除去し、ベース、品質、ソケット数を保持して再計算し、個別に求めたDPS損失の降順に並べます。各モッドも個別に除去して順位付けしますが、装備全体の値に合算はできません。未確認モッドを含む場合は一部計算済みと表示します。装備の効果を分離できない場合や選択スキルが無効な場合は要確認となり、装備合計のない旧結果は再計算が必要です。
+保持整套、天赋、辅助及配置不变。技能组内各输出技能分别计算，不直接相加。损失率＝（当前 DPS－移除后 DPS）÷当前 DPS；移除后 DPS 可悬停差值查看。四抗与生存仍需满足整套约束。不同词缀共享乘区、转伤和条件，百分比不能相加成 100%。沿用 PoB 敌人配置与覆盖率，不将工坊“常驻”选项自动写入引擎。未选中的主动技能／非持续增益组停用，已选联动、持续增益与各组辅助保留；弹幕按所选输出分析，实际循环仍需核对。市场检索使用原生英文对应的官方编号，不把贡献率当作数值门槛或价格。同部位所选词缀同时满足，跨部位分别检索；传奇限定同名，珠宝保留已核对底座，其余装备不额外限底座；不额外限腐化，沿用配装预算。未知数值或数值优劣依赖机制的词缀只查存在。	The loadout, passives, supports, and configuration stay fixed. Each output skill is calculated separately; their results are not added together. Loss rate = (current DPS − DPS after removal) / current DPS. Hover over the difference to see DPS after removal. Resistance and survival constraints still apply. Shared multipliers, conversions, and conditions mean modifier percentages do not sum to 100%. PoB enemy settings and uptime are preserved; the workbench’s permanent-effect option is not automatically written into the engine. Unselected active or nonpersistent buff groups are disabled; selected interactions, persistent buffs, and supports are preserved. Barrage follows the selected output; verify the actual rotation separately. Trade searches use official IDs mapped from native English, not contribution percentages as thresholds or prices. Selected modifiers on the same slot must all match; different slots are searched separately. Uniques require the same name, jewels retain verified bases, and other gear has no additional base restriction. Corruption is unrestricted and the loadout budget applies. Modifiers with unknown or mechanism-dependent values are searched by presence only.	装備一式、パッシブ、サポート、設定を固定し、各出力スキルを個別に計算します。結果は合算しません。損失率＝（現在DPS－除去後DPS）÷現在DPSです。差分にカーソルを合わせると除去後DPSを確認できます。耐性と生存条件も維持します。乗算、変換、条件を共有するため、各モッドの割合は合計100%にはなりません。PoBの敵設定と稼働率を引き継ぎ、工房の常時有効設定は自動反映しません。未選択のアクティブスキルや非持続バフを無効にし、選択済みの連動、持続バフ、サポートを維持します。バラージは選択出力で解析し、実際のサイクルは別途確認してください。市場検索には英語原文に対応する公式IDを使い、寄与率を数値条件や価格として扱いません。同スロットの選択モッドは全て一致する必要があり、別スロットは個別検索します。ユニークは同名、ジュエルは確認済みベースを指定し、その他の装備には追加のベース制限を設けません。コラプト状態は限定せず、装備予算を引き継ぎます。値が不明、または数値の優劣がメカニクスに依存するモッドは存在のみを検索します。
+下列生命、护盾、护甲等属于装备贡献；角色最终面板请在下方录入，不能直接按同一数值比较。	Life, energy shield, armour, and other values below are equipment contributions. Enter final character stats below; the two sets of values are not directly comparable.	以下のライフ、エナジーシールド、アーマーなどは装備の寄与です。最終キャラクターステータスは下で入力してください。両者を同じ数値として直接比較はできません。
+最大生命	Maximum Life	最大ライフ
+冰霜抗性	Cold Resistance	冷気耐性
+最大魔力	Maximum Mana	最大マナ
+每秒生命回复（固定值）	Life Regeneration per second (flat)	毎秒ライフ自動回復（固定値）
+全域护甲增加	Global increased Armour	グローバルアーマー増加
+全域闪避增加	Global increased Evasion	グローバル回避力増加
+全域能量护盾增加	Global increased Energy Shield	グローバルエナジーシールド増加
+最大生命增加	Increased maximum Life	最大ライフ増加
+最大魔力增加	Increased maximum Mana	最大マナ増加
+只合计可直接读取的数值，不含天赋、技能、剧情抗性惩罚、条件效果和百分比生命/防御缩放；这不是角色面板。武器 DPS 分件比较。	Only directly readable values are totaled. Passives, skills, campaign resistance penalties, conditional effects, and percentage life or defence scaling are excluded. This is not the character sheet. Weapon DPS is compared per item.	直接読み取れる数値のみを合計します。パッシブ、スキル、ストーリーの耐性ペナルティ、条件付き効果、ライフや防御の割合補正は含みません。キャラクターステータスではありません。武器DPSはアイテムごとに比較します。
+装备合计与游戏最终面板是两种口径。天赋、等级、属性、技能和条件效果尚未完整计算；这里记录实际面板，不按简单倍率假装复现游戏。	Equipment totals and final in-game stats measure different things. Passives, levels, attributes, skills, and conditional effects are not fully modeled. Record actual character stats here rather than estimating them with a simple multiplier.	装備合計とゲーム内の最終ステータスは集計対象が異なります。パッシブ、レベル、能力値、スキル、条件付き効果は完全には計算されていません。単純な倍率で再現せず、実際のステータスをここに記録してください。
+已自动带入对应当前装备的 PoB2／游戏基准，以及可计算的累计抗性。先核对下方摘要、选择抗性上限；只有数值不符时才展开更正。保存表示你确认它们对应当前游戏状态。	The PoB2 or game baseline matching the current equipment and calculable cumulative resistances have been filled in. Review the summary and choose resistance caps; expand to correct values only if needed. Saving confirms they match your current game state.	現在の装備に対応するPoB2またはゲームの基準値と、計算可能な累積耐性を自動入力しました。下の概要を確認し、耐性上限を選んでください。値が異なる場合のみ展開して修正します。保存すると現在のゲーム状態との一致を確認したことになります。
+尚无可带入的角色总值，请先更新 PoB2；无需逐项填写。游戏面板无法由装备合计直接代替。	No character totals are available yet. Update PoB2 first; you do not need to fill in every field manually. Equipment totals cannot replace the character sheet.	入力できるキャラクター合計値がまだありません。先にPoB2を更新してください。全項目を手入力する必要はありません。装備合計をキャラクターステータスの代わりにはできません。
+火焰抗性上限	Fire Resistance cap	火耐性の上限
+冰霜抗性上限	Cold Resistance cap	冷気耐性の上限
+闪电抗性上限	Lightning Resistance cap	雷耐性の上限
+混沌抗性上限	Chaos Resistance cap	混沌耐性の上限
+抗性使用括号中的未封顶总值，例如 75%（189%）取 189；护甲和闪避取数值，不取减伤率或闪避概率。生命、防御和技能伤害不会根据换装比例猜算。	For resistances, use the uncapped total in parentheses: enter 189 for 75% (189%). Enter armour and evasion values, not damage reduction or evade chance. Life, defences, and skill damage are not guessed from equipment ratios.	耐性は括弧内の上限適用前の合計値を使います。75%（189%）なら189を入力してください。アーマーと回避力は軽減率や回避確率ではなく数値を入力します。装備変更の比率からライフ、防御、スキルダメージを推測しません。
+火、冰、雷、混沌分别达到当前角色上限，生命和防御只列差值，不能抵消抗性不达标。下方更高的抗性要求仍保留。	Fire, cold, lightning, and chaos must each meet the current character cap. Life and defence changes are listed separately and cannot compensate for missing resistance. Higher resistance targets below remain in effect.	火、冷気、雷、混沌はそれぞれ現在のキャラクター上限を満たす必要があります。ライフと防御は差分のみを示し、耐性不足を相殺できません。下のより高い耐性目標も維持します。
+火焰抗性装备目标	Equipment Fire Resistance target	装備の火耐性目標
+冰霜抗性装备目标	Equipment Cold Resistance target	装備の冷気耐性目標
+闪电抗性装备目标	Equipment Lightning Resistance target	装備の雷耐性目標
+混沌抗性装备目标	Equipment Chaos Resistance target	装備の混沌耐性目標
+已校准时按角色未封顶总抗性判断；未校准时仅按装备合计判断，需自行考虑剧情惩罚、天赋及抗性余量。	When calibrated, checks use the character’s uncapped total resistances. Otherwise they use equipment totals only; account for campaign penalties, passives, and resistance margins yourself.	校正済みの場合はキャラクターの上限適用前の合計耐性で判定します。未校正では装備合計のみを使うため、ストーリーのペナルティ、パッシブ、耐性の余裕を別途考慮してください。
+方案只包含本页装备与目标。导入会替换本页整套记录，不会覆盖工艺台。	The loadout contains only this page’s equipment and targets. Importing replaces this page’s records without overwriting the crafting bench.	構成にはこのページの装備と目標のみが含まれます。インポートするとこのページの記録を置き換えますが、クラフト台は上書きしません。
+对比会同时保留当前装备，只有点击「采用候选」才替换本栏记录。	Comparisons preserve the current equipment. This slot is replaced only when you choose “Use candidate”.	比較中は現在の装備を保持します。「候補を採用」を選択したときだけ、このスロットの記録を置き換えます。
+仅保存在本浏览器。历史保留最近查询结果摘要；重新打开保留原赛季、词缀、T1 门槛、权重及预算，不自动请求市场。历史价格是当时的挂牌参考。	Saved in this browser only. History keeps summaries of recent results. Reopening preserves the original league, modifiers, T1 thresholds, weights, and budget without requesting market data. Historical prices are listing references from that time.	このブラウザー内のみに保存します。履歴には最近の検索結果の概要を保存します。再表示時は元のリーグ、モッド、T1条件、重み、予算を保持し、市場データを自動取得しません。過去の価格は当時の出品参考値です。
+暂无	No	まだありません：
+查询记录	search history	検索履歴
+。可先在下方查价，或收藏调好的条件。	. Check prices below or save your configured search filters.	。下で価格を検索するか、調整した条件をお気に入りに保存してください。
+本地版功能	Local edition feature	ローカル版の機能
+浏览器版支持成交 CSV、粘贴密语和记账；自动同步需要在本地工坊安装同步桥。	The browser edition supports completed-trade CSV imports, pasted whispers, and bookkeeping. Automatic sync requires the sync bridge in the local workbench.	ブラウザー版は成立取引CSV、ウィスパーの貼り付け、記帳に対応します。自動同期にはローカル工房への同期ブリッジの導入が必要です。
+密语交易 ·	Whisper trades ·	ウィスパー取引 ·
+密语是报价线索，不代表已经成交。按实际交付核对后确认；自动读取只在工坊网页打开时运行。	Whispers are offers, not proof of completed trades. Confirm them against actual delivery. Automatic reading runs only while the workbench page is open.	ウィスパーは見積もりの手掛かりであり、取引成立の証明ではありません。実際の受け渡しを確認してから確定してください。自動読込は工房ページを開いている間のみ動作します。
+暂无待确认交易。开启自动读取，或粘贴官方交易密语。	No trades await confirmation. Enable automatic reading or paste an official trade whisper.	確認待ちの取引はありません。自動読込を有効にするか、公式トレードのウィスパーを貼り付けてください。
+按通货分别列出本场收入、购买支出和实际材料消耗。净收支不等于售出装备的利润，也不包含尚未卖出的装备价值；不同通货不按未知汇率相加。	Session income, purchases, and actual material use are listed by currency. Net cash flow is not profit on sold gear and excludes unsold equipment value. Different currencies are not added using unknown exchange rates.	セッションの収入、購入支出、実際の素材消費を通貨ごとに表示します。純収支は売却装備の利益ではなく、未売却装備の価値も含みません。為替レートが不明な通貨同士は合算しません。
+材料只记录实际使用数量及原通货，不填写折算后的重复成本。例如已记入购买剥离石的崇高石支出，制作时应记录消耗几颗剥离石。	Record only the quantity of materials actually used in their original currency. Do not count converted costs twice. For example, if an Exalted Orb payment for Orbs of Annulment is already recorded, record the number of Orbs of Annulment consumed when crafting.	素材は実際の使用数量と元の通貨のみを記録し、換算後の費用を重複計上しないでください。例えば無効化のオーブの購入に使った高貴なオーブを記録済みなら、クラフト時には消費した無効化のオーブの個数を記録します。
+下线前后持有资产的估值涨跌	Held-asset valuation changes between sessions	ログアウト前後の保有資産評価額の変動
+从角色装备添加持有资产	Add held assets from character equipment	キャラクター装備から保有資産を追加
+件当前装备	currently equipped items	件の現在の装備
+同时用新记录的挂牌参考更新已有装备资产单价（保留持有数量）	Also update existing equipment asset prices from newly recorded listings (keep held quantities)	新しい出品参考値で既存装備資産の単価も更新する（保有数量は維持）
+复用当前整套装备和你主动记录的挂牌参考。相同物品不重复添加；换装后旧装备是否仍持有、是否出售需手动核对，不从装备变化推断成交或利润。	Reuses the current loadout and listing references you explicitly recorded. Identical items are not added twice. After equipment changes, manually check whether old gear is still held or sold; equipment changes do not imply trades or profits.	現在の装備一式と手動記録した出品参考値を再利用します。同じアイテムは重複追加しません。装備変更後に旧装備を保有中か売却済みかは手動確認が必要です。装備の変化から取引成立や利益を推定しません。
+从角色装备加入资产，或手动填写装备、通货及材料的数量与单价，再在下线和重新上线时分别保存快照。涨跌固定使用起始持有数量，新增或卖出另列；不会与上面的收支相加。	Add assets from character equipment or enter equipment, currency, and material quantities and unit prices manually. Save snapshots when logging out and returning. Valuation changes use the starting quantities; additions and sales are listed separately and are not added to the cash flow above.	キャラクター装備から資産を追加するか、装備、通貨、素材の数量と単価を手入力し、ログアウト時と再ログイン時にスナップショットを保存します。評価額の変動には開始時の保有数量を使い、追加と売却は別記します。上の収支とは合算しません。
+快照计价单位	Snapshot valuation currency	スナップショットの評価通貨
+单价币种不同的资产，在此快照中记为未估值。	Assets priced in a different currency are marked as unvalued in this snapshot.	単価の通貨が異なる資産は、このスナップショットでは未評価とします。
+资产名称	Asset name	資産名
+持有数量	Held quantity	保有数量
+添加持有资产	Add held asset	保有資産を追加
+资产	Asset	資産
+当前参考单价	Current reference unit price	現在の参考単価
+单价币种	Unit-price currency	単価の通貨
+卖出后将持有数量设为 0，仍填写当前市场单价以观察原持仓的价格变化。留空表示未知，0 表示你明确估价为零。	After selling, set the held quantity to 0 and keep entering the current market price to track the original holding’s price change. Blank means unknown; 0 means explicitly valued at zero.	売却後は保有数量を0にし、元の保有分の価格変動を追跡するため現在の市場単価を入力してください。空欄は不明、0は明示的な評価額ゼロを表します。
+快照名称	Snapshot name	スナップショット名
+保存估值快照	Save valuation snapshot	評価額スナップショットを保存
+起始快照	Starting snapshot	開始スナップショット
+结束快照	Ending snapshot	終了スナップショット
+只包含收支、场次和资产估值。导入会替换本页账本，不会影响装备或制作方案。	Contains only cash flow, sessions, and asset valuations. Importing replaces this page’s ledger without affecting equipment or crafting plans.	収支、セッション、資産評価額のみを含みます。インポートはこのページの帳簿を置き換え、装備やクラフト計画には影響しません。
+导出账本	Export ledger	帳簿をエクスポート
+替换为备份账本	Replace with backup ledger	バックアップ帳簿に置き換え
+选择交易 CSV，核对时间、方向、总金额和通货后导入。可读取本工具导出的 CSV；其他工具的 CSV 可在下方指定列。不会从报价推断成交，也不会自动连接 Overwolf。	Choose a trade CSV and verify timestamps, directions, totals, and currencies before importing. CSV exports from this tool are supported; map columns below for other tools. Offers are not treated as completed trades, and Overwolf is not connected automatically.	取引CSVを選び、日時、売買方向、総額、通貨を確認してからインポートしてください。本ツールのCSVに対応し、他ツールのCSVは下で列を指定できます。見積もりを成立取引とは見なさず、Overwolfへの自動接続も行いません。
+已读取	Read	読込済み
+行，尚未写入账本。没有联盟列时使用	rows, not yet written to the ledger. If no league column exists, use	行。帳簿には未記入です。リーグ列がない場合に使用：
+；金额是本笔交易总额，不乘物品数量。	; amounts are trade totals and are not multiplied by item quantity.	。金額は取引の総額であり、アイテム数量を掛けません。
+部分记录没有来源 ID，按内容及同秒序号去重；同一交易若来自不同工具，请核对是否重复。	Some records lack source IDs and are deduplicated by content and sequence within the same second. Check for duplicates when the same trade comes from different tools.	出典IDのない記録は内容と同一秒内の順序で重複を判定します。同じ取引を複数ツールから取り込む場合は、重複がないか確認してください。
+上次查询未成功：	Last query failed:	前回の検索に失敗：
+历史挂牌参考：	Historical listing reference:	過去の出品参考値：
+· 原条件	· Original filters	· 元の条件
+· 原查询完整保留。可点击下方按钮更新挂牌参考。	· The original query is preserved in full. Use the button below to update listing references.	· 元の検索条件を全て保持します。下のボタンで出品参考値を更新できます。
+上次查询：	Last query:	前回の検索：
+重新载入从物品默认条件开始；本收藏的完整原条件保持在这里。	Reloading starts from the item’s default filters; this saved search’s complete original filters remain here.	再読込はアイテムの初期条件から開始します。このお気に入りの元の条件は全てここに保持します。
+这条收藏按综合权重排序，请使用“官网搜索”查看原权重和预算下的候选；加权候选价格不作为低价估值。	This saved search uses weighted sorting. Use “Official search” to view candidates with the original weights and budget. Weighted candidate prices are not low-price estimates.	このお気に入りは重み付きで並べ替えます。「公式検索」で元の重みと予算の候補を確認してください。重み付き候補の価格を低価格推定として扱いません。
+收藏	Saved searches	お気に入り
+已录入 · 对应当前装备	Recorded · Matches current equipment	記録済み · 現在の装備に対応
+原面板快照 · 四抗见整套检查	Original stat snapshot · See loadout check for resistances	元のステータス · 4耐性は装備一式の確認を参照
+普通随机词池	Standard random modifier pool	通常のランダムモッドプール
+来自普通随机词池；采用哪一种及哪一档通货，由底装状态和计算路线决定。	From the standard random modifier pool. The base item’s state and calculated route determine the currency type and grade to use.	通常のランダムモッドプール由来です。使用する通貨の種類と等級は、素材の状態と計算ルートによって決まります。
+数值取原始词池下限，范围伤害按官网平均值检索。品质或其他增幅可能使较低阶层达到相同数值；结果仍需核对阶层、来源与空余词缀。	Values use the original modifier pool’s lower bounds; damage ranges use the official trade average. Quality or other scaling may let lower tiers reach the same value. Verify tiers, sources, and open modifier slots in the results.	数値には元のモッドプールの下限を使い、範囲ダメージは公式トレードの平均値で検索します。品質などの補正で低ティアでも同じ数値に届く場合があるため、結果のティア、出典、空きモッド枠を確認してください。
+以下不属于普通显式词缀路线，需单独核对固定底座、符文、品质或最终处理；未声称能按下方手顺完整复刻这些效果。	The effects below are outside the standard explicit-modifier route. Verify fixed bases, runes, quality, or finishing steps separately. The sequence below is not claimed to reproduce all of these effects.	以下の効果は通常の明示モッドのルートに含まれません。固定ベース、ルーン、品質、仕上げ処理を別途確認してください。下の手順で全ての効果を再現できることを保証しません。
+，与现行补丁差异仍需核对；未建模机制不保证可复刻。	; differences from the current patch still need checking. Unmodeled mechanics are not guaranteed to be reproducible.	。現行パッチとの差異は別途確認が必要です。未対応のメカニクスは再現を保証しません。
+已导入所选 PoB2 装备组，原角色面板基准已清除。请核对预览中的未解析效果。	Imported the selected PoB2 item set and cleared the previous character baseline. Review any unresolved effects in the preview.	選択したPoB2装備セットをインポートし、以前のキャラクター基準値をクリアしました。プレビューの未解析効果を確認してください。
+已记录 {0} 件 · 更新快照	{0} items recorded · Update snapshot	{0}件記録済み · スナップショットを更新
+这条旧记录尚未包含技能资料，请点击补读；无需重新输入装备。	This older record has no skill data yet. Load the missing data without re-entering equipment.	この旧記録にはスキル情報がありません。装備を再入力せずに不足情報を追加読込できます。
+。全元素不含混沌；换装后为累计差值推算，不是实时游戏读取。	. All elemental resistances exclude chaos. After swaps, totals are estimated from cumulative differences, not live game data.	。全元素耐性には混沌を含みません。装備変更後は累積差分による推定であり、ゲームからのリアルタイム読込ではありません。
+当前武器组缺少对应的角色面板基准；武器组专属天赋和技能可能不同，请在本组校准游戏面板或用 PoB2 保存本组后更新。	The active weapon set has no matching character baseline. Set-specific passives and skills may differ. Calibrate in-game stats for this set, or save this set in PoB2 and update the import.	現在の武器セットに対応するキャラクター基準値がありません。セット固有のパッシブやスキルが異なる場合があります。このセットのゲーム内ステータスを校正するか、PoB2で保存して再読込してください。
+部分抗性总值未知，不能把封顶显示值当作未封顶总值或假定已经达标。	Some resistance totals are unknown. Capped display values cannot stand in for uncapped totals or be assumed to meet the targets.	一部の耐性合計が不明です。上限適用後の表示値を適用前の合計値として扱ったり、目標達成と見なしたりはできません。
+部分抗性上限尚未确认，请在游戏面板基准中补齐。	Some resistance caps are unconfirmed. Complete them in the in-game stat baseline.	一部の耐性上限が未確認です。ゲーム内ステータスの基準値で補ってください。
+武器组 I / II · 装备贡献与面板依据	Weapon sets I / II · Equipment contributions & stat baselines	武器セットI / II · 装備の寄与とステータスの根拠
+当前启用	Currently active	現在有効
+。两组互斥；共同防具与饰品各算一次，只加入本组主副手。下表是装备可加总属性，不是完整角色面板。	. The sets are mutually exclusive. Shared armour and accessories count once, along with this set’s main-hand and off-hand items. The table shows additive equipment stats, not the complete character sheet.	。両セットは排他的です。共通の防具とアクセサリーは1回だけ数え、このセットのメインハンドとオフハンドを加えます。下表は加算可能な装備ステータスであり、完全なキャラクターステータスではありません。
+技能组可用宝石：	Gems available to the skill group:	スキルグループで使用可能なジェム：
+· 角色抗性依据：	· Character resistance baseline:	· キャラクター耐性の根拠：
+缺少本组基准	No baseline for this set	このセットの基準値なし
+装备可加总贡献	Additive equipment contributions	加算可能な装備の寄与
+还不能完整重算两组的最终面板。武器组天赋、技能启用、精魂预留、持续增益与条件效果会影响结果；没有本组角色基准时，不借用另一组总抗性或伤害。准确结果请在 PoB2 分别启用两组重算，或在游戏中切组后校准。	Final stats for both sets cannot yet be fully recalculated here. Set-specific passives, enabled skills, Spirit reservation, persistent buffs, and conditional effects affect the result. Without a baseline for a set, the other set’s resistance or damage totals are not reused. For accurate results, activate and recalculate each set in PoB2, or switch sets in-game and calibrate.	両セットの最終ステータスはまだ完全には再計算できません。武器セットのパッシブ、有効スキル、スピリット予約、持続バフ、条件付き効果が影響します。このセットの基準値がない場合、他方の耐性やダメージ合計を流用しません。正確な結果にはPoB2で各セットを有効にして再計算するか、ゲーム内で切り替えて校正してください。
+GGG 官方 0.2.0 更新说明：技能的武器组限制与切组持续增益修复 ↗	GGG 0.2.0 patch notes: skill weapon-set restrictions and persistent-buff fixes ↗	GGG公式0.2.0更新情報：スキルの武器セット制限と持続バフの修正 ↗
+· {0} 栏变化	· {0} slots changed	· {0}スロット変更
+PoB2 装备方案 ·	PoB2 loadout ·	PoB2装備構成 ·
+第一套武器	Weapon set I	武器セットI
+第二套武器	Weapon set II	武器セットII
+当前查看武器组	Weapon set being viewed	表示中の武器セット
+；PoB2 保存面板对应武器组	; weapon set for the saved PoB2 stats	。PoB2保存ステータスの武器セット
+，两者不同则不沿用伤害和角色总值。	. If they differ, damage and character totals are not reused.	。両者が異なる場合、ダメージとキャラクター合計値を流用しません。
+导入：	Imported:	インポート：
+· 文件保存：{0}	· File saved: {0}	· ファイル保存：{0}
+对应当前装备快照	Matches the current equipment snapshot	現在の装備スナップショットに対応
+本次读取：	This import:	今回の読込：
+{0} 个栏位变化	{0} slots changed	{0}スロット変更
+补齐未记录（	Fill missing records (	未記録を補完（
+逐件报价状态 ·	Per-item price status ·	アイテム別の価格状況 ·
+件待补齐	items need completion	件が未完了
+已记录报价	Recorded prices	記録済み価格
+来源与校验	Sources & validation	出典と検証
+整套装备更新对照	Loadout update comparison	装備一式の更新比較
+{0} 个栏位发生装备或数值变化	{0} slots have equipment or stat changes	{0}スロットで装備または数値が変化
+装备栏位没有实际数值变化	No actual equipment stat changes	装備スロットの実際の数値変更なし
+变化项目	Changed field	変更項目
+更新前	Before update	更新前
+更新后	After update	更新後
+数值差	Difference	数値差
+（记录补齐）	(record completed)	（記録を補完）
+本件可计算属性	Calculable item stats	このアイテムの計算可能なステータス
+变化	Change	変化
+原始装备文字对照	Original item text comparison	装備原文の比較
+启用武器组发生切换；两组分别对照，不把切组当作购买或升级，也不跨组汇总属性差值。	The active weapon set changed. Each set is compared separately; switching is not treated as a purchase or upgrade, and stat differences are not combined across sets.	有効な武器セットが切り替わりました。両セットは個別に比較し、切り替えを購入や強化とは扱わず、セットをまたいでステータス差分を合算しません。
+当前武器组装备贡献合计差值	Total equipment contribution changes for the active weapon set	現在の武器セットの装備寄与合計の差分
+装备贡献	Equipment contribution	装備の寄与
+逐件列出实际数值、增删词缀、机制及状态变化。武器 DPS 是物品面板数值，词缀差值不是主技能 DPS；缺失数据不按零收益判断。	Lists each item’s actual values, added or removed modifiers, mechanics, and state changes. Weapon DPS is an item stat; modifier differences are not main-skill DPS. Missing data is not treated as zero benefit.	各アイテムの実数値、モッドの追加と削除、メカニクス、状態の変化を示します。武器DPSはアイテムの数値であり、モッド差分はメインスキルのDPSではありません。不足データを効果ゼロとは扱いません。
+角色数据来源	Character data source	キャラクターデータの出典
+装备已手动变更，PoB2 快照需更新	Equipment changed manually; update the PoB2 snapshot	装備を手動変更済み · PoB2スナップショットの更新が必要
+导入核对记录 ·	Import review notes ·	インポートの確認記録 ·
+未导入栏位和未知效果可能影响完整方案；PoB2 面板参考保留其原方案配置。	Unimported slots and unknown effects may affect the complete loadout. PoB2 stat references keep the original build configuration.	未インポートのスロットや不明な効果が構成全体に影響する場合があります。PoB2のステータス参考値は元のビルド設定を保持します。
+PoB2 保存时面板参考	Saved PoB2 stat reference	PoB2保存時のステータス参考値
+（已过期）	(outdated)	（期限切れ）
+这些是 PoB2 保存时的计算结果，受其天赋、技能和配置影响；不是游戏实测面板，也不会随工坊换装自动重算。换装判断仍使用装备差值与单独录入的游戏面板。	These are PoB2 calculations at save time, affected by its passives, skills, and configuration. They are not measured in-game stats and do not automatically recalculate after equipment changes here. Swap checks still use equipment differences and separately recorded in-game stats.	PoB2保存時の計算結果であり、パッシブ、スキル、設定の影響を受けます。ゲーム内の実測値ではなく、工房で装備を変更しても自動再計算されません。装備変更の判定には装備差分と別途記録したゲーム内ステータスを使います。
+有效值（PoB2）：	Effective value (PoB2):	有効値（PoB2）：
+%（与未封顶总值分开显示）	% (shown separately from uncapped totals)	%（上限適用前の合計とは別表示）
+保存时 PoB2 全技能汇总：	Saved PoB2 all-skill total:	保存時のPoB2全スキル合計：
+未计入汇总（不表示角色伤害为零）	Not included in the total (does not mean zero character damage)	合計に未算入（キャラクターダメージがゼロという意味ではありません）
+。保存时主技能及命中／持续伤害见“输出技能组 → 来源与校验 → PoB 原始快照与装备构成”。	. See “Output skill group → Sources & validation → Original PoB snapshot & equipment” for the saved main skill, hit damage, and damage over time.	。保存時のメインスキル、ヒットダメージ、継続ダメージは「出力スキルグループ → 出典と検証 → PoB元スナップショットと装備構成」で確認できます。
+；保留上次有变化的对照	; the last comparison containing changes is preserved	。前回変更のあった比較を保持
+最近一次整套更新对照	Most recent loadout update comparison	直近の装備一式の更新比較
+记录于	Recorded at	記録日時
+· 重复读取相同装备不会清空此对照。	· Reading the same equipment again does not clear this comparison.	· 同じ装備を再読込しても、この比較は消去しません。
+旧记录仅保留更新前快照，以下与当前装备对照；今后的更新会保存前后双方快照。	Older records retain only the before snapshot, which is compared with current equipment below. Future updates save both before and after snapshots.	旧記録には更新前の状態のみが残っているため、下では現在の装備と比較します。今後の更新では前後両方の状態を保存します。
+新增装备	Added equipment	装備追加
+移除装备	Removed equipment	装備削除
+数值／词缀变化	Stat / modifier changes	数値・モッドの変更
+新增读取 · 无旧快照	Newly read · No previous snapshot	新規読込 · 旧スナップショットなし
+读取信息补齐	Import details completed	読込情報を補完
+未变化	Unchanged	変更なし
+· {0} 个栏位补齐读取信息	· Import details completed for {0} slots	· {0}スロットの読込情報を補完
+· {0} 个栏位仅格式变化，已忽略	· Ignored formatting-only changes in {0} slots	· {0}スロットの形式のみの変更を無視
+{0}更新详情	{0} update details	{0}の更新詳細
+物等 {0}	Item level {0}	アイテムレベル {0}
+至少需要两份快照	At least two snapshots required	スナップショットが2件以上必要
+尚无快照	No snapshots yet	スナップショットはまだありません
+装备已送入全物品查价。角色装备栏可保存整套装备并比较换装。	Equipment opened in item price search. Use character equipment to save a complete loadout and compare swaps.	装備をアイテム価格検索で開きました。キャラクター装備欄で装備一式を保存し、装備変更を比較できます。
+联合条件在浏览器生成，点击后去官网读取挂牌；复制候选物品回角色页即可比较。本站不提供后台挂牌抓取。	Combined filters are generated in your browser. Open the official trade site to view listings, then copy a candidate back to the character page to compare. This site does not fetch listings in the background.	複合条件はブラウザー内で生成します。公式トレードで出品を確認し、候補アイテムをキャラクターページにコピーして比較してください。このサイトはバックグラウンドで出品を取得しません。
