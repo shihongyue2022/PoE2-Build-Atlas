@@ -3,10 +3,22 @@ import index from './data/equipment-index.json';
 import { equipmentMetricDetails, equipmentMetrics, parseEquipment } from './genericEquipment';
 import { buildEquipmentTrade, equipmentTradeRows } from './genericEquipmentTrade';
 import { BREACH_RING_SAMPLE } from './fixtures/breachRing';
-import { BOOTS_SAMPLE, WEAPON_SAMPLE } from './fixtures/fullGear';
+import { BOOTS_SAMPLE, WEAPON_SAMPLE, NORMAL_MANA_FLASK_SAMPLE } from './fixtures/fullGear';
 import { IGNIFERIS_SAMPLE } from './fixtures/igniferis';
 
 describe('all equipment clipboard parsing and market searches', () => {
+  it.each(['中', '一般', '普通', 'Normal'])('recognizes the normal rarity alias %s in the reported mana flask text', (rarity) => {
+    const raw = NORMAL_MANA_FLASK_SAMPLE.replace('稀有度: 中', `稀有度: ${rarity}`);
+    const item = parseEquipment(raw)!;
+    expect(item).toMatchObject({ rarity: 'normal', category: 'flask.mana', baseNameEnglish: 'Ultimate Mana Flask', itemLevel: 65, raw });
+    const { query } = buildEquipmentTrade({ equipment: item, league: 'Test', rows: equipmentTradeRows(item) });
+    expect(query.query.type).toBe('Ultimate Mana Flask');
+    expect(query.query.filters.type_filters.filters.category?.option).toBe('flask.mana');
+    expect(query.query.stats.flatMap((group) => group.filters)).toEqual([]);
+  });
+  it('does not treat an unknown rarity containing 中 as a normal item', () => {
+    expect(parseEquipment(NORMAL_MANA_FLASK_SAMPLE.replace('稀有度: 中', '稀有度: 未知中间状态'))).toBeNull();
+  });
   it('localizes constant mechanics and marked PoB lines without inventing searchable trade mappings', async () => {
     const { localizeEquipmentStat, matchEquipmentStat, equipmentDisplayName } = await import('./genericEquipment');
     const mechanic = 'Life Leech recovers based on your Lightning damage as well as Physical damage';

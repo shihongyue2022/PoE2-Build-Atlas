@@ -227,7 +227,7 @@ export function parseEquipment(raw: string): Equipment | null {
   const rarityAt = lines.findIndex((line) => /^(?:Rarity|稀有度)[:：]/i.test(line));
   if (rarityAt < 0) return null;
   const rarityText = normalize(lines[rarityAt]!.split(/[:：]/).slice(1).join(':'));
-  const rarity = /unique|传奇|独特/.test(rarityText) ? 'unique' : /rare|稀有/.test(rarityText) ? 'rare' : /magic|魔法/.test(rarityText) ? 'magic' : /normal|普通/.test(rarityText) ? 'normal'
+  const rarity = /unique|传奇|独特/.test(rarityText) ? 'unique' : /rare|稀有/.test(rarityText) ? 'rare' : /magic|魔法/.test(rarityText) ? 'magic' : /^(?:normal|普通|一般|中)$/.test(rarityText) ? 'normal'
     : /currency|通货/.test(rarityText) ? 'currency' : /gem|宝石/.test(rarityText) ? 'gem' : /divination|命运卡/.test(rarityText) ? 'card' : undefined;
   if (!rarity) return null;
   const header: string[] = [];

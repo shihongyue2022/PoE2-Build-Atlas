@@ -1,6 +1,14 @@
 import { HOSTED_WORKBENCH } from './workbenchRuntime';
+import type { UiLocale } from './uiLocale';
 export interface CompanionPacket { id: string; raw: string; mode: 'trade' | 'checkpoint'; createdAt: string; deliveryToken?: string }
 export interface CompanionSummary { status: 'ready' | 'error'; message: string; detail?: string; url?: string }
+
+export async function syncCompanionLocale(locale: UiLocale, signal: AbortSignal): Promise<void> {
+  if (HOSTED_WORKBENCH) return;
+  try {
+    await fetch('/api/workbench/companion-locale', { method: 'POST', signal, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ locale }) });
+  } catch { /* A disconnected desktop helper must not block the browser language selector. */ }
+}
 
 function packetOf(value: unknown): CompanionPacket | null {
   if (!value || typeof value !== 'object') return null;

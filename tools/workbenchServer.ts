@@ -18,6 +18,7 @@ import { createAffixReferenceService, AffixReferenceError } from './affixReferen
 import { createDamageAttributionService, AttributionError } from './damageAttribution';
 import { isTradeStatus } from '../src/workbench/tradeStatus';
 import { createCraftExchangeService, CraftExchangeError } from './craftExchange';
+import { createCompanionLocale, validCompanionLocale } from './companionLocale';
 
 const OFFICIAL = 'https://www.pathofexile.com';
 const MAX_BODY = 65_536;
@@ -286,7 +287,8 @@ const writeJson = (response: ServerResponse, status: number, value: unknown): vo
   response.end(JSON.stringify(value));
 };
 
-export function createWorkbenchBridge(options: EstimateServiceOptions & { localPob?: ReturnType<typeof createLocalPobService>; localGameData?: ReturnType<typeof createLocalGameDataService>; tradeLog?: ReturnType<typeof createTradeLogService> } = {}) {
+export function createWorkbenchBridge(options: EstimateServiceOptions & { localPob?: ReturnType<typeof createLocalPobService>; localGameData?: ReturnType<typeof createLocalGameDataService>; tradeLog?: ReturnType<typeof createTradeLogService>; companionLocale?: ReturnType<typeof createCompanionLocale> } = {}) {
+  const companionLocale = options.companionLocale ?? createCompanionLocale();
   const estimate = createEstimateService(options);
   const localPob = options.localPob ?? createLocalPobService();
   const localGameData = options.localGameData ?? createLocalGameDataService();
@@ -390,6 +392,15 @@ export function createWorkbenchBridge(options: EstimateServiceOptions & { localP
       if (route === '/api/workbench/pob/launch' && request.method === 'POST') {
         await jsonBody(request);
         await localPob.launch(); writeJson(response, 200, { ok: true }); return;
+      }
+      if (route === '/api/workbench/companion-locale' && request.method === 'GET') {
+        writeJson(response, 200, { locale: companionLocale.read() }); return;
+      }
+      if (route === '/api/workbench/companion-locale' && request.method === 'POST') {
+        const value = await jsonBody(request);
+        if (!object(value) || !validCompanionLocale(value.locale)) throw new WorkbenchRequestError(400, '不支持的界面语言。');
+        companionLocale.write(value.locale);
+        writeJson(response, 200, { locale: companionLocale.read() }); return;
       }
       if (route === '/api/workbench/companion-view' && request.method === 'POST') {
         const parsed = validateClipboard(await jsonBody(request));

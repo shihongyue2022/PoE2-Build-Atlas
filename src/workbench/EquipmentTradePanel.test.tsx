@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import EquipmentTradePanel from './EquipmentTradePanel';
-import { BOOTS_SAMPLE, MANA_FLASK_SAMPLE } from './fixtures/fullGear';
+import { BOOTS_SAMPLE, MANA_FLASK_SAMPLE, NORMAL_MANA_FLASK_SAMPLE } from './fixtures/fullGear';
 import { BREACH_RING_SAMPLE } from './fixtures/breachRing';
 import { loadShippedPatch } from '../../packages/engine/src/loadPatch';
 import { loadGearTrade } from '../lib/gearTrade';
@@ -15,6 +15,7 @@ import { CURRENCY_SAMPLE, GEM_SAMPLE } from './fixtures/tradeItems';
 describe('direct pricing for utility items', () => {
   it.each([
     [MANA_FLASK_SAMPLE, 'Ultimate Mana Flask', 'flask.mana'],
+    [NORMAL_MANA_FLASK_SAMPLE, 'Ultimate Mana Flask', 'flask.mana'],
     ['Item Class: Life Flasks\nRarity: Normal\nUltimate Life Flask\n--------\nItem Level: 65', 'Ultimate Life Flask', 'flask.life'],
     ['Item Class: Charms\nRarity: Normal\nRuby Charm\n--------\nItem Level: 65', 'Ruby Charm', 'flask.charm'],
     ['Item Class: Relics\nRarity: Normal\nUrn Relic\n--------\nItem Level: 65', 'Urn Relic', 'sanctum.relic'],

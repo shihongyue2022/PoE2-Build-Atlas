@@ -32,6 +32,44 @@ using System.Web.Script.Serialization;
 using System.Windows.Forms;
 
 namespace PoE2WorkbenchHotkeys {
+    public static class OverlayLocale {
+        private static Dictionary<string, string[]> messages = new Dictionary<string, string[]>();
+        private static List<string> keys = new List<string>();
+        public static string Language = "zh-CN";
+        public static void Initialize(string catalogPath, string preferencePath) {
+            messages = new JavaScriptSerializer().Deserialize<Dictionary<string, string[]>>(File.ReadAllText(catalogPath, Encoding.UTF8));
+            keys = new List<string>(messages.Keys); keys.Sort(delegate(string a, string b) { return b.Length.CompareTo(a.Length); });
+            try {
+                Dictionary<string, object> saved = new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(File.ReadAllText(preferencePath, Encoding.UTF8));
+                object value; if (saved.TryGetValue("locale", out value)) SetLanguage(Convert.ToString(value));
+            } catch { }
+        }
+        public static bool SetLanguage(string language) {
+            if (language != "zh-CN" && language != "en" && language != "ja" || language == Language) return false;
+            Language = language; return true;
+        }
+        public static string T(string source) {
+            if (String.IsNullOrEmpty(source) || Language == "zh-CN") return source;
+            int column = Language == "en" ? 0 : 1;
+            string[] exact;
+            if (messages.TryGetValue(source, out exact)) return exact[column];
+            string[] lines = source.Replace("\r\n", "\n").Split('\n');
+            for (int line = 0; line < lines.Length; line++) {
+                foreach (string key in keys) {
+                    if (!key.Contains("{0}")) continue;
+                    string pattern = "^" + Regex.Replace(Regex.Escape(key), @"\\\{(\d+)}", "(.*?)") + "$";
+                    Match match = Regex.Match(lines[line], pattern);
+                    if (!match.Success) continue;
+                    string translated = messages[key][column];
+                    for (int index = 1; index < match.Groups.Count; index++) translated = translated.Replace("{" + (index - 1) + "}", match.Groups[index].Value);
+                    lines[line] = translated; break;
+                }
+            }
+            string result = String.Join("\r\n", lines);
+            foreach (string key in keys) if (!key.Contains("{0}")) result = result.Replace(key, messages[key][column]);
+            return result;
+        }
+    }
     internal static class Native {
         [DllImport("user32.dll", SetLastError = true)] internal static extern bool RegisterHotKey(IntPtr hWnd, int id, uint modifiers, uint key);
         [DllImport("user32.dll")] internal static extern bool UnregisterHotKey(IntPtr hWnd, int id);
@@ -80,6 +118,9 @@ namespace PoE2WorkbenchHotkeys {
         internal readonly TrackBar Transparency = new TrackBar();
         private readonly Button snapshotToggle = new Button();
         private readonly Label opacityLabel = new Label();
+        private readonly Label caption = new Label();
+        private readonly Button hide = new Button();
+        private string originalHeading = "", originalDescription = "", originalItem = "";
         private bool snapshotExpanded;
         private readonly string preferencesPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PoE2CraftWorkbench", "overlay-opacity.txt");
         protected override bool ShowWithoutActivation { get { return true; } }
@@ -94,7 +135,7 @@ namespace PoE2WorkbenchHotkeys {
             ShowInTaskbar = false; TopMost = true; StartPosition = FormStartPosition.Manual;
             BackColor = Color.FromArgb(24, 29, 23); ForeColor = Color.FromArgb(230, 234, 218);
             Font = new Font("Microsoft YaHei UI", 9F);
-            Label caption = new Label(); caption.SetBounds(16, 10, 440, 22); caption.Text = "POE2 工坊  /  快捷查价 · 拖动此处移动";
+            caption.SetBounds(16, 10, 440, 22); caption.Text = "POE2 工坊  /  快捷查价 · 拖动此处移动";
             caption.ForeColor = Color.FromArgb(160, 175, 142);
             caption.MouseDown += delegate(object sender, MouseEventArgs args) {
                 if (args.Button == MouseButtons.Left) { Native.ReleaseCapture(); Native.SendMessage(Handle, 0x00A1, new IntPtr(2), IntPtr.Zero); }
@@ -109,7 +150,7 @@ namespace PoE2WorkbenchHotkeys {
             Description.BackColor = BackColor; Description.ForeColor = ForeColor; Description.ScrollBars = ScrollBars.None;
             OpenWorkbench.SetBounds(16, 204, 156, 32); OpenWorkbench.Text = "在工坊查看";
             OpenResult.SetBounds(182, 204, 156, 32); OpenResult.Text = "官方市场 ↗"; OpenResult.Enabled = false;
-            Button hide = new Button(); hide.SetBounds(348, 204, 156, 32); hide.Text = "收起 (Esc)";
+            hide.SetBounds(348, 204, 156, 32); hide.Text = "收起 (Esc)";
             hide.Click += delegate { Hide(); };
             snapshotToggle.SetBounds(16, 250, 100, 28); snapshotToggle.Text = "物品原文 ▸"; snapshotToggle.Enabled = false;
             Snapshot.SetBounds(16, 296, 488, 168); Snapshot.Multiline = true; Snapshot.ReadOnly = true;
@@ -139,14 +180,26 @@ namespace PoE2WorkbenchHotkeys {
             FormClosing += delegate(object sender, FormClosingEventArgs args) {
                 if (args.CloseReason == CloseReason.UserClosing) { args.Cancel = true; Hide(); }
             };
+            ApplyLocale();
         }
-        private void ApplyOpacity() { Opacity = Transparency.Value / 100.0; opacityLabel.Text = "不透明度 " + Transparency.Value + "%"; }
+        internal void ApplyLocale() {
+            Text = OverlayLocale.T("PoE2 做装工坊 · 快捷查价");
+            caption.Text = OverlayLocale.T("POE2 工坊  /  快捷查价 · 拖动此处移动");
+            OpenWorkbench.Text = OverlayLocale.T("在工坊查看"); OpenResult.Text = OverlayLocale.T("官方市场 ↗");
+            hide.Text = OverlayLocale.T("收起 (Esc)");
+            snapshotToggle.Text = OverlayLocale.T(snapshotExpanded ? "物品原文 ▾" : "物品原文 ▸");
+            ApplyOpacity();
+            Heading.Text = OverlayLocale.T(originalHeading); Description.Text = OverlayLocale.T(originalDescription);
+            Item.Text = String.IsNullOrEmpty(originalItem) ? OverlayLocale.T("PoE2 · 物品查价") : originalItem;
+            Description.ScrollBars = Description.Text.Length > 120 || Description.Text.Split('\n').Length > 3 ? ScrollBars.Vertical : ScrollBars.None;
+        }
+        private void ApplyOpacity() { Opacity = Transparency.Value / 100.0; opacityLabel.Text = OverlayLocale.T("不透明度 ") + Transparency.Value + "%"; }
         private void SaveOpacity() {
             try { Directory.CreateDirectory(Path.GetDirectoryName(preferencesPath)); File.WriteAllText(preferencesPath, Transparency.Value.ToString()); } catch { }
         }
         internal void ToggleSnapshot() {
             snapshotExpanded = !snapshotExpanded; Snapshot.Visible = snapshotExpanded;
-            snapshotToggle.Text = snapshotExpanded ? "物品原文 ▾" : "物品原文 ▸";
+            snapshotToggle.Text = OverlayLocale.T(snapshotExpanded ? "物品原文 ▾" : "物品原文 ▸");
             // Use scaled control bounds, so expansion also works at 125% / 150% DPI.
             ClientSize = new Size(ClientSize.Width, (snapshotExpanded ? Snapshot.Bottom : Transparency.Bottom) + Snapshot.Left);
         }
@@ -159,15 +212,16 @@ namespace PoE2WorkbenchHotkeys {
             snapshotToggle.Enabled = !String.IsNullOrEmpty(raw);
         }
         internal void ShowLast() {
-            Display(String.IsNullOrEmpty(Heading.Text) ? "等待查价" : Heading.Text,
-                String.IsNullOrEmpty(Heading.Text) ? "在游戏内指向物品，按 Alt+E。复制成功后即可移开鼠标。" : Description.Text, Item.Text);
+            Display(String.IsNullOrEmpty(originalHeading) ? "等待查价" : originalHeading,
+                String.IsNullOrEmpty(originalHeading) ? "在游戏内指向物品，按 Alt+E。复制成功后即可移开鼠标。" : originalDescription, originalItem);
         }
-        internal void Display(string title, string description, string item) {
-            Heading.Text = title; Description.Text = description; Item.Text = String.IsNullOrEmpty(item) ? "PoE2 · 物品查价" : item;
-            Description.ScrollBars = description.Length > 120 || description.Split('\n').Length > 3 ? ScrollBars.Vertical : ScrollBars.None;
-            if (String.IsNullOrWhiteSpace(description)) Description.Text = "本次物品快照已保留。可展开“物品原文”核对，或在工坊调整条件。复制成功后无需继续悬停。";
+        internal void Display(string title, string description, string item, bool show = true) {
+            originalHeading = title;
+            originalItem = item;
+            originalDescription = String.IsNullOrWhiteSpace(description) ? "本次物品快照已保留。可展开“物品原文”核对，或在工坊调整条件。复制成功后无需继续悬停。" : description;
+            ApplyLocale();
             Description.SelectionStart = 0; Description.SelectionLength = 0; Description.ScrollToCaret();
-            if (!Visible) {
+            if (!Visible && show) {
                 Rectangle area = Screen.FromPoint(Cursor.Position).WorkingArea;
                 Location = new Point(area.Right - Width - 20, area.Bottom - Height - 20);
                 Show();
@@ -192,7 +246,8 @@ namespace PoE2WorkbenchHotkeys {
         private readonly NotifyIcon tray;
         private readonly System.Windows.Forms.Timer timer;
         private readonly JavaScriptSerializer json = new JavaScriptSerializer();
-        private LocalClient postClient, pollClient, viewClient;
+        private LocalClient postClient, pollClient, viewClient, localeClient;
+        private DateTime nextLocalePoll, localeDeadline;
         private Process launcher;
         private int generation, capturePhase;
         private string mode = "trade", resultId, resultUrl, itemSummary = "", capturedRaw = "";
@@ -225,12 +280,35 @@ namespace PoE2WorkbenchHotkeys {
                 panel.Display("游戏内快捷键", "鼠标指向装备：\r\nAlt+E：高级复制装备并查价\r\nCtrl+Alt+G：高级复制并核对当前制作锚点\r\n\r\n请先启动并打开本地工坊。Esc 收起面板。\r\n网页负责计算；本助手只发送一次 Ctrl+Alt+C 高级复制。", itemSummary);
             });
             menu.Items.Add("退出快捷键助手", null, delegate { ExitThread(); });
+            foreach (ToolStripItem entry in menu.Items) entry.Tag = entry.Text;
             tray = new NotifyIcon { Icon = SystemIcons.Information, Text = "PoE2 工坊 · Alt+E 查价 · Ctrl+Alt+G 核对", ContextMenuStrip = menu, Visible = true };
+            ApplyLocale();
             tray.DoubleClick += delegate { OpenWorkbench(); };
             window.Pressed += BeginCapture;
             timer = new System.Windows.Forms.Timer { Interval = 100 };
             timer.Tick += Tick; timer.Start();
-            tray.ShowBalloonTip(4000, "PoE2 快捷键助手已启动", "游戏内指向装备：Alt+E 查价，Ctrl+Alt+G 核对制作锚点。右键托盘图标可退出。", ToolTipIcon.Info);
+            tray.ShowBalloonTip(4000, OverlayLocale.T("PoE2 快捷键助手已启动"), OverlayLocale.T("游戏内指向装备：Alt+E 查价，Ctrl+Alt+G 核对制作锚点。右键托盘图标可退出。"), ToolTipIcon.Info);
+        }
+
+        private void ApplyLocale() {
+            panel.ApplyLocale();
+            tray.Text = OverlayLocale.T("PoE2 工坊 · Alt+E 查价 · Ctrl+Alt+G 核对");
+            foreach (ToolStripItem entry in tray.ContextMenuStrip.Items) entry.Text = OverlayLocale.T(Convert.ToString(entry.Tag));
+        }
+        private void PollLocale() {
+            nextLocalePoll = DateTime.UtcNow.AddSeconds(2);
+            LocalClient client = new LocalClient(); localeClient = client; localeDeadline = DateTime.UtcNow.AddSeconds(5);
+            client.DownloadStringCompleted += delegate(object sender, DownloadStringCompletedEventArgs response) {
+                if (disposed || !Object.ReferenceEquals(localeClient, client)) { client.Dispose(); return; }
+                localeClient = null; client.Dispose();
+                if (response.Cancelled || response.Error != null) return;
+                try {
+                    Dictionary<string, object> value = json.Deserialize<Dictionary<string, object>>(response.Result);
+                    if (OverlayLocale.SetLanguage(Text(value, "locale"))) ApplyLocale();
+                } catch { /* Keep the saved language while the local service is restarting. */ }
+            };
+            try { client.DownloadStringAsync(new Uri(origin + "/api/workbench/companion-locale")); }
+            catch { localeClient = null; client.Dispose(); }
         }
 
         private void BeginCapture(int hotkey) {
@@ -249,6 +327,8 @@ namespace PoE2WorkbenchHotkeys {
 
         private void Tick(object sender, EventArgs args) {
             DateTime now = DateTime.UtcNow;
+            if (localeClient != null && now > localeDeadline) { localeClient.CancelAsync(); localeClient.Dispose(); localeClient = null; }
+            if (localeClient == null && now >= nextLocalePoll) PollLocale();
             if (launcher != null) {
                 if (launcher.HasExited) {
                     int exitCode = launcher.ExitCode; launcher.Dispose(); launcher = null;
@@ -377,7 +457,7 @@ namespace PoE2WorkbenchHotkeys {
             } catch { DisplayError("无法启动工坊，请手动运行 start-workbench.cmd。"); }
         }
         private void OpenCapturedItem() {
-            if (String.IsNullOrEmpty(capturedRaw)) { OpenUrl(origin + "/?companion=1"); return; }
+            if (String.IsNullOrEmpty(capturedRaw)) { OpenUrl(origin + "/?companion=1&lang=" + Uri.EscapeDataString(OverlayLocale.Language)); return; }
             // Retain the captured item across connection failures. A view is not a
             // new live task, so it cannot replay a completed crafting checkpoint.
             int requestGeneration = generation;
@@ -396,7 +476,7 @@ namespace PoE2WorkbenchHotkeys {
                     resultId = mode == "trade" ? id : null;
                     nextPoll = DateTime.UtcNow.AddSeconds(1);
                     resultDeadline = nextPoll.AddMinutes(3);
-                    OpenUrl(origin + "/?companion=1&equipment=" + Uri.EscapeDataString(id));
+                    OpenUrl(origin + "/?companion=1&equipment=" + Uri.EscapeDataString(id) + "&lang=" + Uri.EscapeDataString(OverlayLocale.Language));
                     panel.Display("已在工坊打开该装备", mode == "trade" ? "正在查询本次物品的挂牌参考，结果和官方市场链接会自动回到此面板。也可在网页调整条件。" : "浏览器已打开本次装备的页面，保留原制作锚点核对结果。", itemSummary);
                 } catch { DisplayError("工坊返回的装备链接无效，请重试。"); }
             };
@@ -417,12 +497,35 @@ namespace PoE2WorkbenchHotkeys {
         protected override void ExitThreadCore() {
             disposed = true; timer.Stop(); timer.Dispose(); CancelRequests();
             if (launcher != null) { launcher.Dispose(); launcher = null; }
+            if (localeClient != null) { localeClient.CancelAsync(); localeClient.Dispose(); localeClient = null; }
             tray.Visible = false; tray.Dispose(); window.Dispose(); panel.Dispose();
             base.ExitThreadCore();
         }
     }
 
     public static class Program {
+        public static void ValidateLocales() {
+            string original = OverlayLocale.Language;
+            try {
+                using (StatusPanel panel = new StatusPanel()) {
+                    const string raw = "稀有度: 魔法\r\n終極魔力藥劑\r\n--------\r\n物品等級: 65";
+                    panel.SetSnapshot(raw);
+                    panel.Display("已在工坊打开该装备", "低价样本参考 1.5–2.5 崇高石", "終極魔力藥劑", false);
+                    foreach (string language in new string[] { "en", "ja", "zh-CN" }) {
+                        OverlayLocale.SetLanguage(language); panel.ApplyLocale();
+                        if (panel.OpenWorkbench.Text != OverlayLocale.T("在工坊查看") || panel.Heading.Text != OverlayLocale.T("已在工坊打开该装备") || panel.Snapshot.Text != raw || panel.Item.Text != "終極魔力藥劑")
+                            throw new InvalidOperationException("Overlay language update lost control text or the item snapshot.");
+                        if (language == "en" && panel.Description.Text != "Low-price sample 1.5–2.5 Exalted Orb") throw new InvalidOperationException("English price summary was not translated: " + panel.Description.Text);
+                        if (language == "ja" && panel.Description.Text != "低価格帯の出品参考 1.5–2.5 高貴なオーブ") throw new InvalidOperationException("Japanese price summary was not translated: " + panel.Description.Text);
+                        if (language == "zh-CN" && panel.Description.Text != "低价样本参考 1.5–2.5 崇高石") throw new InvalidOperationException("Switching back to Chinese lost the original summary.");
+                        panel.ToggleSnapshot(); panel.ToggleSnapshot();
+                    }
+                    OverlayLocale.SetLanguage("en");
+                    if (OverlayLocale.T("工坊拒绝了这次请求（HTTP 429）。请在工坊检查装备文本，或稍后重试。").Contains("工坊")) throw new InvalidOperationException("HTTP error localization failed.");
+                    if (panel.Visible) throw new InvalidOperationException("Validation unexpectedly showed the overlay.");
+                }
+            } finally { OverlayLocale.SetLanguage(original); }
+        }
         public static void ValidateStatusPanel(string previewPath) {
             // Construct without Show(): no game input, network calls or preference writes.
             using (StatusPanel panel = new StatusPanel()) {
@@ -448,9 +551,7 @@ namespace PoE2WorkbenchHotkeys {
             }
             if (!String.IsNullOrEmpty(previewPath)) {
                 using (StatusPanel preview = new StatusPanel()) {
-                    preview.Item.Text = "换界石（阶级 7）";
-                    preview.Heading.Text = "暂未识别物品 · 请在工坊核对";
-                    preview.Description.Text = "本次物品快照已保留。可展开“物品原文”核对，或在工坊调整条件。复制成功后无需继续悬停。";
+                    preview.Display("暂未识别物品 · 请在工坊核对", "本次物品快照已保留。可展开“物品原文”核对，或在工坊调整条件。复制成功后无需继续悬停。", "换界石（阶级 7）", false);
                     preview.SetSnapshot("物品種類: 換界石\r\n稀有度: 普通\r\n換界石（階級 7）\r\n--------\r\n換界石階級: 7");
                     preview.CreateControl();
                     using (Bitmap bitmap = new Bitmap(preview.Width, preview.Height)) {
@@ -504,6 +605,7 @@ try {
     Add-Type -TypeDefinition $companionCode -Language CSharp -ReferencedAssemblies @(
         'System.Windows.Forms', 'System.Drawing', 'System.Web.Extensions', 'System.Core'
     )
+    [PoE2WorkbenchHotkeys.OverlayLocale]::Initialize((Join-Path $PSScriptRoot 'workbench-hotkeys.i18n.json'), (Join-Path $PSScriptRoot '..\logs\companion-locale.json'))
     if ($ValidateOnly) {
         Write-Output 'Hotkey companion compiled successfully; no hotkeys registered or input sent.'
         return
@@ -513,8 +615,8 @@ try {
     if ($ValidateOnly) { throw }
     Add-Type -AssemblyName System.Windows.Forms
     [void][System.Windows.Forms.MessageBox]::Show(
-        "快捷键助手启动失败：`r`n$($_.Exception.Message)",
-        'PoE2 做装工坊',
+        ([PoE2WorkbenchHotkeys.OverlayLocale]::T("快捷键助手启动失败：") + "`r`n" + [PoE2WorkbenchHotkeys.OverlayLocale]::T($_.Exception.Message)),
+        ([PoE2WorkbenchHotkeys.OverlayLocale]::T('PoE2 做装工坊')),
         [System.Windows.Forms.MessageBoxButtons]::OK,
         [System.Windows.Forms.MessageBoxIcon]::Error
     )

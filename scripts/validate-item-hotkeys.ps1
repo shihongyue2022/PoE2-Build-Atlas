@@ -2,6 +2,8 @@ param([string]$PreviewPath = '')
 $ErrorActionPreference = 'Stop'
 & (Join-Path $PSScriptRoot 'workbench-hotkeys.ps1') -ValidateOnly
 [PoE2WorkbenchHotkeys.Program]::ValidateStatusPanel($PreviewPath)
+[PoE2WorkbenchHotkeys.Program]::ValidateLocales()
+Write-Output 'PASS Chinese / English / Japanese overlay controls, live switching, price and HTTP messages; original item text preserved.'
 Write-Output 'PASS compact overlay opacity controls, retained snapshot expansion and high-DPI bounds; no window shown.'
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $fixtures = Get-Content -LiteralPath (Join-Path $root 'src\workbench\fixtures\tradeItems.ts') -Raw -Encoding UTF8

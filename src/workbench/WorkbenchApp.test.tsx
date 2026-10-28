@@ -10,7 +10,7 @@ import type { ExistingItem, TargetInput } from '../lib/engine';
 import type { SolveResult } from '../lib/solve';
 import { computeWorkbench } from './compute';
 import { DEFAULT_OPTIONS } from './model';
-import { BOOTS_SAMPLE, MANA_FLASK_SAMPLE } from './fixtures/fullGear';
+import { BOOTS_SAMPLE, MANA_FLASK_SAMPLE, NORMAL_MANA_FLASK_SAMPLE } from './fixtures/fullGear';
 import WorkbenchApp from './WorkbenchApp';
 
 vi.mock('../lib/engine', async (importOriginal) => {
@@ -104,7 +104,7 @@ describe('workbench target-source regression', () => {
     window.history.replaceState({}, '', '/?companion=1&equipment=saved-flask');
     const network = vi.fn<typeof fetch>().mockImplementation((input) => {
       if (typeof input === 'string' && input.startsWith('/api/workbench/companion-view?id=')) return Promise.resolve(new Response(JSON.stringify({ item: {
-        id: 'saved-flask', raw: MANA_FLASK_SAMPLE, mode: 'trade', deliveryToken: 'flask-token', createdAt: new Date().toISOString(),
+        id: 'saved-flask', raw: NORMAL_MANA_FLASK_SAMPLE, mode: 'trade', deliveryToken: 'flask-token', createdAt: new Date().toISOString(),
       } })));
       if (input === '/api/workbench/estimate') return Promise.resolve(new Response(JSON.stringify({ ok: true, total: 0, fetched: 0, priced: 0, duplicateSellers: 0, groups: [], warnings: [], sampledAt: '2026-10-28T00:00:00Z', cached: false, url: 'https://www.pathofexile.com/trade2/search/poe2/Test?q=flask' })));
       return Promise.resolve(new Response('{}', { status: 503 }));

@@ -33,7 +33,7 @@ import { applyPobItemRepair } from './pobRepair';
 import { parseEquipment } from './genericEquipment';
 import CraftAdvisor from './CraftAdvisor';
 import { recoverLegacyImport } from './legacyImport';
-import { subscribeCompanion, publishCompanion, loadCompanionView, type CompanionPacket } from './companion';
+import { subscribeCompanion, publishCompanion, loadCompanionView, syncCompanionLocale, type CompanionPacket } from './companion';
 import { evaluateCheckpoint, type CraftCheckpoint, type CheckpointReview } from './craftCheckpoint';
 import { CraftCheckpointPanel } from './CraftCheckpointPanel';
 import PolicyView from './CraftPolicyView';
@@ -121,7 +121,12 @@ const CURRENCY_LABELS: Record<string, string> = {
 };
 
 export default function WorkbenchApp() {
-  useUiLocale();
+  const uiLocale = useUiLocale();
+  useEffect(() => {
+    const controller = new AbortController();
+    void syncCompanionLocale(uiLocale, controller.signal);
+    return () => controller.abort();
+  }, [uiLocale]);
   const [session, setSession] = useState<Session>(loadSession);
   const savedLoadout = useSavedLoadout();
   const [loadoutCandidate, setLoadoutCandidate] = useState<UpgradeCandidateInput>();
