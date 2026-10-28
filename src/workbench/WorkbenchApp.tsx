@@ -187,7 +187,9 @@ export default function WorkbenchApp() {
         setTab('plan');
         setNotice('已打开制作策略页，保留原锚点核对结果。此链接不会重复执行核对。');
       } else {
-        openEquipmentPrice(packet.raw, 'view');
+        if (!openEquipmentPrice(packet.raw, 'view', 'price', packet) && packet.deliveryToken) {
+          void publishCompanion(packet.id, { status: 'error', message: '物品类别或文本未能识别，请在工坊核对。' }, packet.deliveryToken);
+        }
       }
     }).catch((error: unknown) => { if (!controller.signal.aborted) setNotice(error instanceof Error ? error.message : '无法打开查价装备。'); });
     return () => controller.abort();
@@ -596,7 +598,7 @@ export default function WorkbenchApp() {
                 setEquipmentPrice((old) => old?.raw === expectedRaw ? { ...old, raw: repairedRaw } : old);
                 setNotice('已从原始 PoB2 重新识别本栏装备。其他栏位、BD 目标和账本未更改；仍待核对的效果会继续保留提示。');
               } : undefined}
-              autoEstimate={equipmentPrice.source === 'hotkey' || equipmentPrice.source === 'view' || equipmentPrice.source === 'loadout' && equipmentPrice.intent === 'price'} onEstimate={equipmentPrice.source === 'hotkey' ? (summary) => { void publishCompanion(equipmentPrice.id, { ...summary, status: summary.status ?? 'ready' }, equipmentPrice.deliveryToken); } : undefined} />
+              autoEstimate={equipmentPrice.source === 'hotkey' || equipmentPrice.source === 'view' || equipmentPrice.source === 'loadout' && equipmentPrice.intent === 'price'} onEstimate={equipmentPrice.source === 'hotkey' || equipmentPrice.source === 'view' && equipmentPrice.deliveryToken ? (summary) => { void publishCompanion(equipmentPrice.id, { ...summary, status: summary.status ?? 'ready' }, equipmentPrice.deliveryToken); } : undefined} />
               : !quickPrice && session.actualRollsInvalid ? <p className="wb-inline-warning">{uiText("当前物品经过模拟，需粘贴游戏中的实际装备再检索。")}</p>
               : <EquipmentTradePanel key={quickPrice?.id ?? session.raw} raw={quickPrice?.raw ?? session.raw} t1Data={engine?.data} t1Trade={tradeData} league={league} onLeague={(value) => update({ league: value })} leagues={leagues} leagueError={leagueError} onCompare={compareWithLoadout} autoEstimate={quickPrice?.complete === true} onEstimate={quickPrice ? (summary) => { void publishCompanion(quickPrice.id, { ...summary, status: summary.status ?? 'ready' }, quickPrice.deliveryToken); } : undefined} />}
             <TradeMemoryPanel league={league} onOpenItem={(raw) => { openEquipmentPrice(raw, 'paste'); }} />

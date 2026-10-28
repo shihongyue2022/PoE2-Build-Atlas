@@ -32,6 +32,7 @@ import type { SkillAffixSearch } from './skillAffixGuide';
 import TradeStatusSelect from './TradeStatusSelect';
 import { DEFAULT_TRADE_STATUS, type TradeStatus } from './tradeStatus';
 type Preset = EquipmentTradePreset | 't1';
+const directItemPricing = (item: Equipment) => ['flask', 'charm', 'relic', 'other'].includes(item.slot);
 
 export interface EquipmentTradePanelProps {
   raw: string; league: string; onLeague: (league: string) => void; autoEstimate?: boolean;
@@ -56,18 +57,19 @@ export default function EquipmentTradePanel(props: EquipmentTradePanelProps) {
   if (!equipment) return <div className="wb-trade-search"><h3>{uiText("全物品查价")}</h3><p>{uiText("请粘贴完整物品文本，包括稀有度和名称。支持装备、地图、碑牌、宝石、通货及材料的繁体、简体和英文文本。")}</p></div>;
   return <><PobItemRepair key={raw} raw={raw} auto={repairOnUpgrade} context={props.loadoutContext} onRepair={(next) => {
     props.onRepairItem?.(raw, next); setRecovered({ original: props.raw, raw: next });
-  }} />{parsed?.officialTypeCandidates && <label className="wb-form-label">{uiText("此中文名称存在歧义，请核对物品说明选择官方名称")}<select aria-label={uiText("选择准确的官方物品")} value={selected?.type ?? ''} onChange={(event) => setSelectedType(event.target.value)}><option value="">{uiText("请选择，不自动猜测")}</option>{parsed.officialTypeCandidates.map((candidate) => <option key={candidate.type} value={candidate.type}>{uiText(candidate.type)}</option>)}</select></label>}{(!equipment.kind || equipment.kind === 'equipment') && intent !== 't1'
+  }} />{parsed?.officialTypeCandidates && <label className="wb-form-label">{uiText("此中文名称存在歧义，请核对物品说明选择官方名称")}<select aria-label={uiText("选择准确的官方物品")} value={selected?.type ?? ''} onChange={(event) => setSelectedType(event.target.value)}><option value="">{uiText("请选择，不自动猜测")}</option>{parsed.officialTypeCandidates.map((candidate) => <option key={candidate.type} value={candidate.type}>{uiText(candidate.type)}</option>)}</select></label>}{(!equipment.kind || equipment.kind === 'equipment') && !directItemPricing(equipment) && intent !== 't1'
     ? <EquipmentUpgradeSearch key={`${raw}:${selected?.type ?? ''}`} {...props} raw={raw} equipment={equipment} />
     : <EquipmentTradeEditor key={`${raw}:${selected?.type ?? ''}:${intent ?? 'price'}`} {...props} intent={intent} raw={raw} equipment={equipment} onUpgrade={() => setRepairOnUpgrade(true)} />}</>;
 }
 
 function EquipmentTradeEditor({ equipment, raw, league, onLeague, autoEstimate, onEstimate, onCompare, leagues = [], leagueError, intent = 'price', t1Data, t1Trade, loadoutContext, onRecordQuote, onUpgrade }: EquipmentTradePanelProps & { equipment: Equipment; onUpgrade: () => void }) {
   const nonEquipment = equipment.kind !== undefined && equipment.kind !== 'equipment';
+  const directPricing = directItemPricing(equipment);
   const [searchRare, setSearchRare] = useState(false);
   const searchEquipment = useMemo(() => searchRare ? rareAlternative(equipment, t1Data, t1Trade) : equipment, [searchRare, equipment, t1Data, t1Trade]);
   const catalogue = useMemo(() => availableAffixes(searchEquipment, t1Data, t1Trade), [searchEquipment, t1Data, t1Trade]);
   const t1 = useMemo(() => t1Data && t1Trade ? buildEquipmentT1Rows(equipment, t1Data, t1Trade) : null, [equipment, t1Data, t1Trade]);
-  const initialPreset: Preset = nonEquipment ? 'base' : intent === 't1' ? 't1' : intent === 'upgrade' ? 'upgrade' : 'similar';
+  const initialPreset: Preset = nonEquipment ? 'base' : directPricing ? 'similar' : intent === 't1' ? 't1' : intent === 'upgrade' ? 'upgrade' : 'similar';
   const [preset, setPreset] = useState<Preset>(initialPreset);
   const targets = useMemo(() => loadoutContext && liveLoadoutContext(loadoutContext) && usesDamageGoal(loadoutContext.state)
     ? skillTargetRows(searchEquipment, loadoutContext.state, t1Data, t1Trade ?? undefined) : [], [searchEquipment, loadoutContext, t1Data, t1Trade]);
@@ -110,7 +112,7 @@ function EquipmentTradeEditor({ equipment, raw, league, onLeague, autoEstimate, 
     ranking: preset === 'upgrade', damageSort, constraintOnly, budget: preset === 'upgrade' ? budget : '', budgetCurrency }); }
   catch (failure) { error = failure instanceof Error ? failure.message : String(failure); }
   useEffect(() => {
-    if (autoEstimate && error) onEstimate?.({ status: 'error', message: '物品信息需要核对', detail: error, url: 'https://www.pathofexile.com/trade2' });
+    if (autoEstimate && error) onEstimate?.({ status: 'error', message: '物品信息需要核对', detail: error });
   }, [autoEstimate, error, onEstimate]);
   const unknown = equipment.mods.filter((mod) => !mod.searchable && !mod.recognized);
   const components = upgradeComponents(activeRows);
@@ -153,7 +155,7 @@ function EquipmentTradeEditor({ equipment, raw, league, onLeague, autoEstimate, 
       ['similar', '相似查价', '核心属性降序 · 相近数值档位比价'], ['strict', '全部已识别属性', '实际数值 · 未识别项另列'],
       ['base', equipment.rarity === 'unique' ? '只查同名传奇' : nonEquipment ? '同档物品查价' : '只查底座', nonEquipment ? '保留阶级 / 等级 · 不限定词缀' : '不限定变量与词缀'], ['upgrade', '综合找升级', loadoutContext && usesDamageGoal(loadoutContext.state) ? '四抗封顶 · 主技能伤害优先' : '沿用当前方向 · 多属性加权排序'],
       ['t1', '同类全词缀 T1', '全部词缀方向 · 同时满足 T1 门槛'],
-    ] as const).filter(([value]) => (!nonEquipment || value !== 'upgrade' && value !== 't1') && (value !== 't1' || equipment.rarity !== 'unique')).map(([value, title, detail]) => <button key={value} disabled={value === 't1' && (!t1 || !equipment.identified)} aria-pressed={preset === value && !custom} className={preset === value && !custom ? 'active' : ''} onClick={() => applyPreset(value)}><strong>{uiText(title)}</strong><small>{uiText(detail)}</small></button>)}</div>
+    ] as const).filter(([value]) => (!(nonEquipment || directPricing) || value !== 'upgrade' && value !== 't1') && (value !== 't1' || equipment.rarity !== 'unique')).map(([value, title, detail]) => <button key={value} disabled={value === 't1' && (!t1 || !equipment.identified)} aria-pressed={preset === value && !custom} className={preset === value && !custom ? 'active' : ''} onClick={() => applyPreset(value)}><strong>{uiText(title)}</strong><small>{uiText(detail)}</small></button>)}</div>
     {preset === 't1' && <section className="wb-trade-top" aria-label={uiText("全词缀 T1 条件")}>
       <h3>{uiText(fullT1 ? '全部词缀同时满足 T1 参考门槛' : custom && t1?.complete ? '已调整为自定义条件，不再要求全词缀 T1' : '全词缀 T1 条件待核对')}</h3>
       <p>{uiText("同类指相同装备类别，保留原装备每条词缀方向，额外词缀不限。默认不限具体底座和物等，可勾选“限定当前底座”。无挂单时保持条件，不自动放宽。")}</p>
@@ -223,11 +225,11 @@ function EquipmentTradeEditor({ equipment, raw, league, onLeague, autoEstimate, 
     {result && <>
       {upgrading && <AffixPriceStudy key={JSON.stringify({ equipment: searchEquipment.raw, rare: searchRare, league, rows: activeRows, guides: [...guides], exactBase, exactUnique, status, sameCorruption, budget, budgetCurrency })}
         options={{ equipment: searchEquipment, league, rows: activeRows, exactBase, exactUnique: !searchRare && exactUnique, status, sameCorruption, ranking: true, constraintOnly: true, budget, budgetCurrency }} guides={guides} />}
-      {(nonEquipment || preset !== 'similar') && <><div className="wb-actions"><a className="wb-button primary" href={result.url} target="_blank" rel="noopener noreferrer">{uiText(fullT1 ? '打开同类全 T1 搜索' : upgrading ? '打开升级候选搜索' : '打开官方交易搜索')}</a></div>
+      {(nonEquipment || directPricing || preset !== 'similar') && <><div className="wb-actions"><a className="wb-button primary" href={result.url} target="_blank" rel="noopener noreferrer">{uiText(fullT1 ? '打开同类全 T1 搜索' : upgrading ? '打开升级候选搜索' : '打开官方交易搜索')}</a></div>
       <p className="wb-fine">{uiText(noStats ? '低置信参考：当前只有同名、底座或类别条件。' : '挂牌参考：只比较当前勾选条件，无法衡量所有机制与组合价值。')}{uiText(preset === 't1' ? '随机词缀门槛来自 T1 规则参考，原装备实际值另列；' : '每条属性来自复制数值；')}{uiText("范围伤害按交易网站的平均值搜索。")}</p></>}
       {upgrading ? <UpgradeCandidates key={JSON.stringify(result.query)} query={result.query} url={result.url} league={league} components={upgradeComponents(activeRows)} scoringRows={activeRows} auto={!hasSearched && !raw.includes(POB_REVIEW_MARKER)} onSearch={() => setHasSearched(true)} onCompare={onCompare ? (item) => onCompare(item, captureUpgradeSearch(loadoutContext, activeRows)) : undefined} itemRaw={raw}
         loadoutContext={loadoutContext && liveLoadoutContext(loadoutContext) ? loadoutContext : undefined} />
-        : !nonEquipment && preset === 'similar' ? <CorePriceEstimate key={JSON.stringify([raw, league, exactBase, exactUnique, sameCorruption, status, activeRows])}
+        : !nonEquipment && !directPricing && preset === 'similar' ? <CorePriceEstimate key={JSON.stringify([raw, league, exactBase, exactUnique, sameCorruption, status, activeRows])}
           options={{ equipment: searchEquipment, league, rows: activeRows, exactBase, exactUnique, sameCorruption, status }}
           auto={autoEstimate} onEstimate={onEstimate} onRecordQuote={onRecordQuote} onCompare={onCompare ? (item, quote) => onCompare(item, undefined, quote) : undefined} />
         : <PriceEstimate query={result.query} url={result.url} league={league} auto={autoEstimate} onEstimate={onEstimate} itemRaw={raw}

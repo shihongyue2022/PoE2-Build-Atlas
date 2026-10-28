@@ -23,7 +23,7 @@ export interface PriceEstimateProps {
   itemRaw?: string;
   memoryTitle?: string;
   onRecordQuote?: (quote: Omit<LoadoutQuote, 'itemText'>) => void;
-  onEstimate?: (summary: { message: string; detail: string; url: string; status?: 'ready' | 'error' }) => void;
+  onEstimate?: (summary: { message: string; detail: string; url?: string; status?: 'ready' | 'error' }) => void;
 }
 
 /** A changed search owns fresh state, so an old item's prices cannot leak into its replacement. */

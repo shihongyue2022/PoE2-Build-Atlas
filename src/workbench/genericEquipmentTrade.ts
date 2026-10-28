@@ -98,7 +98,7 @@ export function buildEquipmentTrade({ equipment, league, rows, exactBase = true,
 } {
   if (!league.trim()) throw new Error('请先填写官方交易赛季。');
   const nonEquipment = equipment.kind !== undefined && equipment.kind !== 'equipment';
-  if (nonEquipment && !equipment.baseNameEnglish) throw new Error('此物品的官方名称尚未匹配，已停止估价以避免比较整个类别。请粘贴完整文本核对名称。');
+  if ((nonEquipment || ['flask', 'charm', 'relic'].includes(equipment.slot)) && !equipment.baseNameEnglish) throw new Error('此物品的官方名称尚未匹配，已停止估价以避免比较整个类别。请粘贴完整文本核对名称。');
   if (ranking && nonEquipment) throw new Error('综合找升级用于穿戴装备；地图、宝石和材料请按名称与阶级查价。');
   const active = rows.filter((row) => row.enabled);
   const stats: FlexibleTradeDocument['query']['stats'][number][] = [];

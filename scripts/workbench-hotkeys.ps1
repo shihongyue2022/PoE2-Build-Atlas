@@ -393,9 +393,11 @@ namespace PoE2WorkbenchHotkeys {
                     Dictionary<string, object> payload = json.Deserialize<Dictionary<string, object>>(response.Result);
                     string id = Text(payload, "id");
                     if (!Object.Equals(payload["ok"], true) || String.IsNullOrEmpty(id)) throw new Exception();
-                    resultId = null;
+                    resultId = mode == "trade" ? id : null;
+                    nextPoll = DateTime.UtcNow.AddSeconds(1);
+                    resultDeadline = nextPoll.AddMinutes(3);
                     OpenUrl(origin + "/?companion=1&equipment=" + Uri.EscapeDataString(id));
-                    panel.Display("已在工坊打开该装备", "浏览器已打开本次装备的页面，可以调整查价条件、查看估价并搜索官方挂单。", itemSummary);
+                    panel.Display("已在工坊打开该装备", mode == "trade" ? "正在查询本次物品的挂牌参考，结果和官方市场链接会自动回到此面板。也可在网页调整条件。" : "浏览器已打开本次装备的页面，保留原制作锚点核对结果。", itemSummary);
                 } catch { DisplayError("工坊返回的装备链接无效，请重试。"); }
             };
             try { client.UploadStringAsync(new Uri(origin + "/api/workbench/companion-view"), "POST", json.Serialize(new { raw = capturedRaw, mode = mode })); }

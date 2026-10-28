@@ -1,9 +1,9 @@
 import { uiText } from './uiLocale';
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { corePriceAxes, jointCorePriceQuery, listingCoreMatch, type CorePriceSelection } from './corePricing';
-import type { EquipmentTradeOptions } from './genericEquipmentTrade';
-import { estimateCurrencyName, estimateNumber, fetchMarketEstimate, type MarketEstimateResult } from './marketEstimate';
-import type { PriceEstimateProps } from './PriceEstimate';
+import { buildEquipmentTrade, type EquipmentTradeOptions } from './genericEquipmentTrade';
+import { estimateCurrencyName, estimateNumber, estimateSummary, fetchMarketEstimate, type MarketEstimateResult } from './marketEstimate';
+import { PriceEstimate, type PriceEstimateProps } from './PriceEstimate';
 import { equipmentDisplayName, type Equipment } from './genericEquipment';
 import { equipmentFromListing } from './upgradeRanking';
 import { canonicalQuoteCurrency } from './loadoutQuotes';
@@ -19,6 +19,7 @@ export default function CorePriceEstimate({ options, auto, onEstimate, onRecordQ
   initialSelection?: { key: string; preset: string };
 }) {
   const axes = corePriceAxes(options.equipment, options.rows);
+  const identityPricing = !axes.some((row) => row.equipmentFilter !== 'ilvl') && !!options.equipment.baseNameEnglish;
   const [keys, setKeys] = useState<string[]>(initialSelection ? [initialSelection.key] : axes[0] ? [axes[0].key] : []);
   const [sortKey, setSortKey] = useState(initialSelection?.key ?? axes[0]?.key ?? ''), [scopes, setScopes] = useState<Record<string, string>>(initialSelection ? { [initialSelection.key]: initialSelection.preset } : {});
   const [busy, setBusy] = useState(false), [message, setMessage] = useState(''), [retry, setRetry] = useState(0);
@@ -43,7 +44,7 @@ export default function CorePriceEstimate({ options, auto, onEstimate, onRecordQ
   useEffect(() => () => request.current?.abort(), [optionKey]);
   useEffect(() => { if (!retry) return; const timer = setInterval(() => setRetry((old) => Math.max(0, old - 1)), 1000); return () => clearInterval(timer); }, [retry]);
   async function read(overview: boolean) {
-    if (!selected.length || overview && !primary || loading || retry) return;
+    if (identityPricing || !selected.length || overview && !primary || loading || retry) return;
     let chosen: ReturnType<typeof jointCorePriceQuery>;
     try { chosen = jointCorePriceQuery(options, selections, primary?.key, overview); }
     catch (error) { setMessage(error instanceof Error ? error.message : String(error)); return; }
@@ -57,9 +58,13 @@ export default function CorePriceEstimate({ options, auto, onEstimate, onRecordQ
       else {
         const description = `${chosen.constraints.length} 项核心属性同时满足 · ${overview ? '核心属性降序市场参考' : '挂牌参考'}`;
         rememberTrade({ query: chosen.query, league: options.league, raw: options.equipment.raw, title: equipmentDisplayName(options.equipment) }, { observation: { at: data.sampledAt, message: description, detail: `${chosen.summary} · ${data.total} 个匹配`, failed: false } });
-        onEstimate?.({ status: 'ready', message: description, detail: `${chosen.summary}。匹配 ${data.total} 件，每项要求必须同时满足。`.slice(0, 4000), url: chosen.url });
+        const summary = estimateSummary(data, chosen.url);
+        onEstimate?.({ ...summary, detail: `${chosen.summary}。每项要求必须同时满足。\n${summary.detail}`.slice(0, 4000) });
       }
-    } catch (error) { if (!task.signal.aborted) setMessage(error instanceof Error ? error.message : '查询失败。'); }
+    } catch (error) { if (!task.signal.aborted) {
+      const message = error instanceof Error ? error.message : '查询失败。';
+      setMessage(message); onEstimate?.({ status: 'error', message, detail: '网络请求未成功，不代表没有挂单。', url: chosen.url });
+    } }
     finally { if (!task.signal.aborted) setBusy(false); }
   }
   useEffect(() => { latest.current = () => { void read(false); }; });
@@ -72,6 +77,13 @@ export default function CorePriceEstimate({ options, auto, onEstimate, onRecordQ
   }) ?? [];
   const comparable = samples.filter((row) => row.matches && (!reviewCandidate || !!row.item && row.review?.eligible));
   const currencies = [...new Set(comparable.map(({ listing }) => listing.price.currency))];
+  if (identityPricing && options.league.trim()) {
+    const fallback = buildEquipmentTrade({ ...options, exactBase: true, exactUnique: true, ranking: false,
+      rows: options.rows.map((row) => ({ ...row, enabled: row.enabled && !!row.presenceOnly })) });
+    return <><div className="wb-actions"><a className="wb-button" href={fallback.url} target="_blank" rel="noreferrer">{uiText("打开官方交易搜索")}</a></div>
+      {fallback.warnings.map((warning) => <p key={warning} className="wb-fine">{uiText(warning)}</p>)}
+      <PriceEstimate query={fallback.query} url={fallback.url} league={options.league} auto={auto} onEstimate={onEstimate} itemRaw={options.equipment.raw} onRecordQuote={onRecordQuote} /></>;
+  }
   return <section className="wb-price-estimate wb-core-price" aria-label={uiText("核心属性档位估价")}>
     <div className="wb-section-head"><h3>{uiText("核心属性")}</h3><span className="wb-tag">{uiText("已选 ")}{uiText(selected.length)}{uiText(" 项 · 同时满足")}</span></div>
     {!axes.length ? <p>{uiText("暂无能核对数值的核心属性。请先识别词缀，或按同名／底座查看官方挂牌。")}</p> : <>

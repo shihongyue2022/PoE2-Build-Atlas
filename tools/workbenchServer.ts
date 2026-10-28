@@ -296,7 +296,7 @@ export function createWorkbenchBridge(options: EstimateServiceOptions & { localP
   const craftExchange = createCraftExchangeService(options);
   // Explicit desktop-to-browser views are separate from live tasks: opening a
   // completed item must not replay a checkpoint or replace another price check.
-  const views = new Map<string, ClipboardPacket>();
+  const views = new Map<string, ClipboardPacket & { deliveryToken: string; result: CompanionResult }>();
   const pruneViews = () => {
     for (const [id, view] of views) if (Date.now() - Date.parse(view.createdAt) >= 20 * 60_000) views.delete(id);
   };
@@ -395,7 +395,8 @@ export function createWorkbenchBridge(options: EstimateServiceOptions & { localP
         const parsed = validateClipboard(await jsonBody(request));
         pruneViews();
         while (views.size >= 20) views.delete(views.keys().next().value!);
-        const view = { id: randomUUID(), ...parsed, createdAt: new Date().toISOString() };
+        const view = { id: randomUUID(), ...parsed, createdAt: new Date().toISOString(), deliveryToken: randomUUID(),
+          result: { status: 'pending' as const, message: '正在读取物品并查询挂单…' } };
         views.set(view.id, view);
         writeJson(response, 200, { ok: true, id: view.id }); return;
       }
@@ -437,11 +438,15 @@ export function createWorkbenchBridge(options: EstimateServiceOptions & { localP
         writeJson(response, 200, { item: current && (current.id !== url.searchParams.get('after') || changedOwner) ? current : null }); return;
       }
       if (route === '/api/workbench/companion-result' && request.method === 'GET') {
-        writeJson(response, 200, packet()?.id === url.searchParams.get('id') ? result : { status: 'missing', message: '此装备任务已过期或被后续操作替换。' }); return;
+        pruneViews();
+        const view = views.get(url.searchParams.get('id') ?? '');
+        writeJson(response, 200, view?.mode === 'trade' ? view.result : packet()?.id === url.searchParams.get('id') ? result : { status: 'missing', message: '此装备任务已过期或被后续操作替换。' }); return;
       }
       if (route === '/api/workbench/companion-result' && request.method === 'POST') {
         const value = await jsonBody(request);
-        if (!object(value) || value.id !== packet()?.id || !['ready', 'error', 'pending'].includes(String(value.status))
+        pruneViews();
+        const view = object(value) && typeof value.id === 'string' ? views.get(value.id) : undefined;
+        if (!object(value) || (view ? view.mode !== 'trade' : value.id !== packet()?.id) || !['ready', 'error', 'pending'].includes(String(value.status))
           || typeof value.message !== 'string' || value.message.length > 1000
           || (value.detail !== undefined && (typeof value.detail !== 'string' || value.detail.length > 4000))) {
           throw new WorkbenchRequestError(400, '快捷键结果无效或任务已过期。');
@@ -450,11 +455,13 @@ export function createWorkbenchBridge(options: EstimateServiceOptions & { localP
           || !/^https:\/\/www\.pathofexile\.com\/trade2\/search\/poe2\//.test(value.url))) {
           throw new WorkbenchRequestError(400, '只允许官方交易页面链接。');
         }
-        if (result.status !== 'pending') { writeJson(response, 200, { ok: true, ignored: true }); return; }
-        if (value.deliveryToken !== deliveryToken) throw new WorkbenchRequestError(409, '此任务已转交另一个工坊页面，忽略旧结果。');
-        result = { status: value.status as CompanionResult['status'], message: value.message,
+        if ((view?.result ?? result).status !== 'pending') { writeJson(response, 200, { ok: true, ignored: true }); return; }
+        if (value.deliveryToken !== (view?.deliveryToken ?? deliveryToken)) throw new WorkbenchRequestError(409, '此任务已转交另一个工坊页面，忽略旧结果。');
+        const nextResult = { status: value.status as CompanionResult['status'], message: value.message,
           ...(typeof value.detail === 'string' ? { detail: value.detail } : {}),
           ...(typeof value.url === 'string' ? { url: value.url } : {}) };
+        if (view) view.result = nextResult;
+        else result = nextResult;
         writeJson(response, 200, { ok: true }); return;
       }
       if (route === '/api/workbench/estimate' && request.method === 'POST') {

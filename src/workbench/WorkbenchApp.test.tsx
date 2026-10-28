@@ -99,6 +99,26 @@ describe('workbench target-source regression', () => {
     expect(network.mock.calls.some(([input]) => input === '/api/workbench/companion-result')).toBe(false);
   });
 
+  it('returns a saved flask quotation to the desktop using its own view token without replacing the craft', async () => {
+    restore();
+    window.history.replaceState({}, '', '/?companion=1&equipment=saved-flask');
+    const network = vi.fn<typeof fetch>().mockImplementation((input) => {
+      if (typeof input === 'string' && input.startsWith('/api/workbench/companion-view?id=')) return Promise.resolve(new Response(JSON.stringify({ item: {
+        id: 'saved-flask', raw: MANA_FLASK_SAMPLE, mode: 'trade', deliveryToken: 'flask-token', createdAt: new Date().toISOString(),
+      } })));
+      if (input === '/api/workbench/estimate') return Promise.resolve(new Response(JSON.stringify({ ok: true, total: 0, fetched: 0, priced: 0, duplicateSellers: 0, groups: [], warnings: [], sampledAt: '2026-10-28T00:00:00Z', cached: false, url: 'https://www.pathofexile.com/trade2/search/poe2/Test?q=flask' })));
+      return Promise.resolve(new Response('{}', { status: 503 }));
+    });
+    vi.stubGlobal('fetch', network);
+    const before = savedSession();
+    render(<WorkbenchApp />);
+    await waitFor(() => expect(network.mock.calls.some(([input]) => input === '/api/workbench/companion-result')).toBe(true), { timeout: 3000 });
+    const request = network.mock.calls.find(([input]) => input === '/api/workbench/companion-result')!;
+    expect(JSON.parse(request[1]!.body as string)).toMatchObject({ id: 'saved-flask', deliveryToken: 'flask-token', status: 'ready', url: expect.stringContaining('/trade2/search/poe2/') });
+    expect(savedSession()).toMatchObject(before);
+    expect(computeWorkbench).not.toHaveBeenCalled();
+  });
+
   it('explains an expired equipment link instead of silently showing a different item', async () => {
     restore();
     window.history.replaceState({}, '', '/?equipment=expired');

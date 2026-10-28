@@ -235,6 +235,12 @@ describe('local desktop bridge', () => {
     const raw = '稀有度: 稀有\n不敗亡者\n宏偉華服\n--------\n物品等級: 80';
     const view = await (await post('companion-view', { raw, mode: 'trade' })).json() as { id: string };
     expect(await (await fetch(`${base}/companion-view?id=${view.id}`)).json()).toMatchObject({ item: { id: view.id, raw, mode: 'trade' } });
+    const savedView = await (await fetch(`${base}/companion-view?id=${view.id}`)).json() as { item: { deliveryToken: string } };
+    expect((await post('companion-result', { id: view.id, deliveryToken: 'wrong', status: 'ready', message: 'wrong' })).status).toBe(409);
+    expect((await post('companion-result', { id: view.id, deliveryToken: savedView.item.deliveryToken, status: 'ready', message: 'unsafe', url: 'https://example.com' })).status).toBe(400);
+    const quote = { id: view.id, deliveryToken: savedView.item.deliveryToken, status: 'ready', message: '挂牌参考 10 崇高石', url: 'https://www.pathofexile.com/trade2/search/poe2/Test?q=view' };
+    expect((await post('companion-result', quote)).status).toBe(200);
+    expect(await (await fetch(`${base}/companion-result?id=${view.id}`)).json()).toMatchObject({ status: 'ready', message: quote.message, url: quote.url });
     expect(await (await fetch(`${base}/companion-result?id=${task.id}`)).json()).toMatchObject({ status: 'ready', message: '锚点已核对' });
     expect(await (await fetch(`${base}/clipboard`)).json()).toEqual({ item: null });
     expect((await post('companion-view', { raw: 'not equipment', mode: 'trade' })).status).toBe(400);

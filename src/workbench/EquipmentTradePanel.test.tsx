@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import EquipmentTradePanel from './EquipmentTradePanel';
-import { BOOTS_SAMPLE } from './fixtures/fullGear';
+import { BOOTS_SAMPLE, MANA_FLASK_SAMPLE } from './fixtures/fullGear';
 import { BREACH_RING_SAMPLE } from './fixtures/breachRing';
 import { loadShippedPatch } from '../../packages/engine/src/loadPatch';
 import { loadGearTrade } from '../lib/gearTrade';
@@ -10,6 +10,31 @@ import { LEGACY_ORDAINED_RAW, ORDAINED_POB_ITEM, ordainedPobXml } from './fixtur
 import { emptyLoadout } from './loadout';
 import { DEFAULT_WORKFLOW } from './workflowPreferences';
 import { readTradeMemory } from './tradeMemory';
+import { CURRENCY_SAMPLE, GEM_SAMPLE } from './fixtures/tradeItems';
+
+describe('direct pricing for utility items', () => {
+  it.each([
+    [MANA_FLASK_SAMPLE, 'Ultimate Mana Flask', 'flask.mana'],
+    ['Item Class: Life Flasks\nRarity: Normal\nUltimate Life Flask\n--------\nItem Level: 65', 'Ultimate Life Flask', 'flask.life'],
+    ['Item Class: Charms\nRarity: Normal\nRuby Charm\n--------\nItem Level: 65', 'Ruby Charm', 'flask.charm'],
+    ['Item Class: Relics\nRarity: Normal\nUrn Relic\n--------\nItem Level: 65', 'Urn Relic', 'sanctum.relic'],
+    [CURRENCY_SAMPLE, 'Divine Orb', 'currency'],
+    [GEM_SAMPLE, 'Fireball', 'gem.activegem'],
+  ])('automatically prices %s by its verified type without requiring a numerical core', async (raw, type, category) => {
+    const network = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({ ok: true, total: 0, fetched: 0, priced: 0, duplicateSellers: 0, groups: [], warnings: [], sampledAt: '2026-10-28T00:00:00Z', cached: false, url: 'https://www.pathofexile.com/trade2/search/poe2/Test?q=fixture' })));
+    vi.stubGlobal('fetch', network);
+    const onEstimate = vi.fn();
+    render(<EquipmentTradePanel raw={raw} league="Test" onLeague={() => {}} autoEstimate onEstimate={onEstimate} />);
+    const link = screen.getByRole('link', { name: '打开官方交易搜索' });
+    const document = JSON.parse(new URL(link.getAttribute('href')!).searchParams.get('q')!);
+    expect(document.query.type).toBe(type);
+    expect(document.query.filters.type_filters.filters.category.option).toBe(category);
+    expect(screen.queryByRole('combobox', { name: '核心属性 1' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /综合找升级/ })).toBeNull();
+    await waitFor(() => expect(onEstimate).toHaveBeenCalledWith(expect.objectContaining({ status: 'ready', url: expect.stringContaining('/trade2/search/poe2/Test') })));
+    expect(network).toHaveBeenCalledTimes(1);
+  });
+});
 
 const t1Data = loadShippedPatch('data/patches/0.5.0');
 const t1Trade = await loadGearTrade();
