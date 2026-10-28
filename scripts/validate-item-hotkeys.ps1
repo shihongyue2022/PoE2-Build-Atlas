@@ -3,6 +3,8 @@ $ErrorActionPreference = 'Stop'
 & (Join-Path $PSScriptRoot 'workbench-hotkeys.ps1') -ValidateOnly
 [PoE2WorkbenchHotkeys.Program]::ValidateStatusPanel($PreviewPath)
 [PoE2WorkbenchHotkeys.Program]::ValidateLocales()
+[PoE2WorkbenchHotkeys.Program]::ValidateDismissal()
+Write-Output 'PASS dismissed overlay stays hidden through pending/final updates; latest result retained; explicit reopen and new capture reset dismissal.'
 Write-Output 'PASS Chinese / English / Japanese overlay controls, live switching, price and HTTP messages; original item text preserved.'
 Write-Output 'PASS compact overlay opacity controls, retained snapshot expansion and high-DPI bounds; no window shown.'
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))

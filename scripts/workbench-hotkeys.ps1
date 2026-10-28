@@ -122,6 +122,7 @@ namespace PoE2WorkbenchHotkeys {
         private readonly Button hide = new Button();
         private string originalHeading = "", originalDescription = "", originalItem = "";
         private bool snapshotExpanded;
+        internal bool Dismissed { get; private set; }
         private readonly string preferencesPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PoE2CraftWorkbench", "overlay-opacity.txt");
         protected override bool ShowWithoutActivation { get { return true; } }
         protected override CreateParams CreateParams {
@@ -140,7 +141,7 @@ namespace PoE2WorkbenchHotkeys {
             caption.MouseDown += delegate(object sender, MouseEventArgs args) {
                 if (args.Button == MouseButtons.Left) { Native.ReleaseCapture(); Native.SendMessage(Handle, 0x00A1, new IntPtr(2), IntPtr.Zero); }
             };
-            Button close = new Button(); close.SetBounds(480, 6, 28, 26); close.Text = "×"; close.Click += delegate { Hide(); };
+            Button close = new Button(); close.SetBounds(480, 6, 28, 26); close.Text = "×"; close.Click += delegate { Dismiss(); };
             Item.SetBounds(16, 42, 488, 28); Item.AutoEllipsis = true; Item.Font = new Font(Font.FontFamily, 11F, FontStyle.Bold);
             Item.ForeColor = Color.FromArgb(221, 201, 142);
             Heading.SetBounds(16, 78, 488, 40); Heading.Font = new Font(Font.FontFamily, 10F, FontStyle.Bold);
@@ -151,7 +152,7 @@ namespace PoE2WorkbenchHotkeys {
             OpenWorkbench.SetBounds(16, 204, 156, 32); OpenWorkbench.Text = "在工坊查看";
             OpenResult.SetBounds(182, 204, 156, 32); OpenResult.Text = "官方市场 ↗"; OpenResult.Enabled = false;
             hide.SetBounds(348, 204, 156, 32); hide.Text = "收起 (Esc)";
-            hide.Click += delegate { Hide(); };
+            hide.Click += delegate { Dismiss(); };
             snapshotToggle.SetBounds(16, 250, 100, 28); snapshotToggle.Text = "物品原文 ▸"; snapshotToggle.Enabled = false;
             Snapshot.SetBounds(16, 296, 488, 168); Snapshot.Multiline = true; Snapshot.ReadOnly = true;
             Snapshot.ScrollBars = ScrollBars.Vertical; Snapshot.BackColor = BackColor; Snapshot.ForeColor = ForeColor;
@@ -178,7 +179,7 @@ namespace PoE2WorkbenchHotkeys {
             Controls.AddRange(new Control[] { caption, close, Heading, Description, Item, OpenWorkbench, OpenResult, hide, snapshotToggle, Snapshot, opacityLabel, Transparency });
             Padding = new Padding(1);
             FormClosing += delegate(object sender, FormClosingEventArgs args) {
-                if (args.CloseReason == CloseReason.UserClosing) { args.Cancel = true; Hide(); }
+                if (args.CloseReason == CloseReason.UserClosing) { args.Cancel = true; Dismiss(); }
             };
             ApplyLocale();
         }
@@ -211,9 +212,15 @@ namespace PoE2WorkbenchHotkeys {
             Snapshot.Text = raw; Snapshot.SelectionStart = 0; Snapshot.SelectionLength = 0;
             snapshotToggle.Enabled = !String.IsNullOrEmpty(raw);
         }
-        internal void ShowLast() {
+        internal void Dismiss() { Dismissed = true; Hide(); }
+        internal void BeginRequest() { Dismissed = false; Hide(); }
+        internal void ShowMessage(string title, string description, string item, bool show = true) {
+            Dismissed = false; Display(title, description, item, show);
+        }
+        internal void ShowLast(bool show = true) {
+            Dismissed = false;
             Display(String.IsNullOrEmpty(originalHeading) ? "等待查价" : originalHeading,
-                String.IsNullOrEmpty(originalHeading) ? "在游戏内指向物品，按 Alt+E。复制成功后即可移开鼠标。" : originalDescription, originalItem);
+                String.IsNullOrEmpty(originalHeading) ? "在游戏内指向物品，按 Alt+E。复制成功后即可移开鼠标。" : originalDescription, originalItem, show);
         }
         internal void Display(string title, string description, string item, bool show = true) {
             originalHeading = title;
@@ -221,7 +228,7 @@ namespace PoE2WorkbenchHotkeys {
             originalDescription = String.IsNullOrWhiteSpace(description) ? "本次物品快照已保留。可展开“物品原文”核对，或在工坊调整条件。复制成功后无需继续悬停。" : description;
             ApplyLocale();
             Description.SelectionStart = 0; Description.SelectionLength = 0; Description.ScrollToCaret();
-            if (!Visible && show) {
+            if (!Visible && show && !Dismissed) {
                 Rectangle area = Screen.FromPoint(Cursor.Position).WorkingArea;
                 Location = new Point(area.Right - Width - 20, area.Bottom - Height - 20);
                 Show();
@@ -277,7 +284,7 @@ namespace PoE2WorkbenchHotkeys {
             menu.Items.Add("打开做装工坊", null, delegate { OpenWorkbench(); });
             menu.Items.Add("显示上次查价", null, delegate { panel.ShowLast(); });
             menu.Items.Add("显示快捷键说明", null, delegate {
-                panel.Display("游戏内快捷键", "鼠标指向装备：\r\nAlt+E：高级复制装备并查价\r\nCtrl+Alt+G：高级复制并核对当前制作锚点\r\n\r\n请先启动并打开本地工坊。Esc 收起面板。\r\n网页负责计算；本助手只发送一次 Ctrl+Alt+C 高级复制。", itemSummary);
+                panel.ShowMessage("游戏内快捷键", "鼠标指向装备：\r\nAlt+E：高级复制装备并查价\r\nCtrl+Alt+G：高级复制并核对当前制作锚点\r\n\r\n请先启动并打开本地工坊。Esc 收起面板。\r\n网页负责计算；本助手只发送一次 Ctrl+Alt+C 高级复制。", itemSummary);
             });
             menu.Items.Add("退出快捷键助手", null, delegate { ExitThread(); });
             foreach (ToolStripItem entry in menu.Items) entry.Tag = entry.Text;
@@ -322,7 +329,7 @@ namespace PoE2WorkbenchHotkeys {
             capturePhase = 1; captureDeadline = DateTime.UtcNow.AddSeconds(3);
             // An old overlay can cover the hovered tooltip and invalidate the copy.
             // Show the new panel only after a complete snapshot (or an error).
-            panel.Hide(); panel.SetSnapshot("");
+            panel.BeginRequest(); panel.SetSnapshot("");
         }
 
         private void Tick(object sender, EventArgs args) {
@@ -344,7 +351,7 @@ namespace PoE2WorkbenchHotkeys {
                 DisplayError("打开装备页面超时。已保留本次装备，请重新点击“在工坊查看”。");
             }
             bool escapeDown = Native.Down((int)Keys.Escape);
-            if (escapeDown && !escapeWasDown && panel.Visible) panel.Hide();
+            if (escapeDown && !escapeWasDown) panel.Dismiss();
             escapeWasDown = escapeDown;
             if (capturePhase != 0) {
                 if (!Native.GameIsForeground()) { capturePhase = 0; DisplayError("已取消：游戏窗口失去焦点，请回到游戏后重试。"); }
@@ -504,6 +511,26 @@ namespace PoE2WorkbenchHotkeys {
     }
 
     public static class Program {
+        public static void ValidateDismissal() {
+            using (StatusPanel panel = new StatusPanel()) {
+                const string raw = "Rarity: Rare\r\nSaved Spear\r\nBroadhead Spear\r\n--------\r\nItem Level: 82";
+                panel.BeginRequest(); panel.SetSnapshot(raw);
+                panel.Display("Pending", "Waiting for listings", "Saved Spear", false);
+                panel.Dismiss();
+                panel.Display("Pending update", "Still waiting", "Saved Spear");
+                panel.Display("Price ready", "Latest listing result", "Saved Spear");
+                panel.ApplyLocale(); panel.ToggleSnapshot(); panel.ToggleSnapshot();
+                if (panel.Visible || !panel.Dismissed || panel.Snapshot.Text != raw || panel.Heading.Text != "Price ready")
+                    throw new InvalidOperationException("Background updates reopened a dismissed overlay or lost its latest result.");
+                panel.ShowLast(false);
+                if (panel.Dismissed || panel.Heading.Text != "Price ready" || panel.Snapshot.Text != raw)
+                    throw new InvalidOperationException("Explicitly reopening the last result failed.");
+                panel.Dismiss(); panel.BeginRequest();
+                if (panel.Dismissed || panel.Visible) throw new InvalidOperationException("A new capture did not reset dismissal without showing stale content.");
+                panel.Dismiss(); panel.ShowMessage("Hotkeys", "Help", "", false);
+                if (panel.Dismissed || panel.Heading.Text != "Hotkeys") throw new InvalidOperationException("Explicit help could not reopen the overlay.");
+            }
+        }
         public static void ValidateLocales() {
             string original = OverlayLocale.Language;
             try {
