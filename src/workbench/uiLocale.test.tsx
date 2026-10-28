@@ -10,6 +10,18 @@ afterEach(() => {
 });
 
 describe('workbench interface languages', () => {
+  it('localizes dynamic portfolio screenshot captions and summaries', () => {
+    for (const locale of ['en', 'ja'] as const) {
+      setUiLocale(locale);
+      for (const source of ['· 3 项正贡献 · 1 项待核对', '条正贡献', '· 基准', '底装已有 T1 · 已达标', '快照 3.166 神圣石／个', '路线 1', '+1.600 分']) {
+        expect(uiText(source)).not.toBe(source);
+      }
+      expect(uiText('稀有金光戒指')).not.toContain('稀有');
+    }
+    setUiLocale('en');
+    expect(uiText('· 3 项正贡献 · 1 项待核对')).toContain('positive contributions');
+    expect(uiText('快照 3.166 神圣石／个')).toBe('Snapshot: 3.166 Divine Orb each');
+  });
   it('switches live without remounting application state or touching raw text', () => {
     function Harness() {
       useUiLocale();

@@ -1480,3 +1480,41 @@ PoB2 保存时面板参考	Saved PoB2 stat reference	PoB2保存時のステー�
 尚无快照	No snapshots yet	スナップショットはまだありません
 装备已送入全物品查价。角色装备栏可保存整套装备并比较换装。	Equipment opened in item price search. Use character equipment to save a complete loadout and compare swaps.	装備をアイテム価格検索で開きました。キャラクター装備欄で装備一式を保存し、装備変更を比較できます。
 联合条件在浏览器生成，点击后去官网读取挂牌；复制候选物品回角色页即可比较。本站不提供后台挂牌抓取。	Combined filters are generated in your browser. Open the official trade site to view listings, then copy a candidate back to the character page to compare. This site does not fetch listings in the background.	複合条件はブラウザー内で生成します。公式トレードで出品を確認し、候補アイテムをキャラクターページにコピーして比較してください。このサイトはバックグラウンドで出品を取得しません。
+{0} 项正贡献	{0} positive contributions	{0} 件の正の寄与
+{0} 项待核对	{0} pending review	{0} 件は要確認
+条正贡献	positive contributions	件の正の寄与
+{0} 条待核对	{0} pending review	{0} 件は要確認
+基准	Baseline	基準
+弹幕 →	Barrage →	バラージ →
+稀有{0}	Rare {0}	レア {0}
+装备按整件词缀重算损失降序，组内词缀降序；总值不累加单条贡献。勾选后同部位联合检索、跨部位分别搜；四抗仍需整套核对。	Equipment is ranked by recalculated whole-item damage loss, with modifiers ranked within each item. Individual contributions are not added to item totals. Selected modifiers form joint searches per slot; different slots use separate searches. Check all four resistances across the full loadout.	装備全体を再計算したダメージ減少量の降順で並べ、各装備内でもモッドを順位付けします。個別寄与は装備合計に加算しません。選択モッドは同部位で複合検索し、異なる部位は個別に検索します。四耐性は装備一式で確認してください。
+{0}本身没有独立伤害，此处分析 {1} → {2} 的装备词缀贡献。保留已选联动与各组辅助；重复伤害、狂怒球及冷却沿用 PoB 配置，不视为全程覆盖。	{0} has no standalone damage. This view analyzes equipment modifiers for {1} → {2}, retaining selected linked skills and each group's supports. Repeat damage, Frenzy Charges and cooldowns follow the PoB configuration; full uptime is not assumed.	{0}自体に独立したダメージはありません。ここでは{1} → {2}の装備モッド寄与を解析し、選択済みの連動と各グループのサポートを保持します。リピートダメージ、フレンジーチャージ、クールダウンはPoB設定を引き継ぎ、常時有効とはみなしません。
+后。下拉仅校正原文匹配到的属性与阶层，真实状态以游戏为准。	suffixes. Selectors correct only modifiers and tiers matched from the copied text; verify the actual item in the game.	サフィックス。選択欄は原文から一致した属性とティアのみを修正します。実際の状態はゲーム内で確認してください。
+勾选为必须达到的目标，取消不需要的属性；与第 2 步同步。底装破裂锁定始终占槽，勾选目标不会让普通词缀变成破裂。	Select required targets and deselect unwanted modifiers; this stays synchronized with step 2. Fractured base modifiers always occupy a slot. Selecting a target does not fracture a normal modifier.	必須目標にチェックを付け、不要な属性を外してください。手順2と同期します。ベースのフラクチャーモッドは常に枠を使用し、目標に選んでも通常モッドがフラクチャー化することはありません。
+底装已有 T{0}	Base already has T{0}	ベースにT{0}あり
+已达标	Target met	目標達成
+样例有破裂标记，实际底装的锁定状态需另行导入核对。	The example has a fracture flag. Import the actual base to verify its locked modifiers.	例にはフラクチャーの印があります。実際のベースを読み込み、固定されたモッドを確認してください。
+材料跟随上方所选路线；按实际消耗填写累计用量，核对和重算会保留记录。已含在底装买价里的准备无需重复计入。	Materials follow the selected route above. Enter cumulative actual use; verification and recalculation preserve these records. Do not count preparation already included in the base purchase price twice.	素材は上で選択したルートに連動します。実際の累計消費量を入力してください。確認・再計算後も記録を保持します。ベース購入価格に含まれる準備費用を重複計上しないでください。
+路线 {0}	Route {0}	ルート {0}
+快照 {0} 神圣石／个	Snapshot: {0} Divine Orb each	記録価格：1個あたり{0} 神のオーブ
+古老的锁骨	Ancient Collarbone	古代の鎖骨
+材料参考价：{0} · {1}；刷新汇率不会更新这些材料报价。	Material reference prices: {0} · {1}. Refreshing exchange rates does not update these material prices.	素材の参考価格：{0} · {1}。為替レートを更新しても素材価格は更新されません。
+手填时请补齐两项；仅用于本件预算换算，不改动路线求解器价格。	When entering rates manually, fill in both values. They are used only to convert this item's budget and do not change solver prices.	手入力時は両方の値を入力してください。このアイテムの予算換算にのみ使用し、ルート計算の価格は変更しません。
+{0} 神圣石	{0} Divine Orb	{0} 神のオーブ
+{0} 个技能	{0} skills	{0} 個のスキル
+主输出	Main damage	主力出力
+地面／补伤	Ground / extra damage	地面効果・追加ダメージ
+旋风来源	Twister source	ツイスターの発生源
+{0} 项提示	{0} notes	{0} 件の注記
+攻击／施法速度	Attack / cast speed	アタック・キャストスピード
+项效果尚不能直接加总，详情中核对。	effects cannot be added directly; review the details.	件の効果は直接加算できません。詳細を確認してください。
+左戒指＋鞋靴	Left ring + boots	左の指輪＋ブーツ
+增伤方向变化	Damage-direction score change	ダメージ方向スコアの変化
+{0} 分	{0} points	{0} 点
+尚未发现已识别的伤害方向提升，保留为补抗备选。	No recognized damage-direction improvement was found; keep as a resistance alternative.	認識済みのダメージ方向の改善はありません。耐性補完の候補として保持します。
+组合换入后整套四抗仍有缺口。	The combined replacement still leaves gaps in the loadout's four resistances.	組み合わせを装備しても、装備一式の四耐性に不足が残ります。
+下一件从哪里补抗	Where to add resistance next	次に耐性を補う部位
+缺口：	Shortfall:	不足：
+。下面打开其他部位的词池检索，收藏候选后在此核对组合。	. Search other slots below, save candidates, then check their combinations here.	。下から他の部位を検索し、候補を保存して組み合わせをここで確認してください。
+从	From	部位：
+找补抗候选	Find resistance candidates	耐性補完の候補を探す

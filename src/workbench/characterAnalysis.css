@@ -48,13 +48,13 @@
 .sr-heading-actions .wb-icon-button { height: 32px; width: 32px; padding: 6px; }
 .sr-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 77px; margin: 8px 0; padding: 7px; border: 1px dashed #5d6d4c; border-radius: 6px; background: #0e140f; }
 .sr-slot { position: relative; cursor: grab; min-width: 0; }
-.sr-slot>.sg-button { width: 74px; display: grid; justify-items: center; padding: 4px 3px 15px; gap: 2px; text-align: center; }
+.sr-slot>.sg-button { width: 74px; display: grid; justify-items: center; padding: 4px 3px 28px; gap: 2px; text-align: center; }
 .sr-slot .sg-art { width: 42px; height: 42px; }
 .sr-slot .sg-caption { width: 100%; }
 .sr-slot .sg-caption b { font-size: 10px; }
 .sr-slot.focus>.sg-button { border-color: #cbb46e; }
 .sr-order { position: absolute; left: 4px; top: 2px; font-size: 9px; color: #c7d4a8; pointer-events: none; }
-.sr-focus { position: absolute; bottom: 4px; left: 0; width: 100%; text-align: center; font-size: 8px; color: #dbc77e; pointer-events: none; }
+.sr-focus { position: absolute; bottom: 4px; left: 4px; width: calc(100% - 8px); max-height: 2.4em; overflow: hidden; line-height: 1.2; text-align: center; font-size: 8px; color: #dbc77e; pointer-events: none; }
 .sr-slot:has(.sr-slot-actions) .sr-focus { bottom: 26px; }
 .sr-add { width: 36px; min-height: 56px; border: 1px dashed #5d6d4c; background: transparent; color: #becf92; border-radius: 5px; cursor: pointer; font-size: 22px; }
 .sr-slot-actions { display: flex; justify-content: center; gap: 3px; margin-top: 3px; }
